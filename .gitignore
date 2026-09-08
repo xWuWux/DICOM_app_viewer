@@ -1,3 +1,8 @@
 .env
 *.log
 __pycache__/
+
+# Fetched by scripts/fetch-public-samples.sh — not committed, re-fetched from
+# Orthanc's public demo server on demand (see that script's own comments).
+# The small pydicom fixtures directly under sample-data/ ARE committed.
+/sample-data/brainix/
