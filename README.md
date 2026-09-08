@@ -130,10 +130,20 @@ What's wired up, end to end, and confirmed working:
    call needs for an anonymous/other user, so it's fine if that part logs a
    non-fatal warning and skips straight to printing the link.
 
-**Not yet done**: the workspace's own DLP settings (disable clipboard,
-file upload/download, printing — Kasm's per-workspace Permissions tab,
-the on-prem equivalent of AppStream's "Stack Policy") haven't been
-configured yet. Worth doing before this goes anywhere near real students.
+4. **DLP settings** (clipboard, file upload/download, printing — the
+   on-prem equivalent of AppStream's "Stack Policy"): configured on the
+   **Group** anonymous sessions land in (`Access → Groups → All Users →
+   Settings`), not per-workspace — `allow_kasm_clipboard_down/up/seamless`,
+   `allow_kasm_downloads`, `allow_kasm_uploads`, `allow_kasm_printing`,
+   `allow_kasm_sharing`, `allow_kasm_webcam`, `allow_kasm_microphone`,
+   `allow_kasm_gamepad`, `allow_kasm_audio` all set to `False`. Verified two
+   ways, not just trusted: queried `group_settings` directly in Kasm's own
+   Postgres DB to confirm the stored values, then launched a real test
+   session and confirmed inside the container that
+   `KASM_SVC_DOWNLOADS`/`KASM_SVC_UPLOADS`/`KASM_SVC_PRINTER` are `0` — those
+   services aren't just hidden in the UI, they never start. Clipboard
+   restriction is enforced separately, per-session, by Kasm's proxy checking
+   the group permission — not a container env flag.
 
 ## Security note (read this before assuming more than it does)
 
