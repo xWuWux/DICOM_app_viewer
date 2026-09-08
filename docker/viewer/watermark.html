@@ -7,22 +7,46 @@
   /* Deterrence, not prevention: see CLAUDE.md / Dokumentacja for why this is attribution-layer only. */
   html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#000; }
   #frame { position:absolute; inset:0; width:100%; height:100%; border:0; }
+
   /* mix-blend-mode:difference guarantees contrast against ANY underlying
      content (white page -> dark text, black page -> light text, any color
      -> its complement) — a fixed color/opacity went invisible on Orthanc's
-     white UI (see git log), which defeats a forensic watermark entirely. */
-  #watermark {
-    position:absolute; inset:0; width:100%; height:100%;
+     white UI (see git log), which defeats a forensic watermark entirely.
+
+     This is plain DOM text rotated with CSS, not canvas-drawn glyphs: a
+     rotated <canvas> render looked "squished"/degraded once actually
+     streamed through Kasm's video codec (thin diagonal strokes are exactly
+     what lossy video compression mangles — the same class of problem the
+     docs flagged for DICOM pixel fidelity, just biting our own watermark
+     text here). DOM text uses the same rendering + font hinting pipeline
+     as the rest of the page, so it survives the stream the same way the
+     surrounding "ORTHANC" UI text does. */
+  #watermark-rotator {
+    position:absolute; top:-50%; left:-50%; width:200%; height:200%;
+    transform: rotate(-15deg);
     pointer-events:none; z-index:10; mix-blend-mode:difference;
+    overflow:hidden;
   }
+  #watermark-grid {
+    display:flex; flex-wrap:wrap; align-content:flex-start;
+    width:100%; height:100%;
+  }
+  .wm-cell {
+    color:#fff;
+    font: bold 15px monospace;
+    white-space:nowrap;
+    flex: 0 0 auto;
+    padding: 28px 36px;
+  }
+
   /* Reduce (not eliminate) casual copy/print attempts inside this session's own browser */
   * { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
-  @media print { body::before { content:"Printing disabled for this session."; } #frame,#watermark{display:none;} }
+  @media print { body::before { content:"Printing disabled for this session."; } #frame,#watermark-rotator{display:none;} }
 </style>
 </head>
 <body>
   <iframe id="frame" src="" allow="fullscreen"></iframe>
-  <canvas id="watermark"></canvas>
+  <div id="watermark-rotator"><div id="watermark-grid"></div></div>
 
 <script>
 (function () {
@@ -36,55 +60,45 @@
   const orthancUrl = params.get("orthanc_url") || "http://localhost:8043/";
   document.getElementById("frame").src = orthancUrl;
 
-  const canvas = document.getElementById("watermark");
-  const ctx = canvas.getContext("2d");
+  const rotator = document.getElementById("watermark-rotator");
+  const grid = document.getElementById("watermark-grid");
+  const CELL_W = 340, CELL_H = 90; // approximate — real layout wraps via flexbox
 
-  function resizeCanvas() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-  }
-  window.addEventListener("resize", resizeCanvas);
-  resizeCanvas();
-
-  function drawWatermark() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const text = `${studentId} | ${sessionId} | ${new Date().toISOString()}`;
-    ctx.font = "14px monospace";
-    ctx.fillStyle = "#fff"; // color barely matters under mix-blend-mode:difference
-    ctx.textBaseline = "top";
-
-    // Tile the watermark across the whole canvas, diagonally, instead of one
-    // rotating spot — a single instance is trivial to crop out of a
-    // screenshot; a repeating tiled pattern covering the whole frame isn't.
-    ctx.save();
-    ctx.translate(canvas.width / 2, canvas.height / 2);
-    ctx.rotate(-20 * Math.PI / 180);
-    ctx.translate(-canvas.width / 2, -canvas.height / 2);
-
-    const stepX = 340;
-    const stepY = 90;
-    // Drift the whole tile grid slowly so a static crop from one frame
-    // doesn't reliably dodge every instance in the next.
-    const drift = (Date.now() / 20000) % stepX;
-    for (let y = -stepY; y < canvas.height + stepY; y += stepY) {
-      for (let x = -stepX; x < canvas.width + stepX * 2; x += stepX) {
-        ctx.fillText(text, x - drift, y);
-      }
+  function rebuildGrid() {
+    // watermark-rotator is 2x the viewport in both dimensions (to stay fully
+    // covered after rotation), so size the grid off its own rendered box,
+    // not the viewport.
+    const cols = Math.ceil(rotator.clientWidth / CELL_W) + 1;
+    const rows = Math.ceil(rotator.clientHeight / CELL_H) + 1;
+    const needed = cols * rows;
+    while (grid.children.length < needed) {
+      const span = document.createElement("span");
+      span.className = "wm-cell";
+      grid.appendChild(span);
     }
-    ctx.restore();
+    while (grid.children.length > needed) {
+      grid.removeChild(grid.lastChild);
+    }
+  }
+  window.addEventListener("resize", rebuildGrid);
+  rebuildGrid();
+
+  function updateWatermarkText() {
+    const text = `${studentId} | ${sessionId} | ${new Date().toISOString()}`;
+    for (const cell of grid.children) cell.textContent = text;
   }
 
-  drawWatermark();
-  setInterval(drawWatermark, 1000);
+  updateWatermarkText();
+  setInterval(updateWatermarkText, 1000);
 
-  // Anti-tamper: reload if the watermark canvas is hidden or removed from the DOM.
+  // Anti-tamper: reload if the watermark is hidden or removed from the DOM.
   // NOTE: this deters casual DOM tampering; it does NOT stop a camera photo of the
   // screen or a determined attacker disabling JS. See Dokumentacja for the full
   // threat-model discussion — attribution via the watermark is the real control.
   const observer = new MutationObserver(() => {
-    if (!document.body.contains(canvas) ||
-        canvas.style.display === "none" ||
-        canvas.style.visibility === "hidden") {
+    if (!document.body.contains(rotator) ||
+        rotator.style.display === "none" ||
+        rotator.style.visibility === "hidden") {
       window.location.reload();
     }
   });
