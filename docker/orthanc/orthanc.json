@@ -1,0 +1,36 @@
+{
+  "Name": "IPCMC-MVP-Orthanc",
+
+  "// Storage": "Ephemeral by design for MVP: sample-data is re-uploaded on every start.",
+  "StorageDirectory": "/var/lib/orthanc/db",
+
+  "// Auth": "Basic auth only for this MVP. Real deployment must sit behind the internal network + Kasm gateway, never exposed directly.",
+  "AuthenticationEnabled": true,
+  "RegisteredUsers": {
+    "orthanc": "CHANGE_ME_ORTHANC_PASSWORD"
+  },
+
+  "// DICOMweb": "Required so the web viewer can pull frames on demand instead of whole studies.",
+  "DicomWeb": {
+    "Enable": true,
+    "Root": "/dicom-web/"
+  },
+
+  "// Explorer2": "Modern Orthanc web UI; ships with the Stone Web Viewer plugin.",
+  "OrthancExplorer2": {
+    "Enable": true,
+    "IsDefaultOrthancUI": true
+  },
+
+  "StoneWebViewer": {
+    "Enable": true
+  },
+
+  "// Hard rule": "No DICOM data leaves this container's storage volume; no cloud storage/AWS integration (see CLAUDE.md).",
+  "DicomAet": "IPCMC_MVP",
+  "DicomCheckModalityHost": false,
+
+  "RemoteAccessAllowed": true,
+  "HttpPort": 8042,
+  "DicomServerEnabled": false
+}

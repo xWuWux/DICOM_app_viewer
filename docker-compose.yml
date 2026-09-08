@@ -1,0 +1,40 @@
+
+services:
+  orthanc:
+    image: orthancteam/orthanc:latest
+    container_name: ipcmc-orthanc
+    restart: unless-stopped
+    volumes:
+      - ./docker/orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
+      - orthanc-storage:/var/lib/orthanc/db
+    networks:
+      - ipcmc-internal
+    ports:
+      # Bound to localhost only: convenience for local testing/debugging so
+      # the watermark wrapper's browser (running on this same machine) can
+      # iframe Orthanc's own UI directly, avoiding subpath-proxy breakage
+      # (Orthanc's Explorer2/Stone-Viewer assets assume they're served from
+      # the root of their own origin). In the real Kasm deployment this port
+      # is never published to a host at all — Kasm's internal browser reaches
+      # `orthanc:8042` over the same internal Docker/Proxmox network instead.
+      - "127.0.0.1:8042:8042"
+
+  viewer:
+    build: ./docker/viewer
+    container_name: ipcmc-viewer
+    restart: unless-stopped
+    depends_on:
+      - orthanc
+    ports:
+      - "8080:8080"   # This is the only thing that should ever be reachable directly for this MVP,
+                       # and in the real deployment even this gets replaced by Kasm's own gateway —
+                       # see README.md "From MVP to the real thing".
+    networks:
+      - ipcmc-internal
+
+networks:
+  ipcmc-internal:
+    driver: bridge
+
+volumes:
+  orthanc-storage:
