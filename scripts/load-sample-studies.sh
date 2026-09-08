@@ -7,10 +7,17 @@
 # the anonymization pipeline described in CLAUDE.md.
 set -euo pipefail
 
+# Pick up ORTHANC_PASSWORD from .env if it's not already in the environment,
+# same value docker-compose.yml uses -- no hardcoded fallback on purpose.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -z "${ORTHANC_PASSWORD:-}" ] && [ -f "$REPO_ROOT/.env" ]; then
+  set -a; source "$REPO_ROOT/.env"; set +a
+fi
+
 ORTHANC_URL="${ORTHANC_URL:-http://localhost:8042}"
 ORTHANC_USER="${ORTHANC_USER:-orthanc}"
-ORTHANC_PASS="${ORTHANC_PASS:-CHANGE_ME_ORTHANC_PASSWORD}"
-DATA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../sample-data" && pwd)"
+ORTHANC_PASS="${ORTHANC_PASS:-${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD in .env -- see .env.example}}"
+DATA_DIR="$REPO_ROOT/sample-data"
 
 while IFS= read -r -d '' f; do
   echo "Uploading ${f#"$DATA_DIR"/}..."

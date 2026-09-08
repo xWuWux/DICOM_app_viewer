@@ -31,6 +31,7 @@ for the real Kasm deployment.
 ### Run it
 
 ```bash
+cp .env.example .env && sed -i "s/^ORTHANC_PASSWORD=.*/ORTHANC_PASSWORD=$(openssl rand -hex 16)/" .env
 docker compose up -d --build
 ./scripts/fetch-public-samples.sh   # pulls in BRAINIX (~64MB, not committed to git)
 ./scripts/load-sample-studies.sh
@@ -45,15 +46,16 @@ Change the query string to simulate different individual sessions, e.g.:
 `http://localhost:8080/?student_id=STU_12345&session_id=SESS_9921A3B`.
 This is exactly what `scripts/create-session.py` + `custom_startup.sh` do
 automatically once Kasm is wired up (see below) — it's the mechanism behind
-"one individual link per person." The same query string also carries
-`orthanc_url` (default `http://localhost:8042/` for this local setup) so the
-wrapper knows which origin to iframe — Orthanc's plugins assume they're
-served from their own origin's root, so it's iframed directly rather than
-reverse-proxied under a subpath (see `docker/viewer/nginx.conf`).
+"one individual link per person." The same query string also carries `orthanc_url` (default
+`http://localhost:8043/` for this local setup — the auth-injecting proxy, not
+Orthanc's own port, see below) so the wrapper knows which origin to iframe.
 
-Default Orthanc credentials are in `docker/orthanc/orthanc.json`
-(`orthanc` / `CHANGE_ME_ORTHANC_PASSWORD`) — **change that password** before
-this ever touches real data or a shared network.
+**Credentials**: there is no hardcoded Orthanc password anywhere in this
+repo — `ORTHANC_PASSWORD` comes from `.env` (copied from the committed
+`.env.example` placeholder, generated fresh above), and both the `orthanc`
+and `viewer` containers read it from there at start. `docker-compose.yml`
+refuses to start either service if it isn't set, rather than silently
+falling back to a known default.
 
 ### Sample data
 
@@ -108,8 +110,8 @@ What's wired up, end to end, and confirmed working:
    `kasm_default_network` (external, created by the Kasm installer) so Kasm's
    session containers reach them by container name — `http://ipcmc-viewer:8080/`
    and the auth-injecting proxy at `http://ipcmc-viewer:8043/` (see
-   `docker/viewer/nginx.conf` for why Orthanc isn't reached directly: an
-   iframe can't answer its Basic Auth challenge).
+   `docker/viewer/default.conf.template` for why Orthanc isn't reached
+   directly: an iframe can't answer its Basic Auth challenge).
 3. **Per-student links** (`scripts/create-session.py`): calls Kasm's public
    API (`/api/public/request_kasm`) to mint a one-off session with
    `STUDENT_ID`/`SESSION_ID` baked into its environment — that's what
@@ -170,9 +172,10 @@ enforce:
 ```
 CLAUDE.md                     hard rules for this project (do not violate)
 Dokumentacja/                 source design discussion + radiology requirements
+.env.example                  copy to .env and fill in a real ORTHANC_PASSWORD (gitignored)
 docker-compose.yml            Orthanc + watermarked viewer, for local testing
-docker/orthanc/               Orthanc config
-docker/viewer/                nginx + the watermark wrapper page
+docker/orthanc/               Orthanc config (no credentials in here -- see .env.example)
+docker/viewer/                nginx (config templated + auth token computed from env, not hardcoded) + the watermark wrapper page
 docker/kasm-workspace/        custom Kasm workspace image (build after Kasm is installed)
 sample-data/                  public-domain sample DICOM files
 scripts/fetch-public-samples.sh  pulls larger public teaching studies (BRAINIX) into sample-data/

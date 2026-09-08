@@ -22,8 +22,10 @@ server {
     # can't answer a login challenge, so the un-proxied Orthanc origin just
     # renders blank. Orthanc's own auth stays ON (defense in depth); this is
     # the only thing allowed to see these credentials.
-    # CHANGE_ME: regenerate this if you change docker/orthanc/orthanc.json's
-    # password — `printf 'orthanc:<password>' | base64`.
+    # ORTHANC_AUTH_B64 is computed at container start by
+    # 15-compute-orthanc-auth.envsh from ORTHANC_USER/ORTHANC_PASSWORD, then
+    # substituted into this file by the base image's own envsubst-on-templates
+    # entrypoint step — nothing real is hardcoded in this committed file.
     listen 8043;
     server_name _;
 
@@ -31,7 +33,7 @@ server {
         proxy_pass http://orthanc:8042/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header Authorization "Basic b3J0aGFuYzpDSEFOR0VfTUVfT1JUSEFOQ19QQVNTV09SRA==";
+        proxy_set_header Authorization "Basic ${ORTHANC_AUTH_B64}";
         proxy_http_version 1.1;
         proxy_buffering off;
     }
