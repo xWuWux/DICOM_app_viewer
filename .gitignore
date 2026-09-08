@@ -1,6 +1,8 @@
 .env
 *.log
 __pycache__/
+*.zip
+*:Zone.Identifier
 
 # Fetched by scripts/fetch-public-samples.sh — not committed, re-fetched from
 # Orthanc's public demo server on demand (see that script's own comments).
