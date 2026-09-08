@@ -18,7 +18,13 @@ USER root
 # Kiosk launch config: open the watermarked viewer instead of a normal browser
 # chrome/session URLs are provided per-session by scripts/create-session.py,
 # which appends ?student_id=...&session_id=... to VIEWER_URL below.
-ENV VIEWER_URL="http://CHANGE_ME_TO_YOUR_HOST:8080/"
+# Reachable because docker-compose.yml attaches `viewer`/`orthanc` to
+# kasm_default_network — Docker's embedded DNS resolves them by container name.
+# Both can still be overridden per-session via the Kasm API's `environment`
+# field (see scripts/create-session.py) — these are just sane defaults so the
+# workspace also works from a plain "Launch" click in the Kasm admin UI.
+ENV VIEWER_URL="http://ipcmc-viewer:8080/"
+ENV ORTHANC_URL="http://ipcmc-orthanc:8042/"
 
 COPY custom_startup.sh /dockerstartup/custom_startup.sh
 RUN chmod +x /dockerstartup/custom_startup.sh
