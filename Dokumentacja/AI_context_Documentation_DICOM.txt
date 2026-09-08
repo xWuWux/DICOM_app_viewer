@@ -1,0 +1,2996 @@
+What is IP_CMC
+
+Who We Are
+
+The Interdisciplinary Pomeranian Center for Digital Medicine (IP_CMC) is an interdepartmental, independent unit of the Medical University of Gdańsk, established to build and develop the University’s expertise in the field of digital medicine.
+
+The Center was established in response to the need to create a sustainable infrastructure, staffing, and systems framework to support scientific research conducted at the Medical University of Gdańsk, as well as in cooperation with the University Clinical Center (UCK) and other research units in the region and nationwide.
+
+Our Mission
+
+The Center’s primary objective is to enable the controlled and legally compliant flow of medical data—including research, statistical, and imaging data—which supports the development of preventive care as well as new diagnostic and treatment methods.
+
+The Center implements a secure, cyclical data-feeding process in which complete clinical datasets remain within the source institution’s infrastructure, while data that has been cleaned, enriched, and, above all, anonymized is made available to research environments.
+
+Like European research institutions, IP_CMC is not a one-time project but a permanent component of the University’s scientific ecosystem, supporting multiple research teams and initiatives simultaneously.
+
+What We Do
+
+Development of medical data infrastructure—data warehouses (Data Warehouse / Data Lake House) for structured, imaging, sequential, and text data, along with the necessary ICT infrastructure
+Extraction of data from clinical systems—HIS (Clininet), PACS, LIS, and peripheral devices—in accordance with the HL7 FHIR and OHDSI OMOP CDM standards
+Integration, processing, and anonymization of medical data for scientific research, including non-commercial clinical trials, using a dedicated anonymizer and an NLP/NER pipeline that removes personally identifiable information from free-text data (clinical descriptions)
+Supporting researchers by providing tools, IT systems, and competent scientific and technical staff
+Collaboration with the GUMed Biobank regarding the collection, storage, and sharing of biological samples and related clinical data for research purposes
+Development of innovative methods for utilizing clinical data, including nursing data, in collaboration with research centers
+Acquisition of medical data for research from partners and clinical units, primarily from the UCK
+Promotion of science and scientific publications resulting from the use of the Center’s infrastructure
+Conducting scientific projects and initiatives funded by various programs supporting science and healthcare
+Infrastructure Model
+
+The Center deliberately employs a hybrid model, combining its own on-premises infrastructure with cloud-based solutions. Sensitive clinical data is subject to legal restrictions regarding storage location and therefore remains in a fully controlled environment. This solution optimizes costs and avoids dependence on a single IT service provider.
+
+Who We Serve
+
+The Center’s resources and expertise are utilized by research teams at the Medical University of Gdańsk (GUMed) and partner scientific institutions carrying out projects in the fields of digital medicine, genomics, bioinformatics, and clinical data analysis. The work focuses on the University’s priority research areas: oncology, cardiology, and genetics and molecular biology. The Center enhances the efficiency and quality of scientific research, including by facilitating access to advanced data processing infrastructure without the need for each research team to build its own.
+
+Standards and Security
+
+The Center’s operations are based on recognized standards for quality, interoperability, and data security:
+
+FAIR and HL7 FHIR — quality and interoperability of medical data
+GDPR and EDPB guidelines — personal data protection, anonymization, and pseudonymization
+ISO/IEC 27001 — information security management system
+PN-EN ISO 20387 and the Quality Standard for Polish Biobanks 2.0 — quality and safety at the Central Biobank of the Medical University of Gdańsk
+Example Projects
+
+The Center’s infrastructure enables the implementation of innovative projects with high implementation potential, including:
+
+CARLOTA — automatic detection of pathological changes in low-dose chest CT scans (lung cancer screening)
+Virtual Pathologist — analysis and segmentation of tissue specimen images, including assessment of the TILS index
+AI-DiagNOSe — early detection of sepsis and respiratory failure in newborns in the intensive care unit
+Digital Oncology Twin — radiogenomic signatures supporting the personalization of oncological radiation therapy
+AMBU-PRO — optimization of appointment management in outpatient clinics
+DiSCharge-PRO — support for deciding the appropriate timing of discharge for surgical patients
+TAVRisk — assessment of the risk of complications following transcatheter aortic valve replacement (TAVR)
+DiagMol — quality control in molecular diagnostics based on NGS sequencing
+Our Development Strategy
+
+The strategic goal of IP_CMC is to systematically increase the number and quality of research projects conducted at the Medical University of Gdańsk (GUMed), with a particular focus on non-commercial clinical trials and improving the efficiency of research processes. The Center actively collaborates within international research consortia such as EuCanImage, RadioVal, and EUCAIM. Following the example of European research centers that combine a scientific mission with specific indicators of impact on the healthcare system, the Center plans to develop into a fully-fledged medical data hub on a regional and national scale, open to collaboration with other research and clinical institutions.
+
+Similar digital medicine centers around the world
+
+Inserm in France
+Biomedical Data Science Center at CHUV in Switzerland
+IDIBELL in Spain
+BBMRI-ERIC
+Health-RI in the Netherlands
+UK Biobank in the United Kingdom
+List of activities carried out by the Center
+1. Research data management
+
+Design and maintenance of a data warehouse (Data Warehouse / Data Lake House) for clinical, imaging, and omics data
+Assignment of persistent identifiers (PIDs) and standardization of metadata in accordance with FAIR and HL7 FHIR principles
+Research data lifecycle management—from collection, through storage, to archiving
+Secure transfer of large files and datasets between institutions
+2. Data Anonymization and Protection
+
+Anonymization and pseudonymization of medical data in accordance with the GDPR and EDPB guidelines
+Automatic removal of personal data from free-text (clinical descriptions) using NLP/NER
+Generation of synthetic data for research and testing purposes
+Legal and ethical support regarding consent, documentation, and communication with bioethics committees
+Sample coding and maintaining the confidentiality of data associated with biological material
+3. Analytical Support and AI
+
+Multimodal data analysis (clinical, imaging, and sequence data) using AI and machine learning
+Development of AI-based tools to support clinical decision-making
+Automatic variable extraction and classification of medical texts (NLP)
+Genome-wide association studies, RNA sequencing, and single-cell sequencing
+Methodological and statistical support for research projects and grant proposals
+4. Collaboration with the biobank
+
+Collection, isolation, and storage of biological material (blood, tissues, biological fluids)
+DNA/RNA extraction and sample preparation for further analysis, including whole-genome sequencing (WGS)
+Monitoring storage conditions and ensuring sample traceability
+Creating and managing new sample collections for specific research projects
+Domestic and international shipment of samples and data exchange with other biobanks based on MTA and DTA agreements
+5. Cataloging and sharing resources
+
+Maintaining a catalog of datasets, cohorts, and biobank collections available to researchers
+A submission portal enabling researchers to request samples, images, and data through a single point of contact
+Integration with international catalogs and networks
+6. Researcher Development and Promotion of Science
+
+Training and workshops on data management, analytical tools, and ethical principles
+Consulting on grant proposals and the feasibility assessment of data projects
+Publication support—repositories, bibliography, and promotion of research results
+Providing computing infrastructure (cloud, storage) to research teams
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+How to force a screenshot even in an app that won't allow it?
+Looking For Suggestions
+Does anyone know if there is some sort of app I can use to force screenshots? I need proof of all transactions from a single payer in PayPal. PayPal app does not allow screenshots, PayPal website does not have the same search functionality as the app so doing it on desktop and using print screen is not an option. I've tried using Google assistant and it will take a screenshot but it's blacked out and useless. I don't have access to a second phone to photograph the first phone. I've tried using my laptop to take a photo of the phone but the quality is terrible and useless.
+
+It's infuriating that I'm trying to screenshot my own information and I can't because an app decided that's not allowed for some stupid reason. It's my data!
+
+Is there some EASY way that I can force the phone to screenshot no matter what? Like an app or something that can bypass anything that blocks it?
+
+I am not very technologically advanced so it can't be complicated. 😔 Or am I just shit out of luck?
+
+Edit: This post has been weirdly popular so I thought I'd post an update. I was able to somehow get the screenshots using a laptop. I don't remember how I did it. But I did get proof of those transactions. I won a legal battle with them, proving I was at the time a sole financial dependent of this payer. I was then able to stop at least part of his estate from being stolen by someone who was and probably still is pretending to be his wife! The audacity.
+
+I heard she is still trying to claim his house, but that will probably fail in court. I used the money I inherited as a deposit on my own home, made sure that the other two relatives (not many of us left now...😞) also got their fair share, and set up an account for their newborn baby for her future! and I live every day to the fullest in memory of the person I loved.
+
+Sorry I still don't have an answer as to how to actually do this. But at least my sad story had a decent ending and some sort of justice.
+
+
+
+349
+
+
+
+369
+Przejdź do komentarzy
+
+
+Dołącz do konwersacji
+
+Sortuj według:
+
+Najlepsze
+
+Wyszukaj komentarze
+Rozwiń wyszukiwanie komentarzy
+Sekcja komentarzy
+danGL3
+•
+2 lata temu
+•
+Edytowano
+2 lata temu
+You can try mirroring the screen to a laptop using Scrcpy, if that doesn't work (due to Android being too new) you're out of luck, when an app sets a secure window flag no app can capture its contents
+
+Reason why no app can bypass it is simply that any method/ screen capture app goes through the same APIs, so Android can simply refuse to hand over the image to capture app, returning an black image if the app tries to ignore the secure window flag
+
+
+
+21
+
+
+melbournesummer
+OP
+•
+2 lata temu
+Thank you, I will give this a go!
+
+
+
+4
+
+
+sfk1991
+•
+2 lata temu
+That 100% doesn't work. I'm 200% certain that the secure flag prevents even in Scrcpy. He will get a black screen.
+
+The only way to bypass it is via Frida hook and change the flag on Runtime.
+
+
+
+15
+
+
+RetractedTests
+•
+2 lata temu
+I'm giving this post a thumbs up because the way you write, you're so confident and sexy about it. Not arrogant, but in a wholesome way even though I have absolutely 0 idea what you are talking about.I feel like I must contribute something.
+
+
+
+19
+
+
+
+
+
+
+1
+
+
+
+
+Jeszcze 16 i
+
+Jeszcze 24 i
+
+Jeszcze 12 i
+Awatar użytkownika u/neillaw
+neillaw
+•
+2 lata temu
+The whole concept of blocking screenshots is daft... If a criminal or whatever really wanted it they'd take a picture with another device or mirror share to a device that can. Just yet another measure which penalises people who want to do something for practical use and not really preventing the purpose of it
+
+
+
+40
+
+
+
+
+
+
+1
+
+
+
+lugo3
+•
+2 lata temu
+I think a better measure would be to ask for authentication when the user wants a screenshot in an app that blocks it.
+
+If the real reason why apps will block screenshots is to prevent someone else from grabbing your information, then ask for my fingerprint or whatever authentication I have on my phone to take said screenshot.
+
+
+
+18
+
+
+
+Jeszcze 2 i
+al_capone420
+•
+2 lata temu
+It’s blocking idiots from being phished.
+
+
+
+4
+
+
+
+Jeszcze 15 i
+Awatar użytkownika u/LeftPickle5807
+LeftPickle5807
+•
+1 rok temu
+agree.  I use fb screenshots for coaching kids bowling by capturing pro stats on videos they show.  I'm pissed beyond and to the point of closing all fb related anything. they force this sh*t on users without asking on my personal device. Anyone can screenshot by taking a picture of the freaking phone screen idiots! It was just much more convenient if I could get screenshot out button floating there.
+
+Now I got to go about wasting time trying to figure out how to get around this! Stock accounts do the same thing although I understand it but not all stock apps restrict screenshots. 
+
+I think it's BS because you might need a screenshot of certain transaction or something and there you go if they wanted to delete proof of it, they could you have no proof other than going through hoops that are unnecessary! 
+
+
+
+4
+
+
+
+Jeszcze 9 i
+bobnbasra
+•
+2 lata temu
+This might not work for you, but I display my phone's screen on my computer monitor all the time. If I had to take a screenshot of an app that didn't allow it, I'd just use the Windows snipping tool.
+
+
+
+14
+
+
+
+Jeszcze 11 i
+-Dixieflatline
+•
+1 rok temu
+I realize this thread is old, but for the sake of future people looking this up:
+
+I was having this issue trying to snap a screen shot of a restricted web page using a Galaxy S22 with One UI 7 (most recent). The search for a method brought me to this thread.
+
+The regular screen shot method didn't work, but neither did gestures (hand swipe), asking the assistant, Link to Windows for screen sharing, screen recording, nor third party mirroring. I did, however, figure out that the Samsung browser in the secure folder has zero problems with snapping a restricted web page screen shot. And I don't currently have root.
+
+
+
+12
+
+
+DragonWolf5589
+•
+1 rok temu
+wish that would work for apps. especially supermarket app I only want take screenshot of my receipt but apparently not allowed (so no idea how to bring things back if faulty, as where I buy fruit and veg you scan and pay on your phone and just walk out the shop. so no paper receipt and can't screenshot the digital one.. and as soon app is closed after shopping you can never get it back up again for "security"
+
+
+
+5
+
+
+
+Jeszcze 7 i
+
+Jeszcze 10 i
+_coffee_
+•
+2 lata temu
+Screen record, either through an app or use the native one in your OS (if applicable).
+
+Start recording before you open paypal, record what you need, then upon playback of your recording, pause and take a screenshot of the items you need most.
+
+
+
+8
+
+
+Awatar użytkownika u/Lanky-Ad-5453
+Lanky-Ad-5453
+•
+2 lata temu
+I've tried that on the Samsung S22 Ultra I use, any images I can't screenshot appear blacked out.
+
+
+
+14
+
+
+ResponsibleYoung4105
+•
+2 lata temu
+I'm using a Samsung Galaxy s23 ultra and it unfortunately did not work. I thought it did, but when watching the screen recording back, the problem app is blacked out.
+
+
+
+4
+
+
+
+Jeszcze 2 i
+Awatar użytkownika u/Lanky-Ad-5453
+Lanky-Ad-5453
+•
+2 lata temu
+I use an iPad or another phone to take a photo of QR codes, pay apps transaction screens. I tried the screen record method, mentioned earlier, but the screen blurs out or blacks out all images that are blocked from screenshots.
+
+
+
+7
+
+
+
+Jeszcze 4 i
+ButtercupsUncle
+•
+2 lata temu
+Have you tried printing it to a PDF on your phone?
+
+
+
+6
+
+
+
+Jeszcze 8 i
+LiveFastDieRich
+•
+2 lata temu
+Previously Ive had success by dragging up to the app scroller and screenshotting from there, not sure if it's still possible
+
+
+
+4
+
+
+
+Jeszcze 13 i
+Awatar użytkownika u/AndyJBailey
+AndyJBailey
+•
+2 lata temu
+I used another phone to take a photo of the screen.
+
+
+
+4
+
+
+UNIVERSAL_VLAD
+•
+2 lata temu
+Osiris_Raphious
+•
+1 rok temu
+Yeah android isn't a device it's an orwellian tool of control... I am the admin of my device, and I should be able to use it as I please. Why are functions of my device disabled, this is absurd. Google has gone full evil with fascist intent... 
+
+
+
+3
+
+
+
+Jeszcze 1 odpowiedź
+Awatar użytkownika u/Scary_Assignment_558
+Scary_Assignment_558
+•
+1 rok temu
+Buddy, there is no one more hatefully aware of the absolute ridiculousness and overabundance of the "security" features of most apps. I really REALLY get sick of having to devise more and more complicated and difficult to remember passwords only to have some app force my verification via phone code or email link and then my fingerprint all just so I can use the app! And even though I'm verified and logged in and turn off the 2, 3 and 4 steps of verification process and try to just use the fingerprint... Yep, still need to enter the password. Hello? It's a photo editing app!!! What kind of fucking insane person thought it was necessary to layer that much bullshit over their digital product and just basically ANNOY me? I have already been terribly irritated with the password requirement criteria as it is, but to add a symbol, numbers, at least 12 characters, no repeating sequence, no numbers that are my personal information, blah blah blah. What I've never really had a grasp on is why there's no more FREEDOM of choice to be a part of all the security!? Ok6, some people are going to want all that protection, some people are fine with the one repeating password over all of their logins and maybe those people who have the same password across the board are smart enough to use security where NECESSARY and take their own protection measures. I'm sitting here trying to take a screenshot of my security codes for my Gmail accounts so when I get locked out NEXT TIME, I'll have a copy of the backup codes in my important photo folder. But I can't do it, it's not letting me. I don't give a fuck about anyone hacking my Facebook account. If someone really thinks it's that important, they are going to figure it out somehow no matter what pretend security measures are in place. Any hacker with half a brain is going to see if their mark is worth it before continuing to get into their accounts and if they get into mine they are going to see a lot of naked pictures and a woman who doesn't believe in a credit score, therefore no use to them anyway lol. But I really don't appreciate these little piddly apps that are for fun or whatever being as frugal as possible nor do I appreciate google and PayPal and whoever else forcing me to get complicated to accomplish the basic tasks. I personally think that technology is a conspiracy to keep us all frustrated and eternally occupied with jumping through their hoops so we don't notice the fucked up shit going on in the world. But I digress hehehe. Sorry I didn't have any solution, just a rant cuz I agree with you. It's MY DATA!
+
+
+
+3
+
+
+cacadetara
+•
+1 rok temu
+My guy wrote an essay
+
+
+
+5
+
+
+
+Jeszcze 1 odpowiedź
+Difficult-Ability621
+•
+1 rok temu
+Final-Investment-299
+•
+2 lata temu
+You could try using an android emulator on your PC, log in to paypal through that and take a picture with your phone
+
+
+
+2
+
+
+entryjyt
+•
+2 lata temu
+Maybe try disable flag secure lsposed module if your device is rooted
+
+
+
+2
+
+
+Awatar użytkownika u/rokejulianlockhart
+rokejulianlockhart
+•
+1 rok temu
+I've asked this at android.stackexchange.com/q/260320.
+
+
+
+2
+
+
+Shoddy-Atmosphere541
+•
+1 rok temu
+Hello , I have had the same problem when trying to take a screenshot of someone, so I had the phone on my phone and I got a friend to take a photo of my picture on my phone by carefully holding their phone over my phone to tilt your phone until the image is nice and square then take the photo of your phone and ask them to send the photo to you. To make more progress about the person in the photo just go to google home page and on the right side of where you write things you will see a little square. Now when you touch the square it will take you to your photo album then you will find the photo and save it and then it will give you all the information about this person. I have done it several time and it will bring up all the information about this person and also it will bring up all the names they use if they are crooks Because Scammers never use their own name or photo. It’s very interesting to find out all about scammers that don’t want you to know anything about them.
+
+Just try you will be amazed with the results
+
+
+
+2
+
+
+
+Jeszcze 1 odpowiedź
+Suundumused
+•
+1 rok temu
+Little by little, Android is becoming an iPhone IOS, all restricted and full of security locks with regulations. Simple machine events like capturing the rendered image require Root access to see what is drawn on the GPU, since everything goes through the API, which means that in the future this can be used against you if you are sanctioned, perhaps being a "sudo" user, but Apps can also check if you are Rooted or JailBroken, the new versions of Android, disabling and re-enabling Root requires formatting the device, the essence of what Android is, is gone.
+
+
+
+2
+
+
+luka_lekic
+•
+1 rok temu
+You can install an app for cloning, for example, I use "Parallel Space", but you can also try "2Accounts" or "Parallel App" since both are available on Google Play. U can install paypal inside that app (since it has playstrore inapp) and log in, you'll be able to take screenshots without any issues. It works for me and I'm using a Samsung S24 with Android 15. The only "problem" is ads on free versions but they ain't agressive, atleast in my case
+
+
+
+2
+
+
+
+Jeszcze 1 odpowiedź
+wizechoices
+•
+1 rok temu
+They are also blocking us from comparing prices. Costco app won't let me take pictures of products I'm interested in or want to share.
+
+
+
+2
+
+
+DragonWolf5589
+•
+1 rok temu
+did you find out? annoying when I have to type a voucher number which is 50 characters long and I can't even screenshot or extract the text or anything.
+
+Also even things like supermarket apps I sometimes grab things an spay on my phone.. I can't even take a screenshot of the receipt and once I'm left the shop the app closes it and I can NEVER get my recipt again. I like to keep track but screenshot not allowed!
+
+I tried screen recording too but it's just black screen
+
+
+
+2
+
+
+HopeComfortable7989
+•
+1 rok temu
+
+Salomonsk8r2001
+•
+1 rok temu
+Hopefully this helps someone:
+
+I just needed a screenshot of some blood lab results in a hospital app to text to my PA (he's my buddy), but it wouldn't let me. 
+
+There was, however, a print button. Printed to .pdf and saved it on the device. Sent him the pdf on Google chat (what we use to text). 
+
+The PayPal app (or any app the next reader needs) might have a print option.
+
+
+
+2
+
+
+
+
+
+
+
+
+
+Awatar użytkownika u/PrinceAdelin
+PrinceAdelin
+•
+4 mies. temu
+Totally agree 
+
+Im sick to death of banking Apps and Railcard apps that block screenshots 
+
+I don't give a stuff about the reason for security etc. Its my phone and my information 
+
+
+
+2
+
+
+
+
+
+
+
+
+
+SuperBeast616
+•
+3 mies. temu
+Okay I just got it working...
+
+Tasker
+
+Shizuku
+
+https://github.com/jimmychanii/CaptureSecureScreen
+
+Tasker triggers when logcat says a screenshot has been requested
+
+If there is no new screenshot then CaptureSecureScreen runs
+
+The file is then moved to the screenshots folder and a media scan is ran on the file so it shows in gallery.
+
+So now I just take a screenshot as normal and laugh when I see the screenshots disabled message.
+
+
+
+2
+
+
+
+
+
+
+
+
+
+
+Jeszcze 1 odpowiedź
+Temp-o-Mat
+•
+2 mies. temu
+... das geht scheinbar nur über das PayPal Webinterface.
+
+sollte der Android Browser aber immer die App öffnen dann braucht man ein Browser Plugin das sich bei Firefox User-Agent Switcher nennt. in dem Plugin stellt man dann z.B. Windows/Firefox ein und dann kann man das aufrufen der PayPal App verhindern. ... klar am PC direkt geht's auch.
+
+... schönen Tag noch!
+
+
+
+2
+
+
+
+
+
+
+
+
+
+Awatar użytkownika u/satya_strth
+satya_strth
+•
+2 mies. temu
+i think there is a way but it works on Motorola phones( tested on my moto edge 60 fusion). connect you pc/laptop to your phone using smart connect(comes pre installed with moto phones) and use the app steaming feature to get the app running on pc/laptop and then use windows inbuilt snipping tool to take screenshot or record the running app. tested by me and it works
+
+
+
+2
+
+
+
+
+
+
+
+
+
+Awatar użytkownika u/dolby12345
+dolby12345
+•
+2 lata temu
+I just took a screen shot via the app.
+
+Anyways. Why don't you use your phone and take a Pic on your desktop screen? You say you have both.
+
+Or try using a browser on your phone and not putting it into desktop mode.
+
+
+
+1
+
+
+
+
+
+
+
+
+
+
+Jeszcze 1 odpowiedź
+RIXPLAYERPRO
+•
+2 lata temu
+Screen Recording had no sound on specific Roblox game.
+
+
+
+1
+
+
+
+
+
+
+
+
+
+infreq
+•
+2 lata temu
+Take pictures of your screen...
+
+
+
+1
+
+
+
+
+
+
+
+
+
+
+Jeszcze 1 odpowiedź
+3DRAH33M
+•
+2 lata temu
+You can if your phone is rooted
+
+
+
+1
+
+
+
+
+
+
+
+
+
+Awatar użytkownika u/-Kyo--
+-Kyo--
+•
+2 lata temu
+Try AZ screen recorder or a similar screen recording app. Sometimes it won't be detected by the software, and you can go take the ss from the recording.
+
+
+
+1
+
+
+
+
+
+
+
+
+
+
+Jeszcze 1 odpowiedź
+Awatar użytkownika u/Powerfader1
+Powerfader1
+•
+2 lata temu
+Use the snipping tool
+
+
+
+1
+
+
+
+
+
+
+
+
+
+lewsnutz
+•
+2 lata temu
+Snipping tool from a pc?
+
+
+
+1
+
+
+
+
+
+
+
+
+
+[usunięto]
+•
+2 lata temu
+Use other phone or sometimes you can screen record before entering the app
+
+
+
+1
+
+
+
+
+
+
+
+
+
+
+Jeszcze 1 odpowiedź
+Pigspot
+•
+2 lata temu
+On rooted phone u can bypass the flag using xposed
+
+
+
+1
+
+
+
+
+
+
+
+
+
+Awatar użytkownika u/SouthBeyond1918
+SouthBeyond1918
+•
+2 lata temu
+take a picture of the transactions with 1 device pointing at the 2nd?
+
+
+
+1
+
+
+
+
+
+
+
+
+
+txsoccer04
+•
+2 lata temu
+If you log in through whatever search engine app you use. You can screen shot it through there. Works with telegram. Not sure about other apps.
+
+
+
+1
+
+
+
+
+
+
+
+
+
+murkymoon
+•
+1 rok temu
+I seriously can't wrap my head around why any screenshot app can't simply force an image of whatever is on the screen without drawing on metadata. When using an app that has a printing feature such as a browser, it will show whatever is on the screen regardless of screenshot permissions. I can save the images as a PDF and then screenshot them from there.
+
+Why can't screeshot apps work directly in the same manner?
+
+
+
+1
+
+
+
+
+
+
+
+
+
+Floptacular
+•
+1 rok temu
+Because appA tells the operating system "don't allow screenshots of me" so when appB asks the operating system "please take a screenshot now" the os says "appA is on screen and it restricts screenshots, so no"
+
+
+
+2
+
+
+
+
+
+
+
+
+
+
+Jeszcze 5 i
+Awatar użytkownika u/Delicious_Finish5140
+Delicious_Finish5140
+•
+1 rok temu
+Minimize the app. Start screen recording. Open the app. Save screen recording Edit video. Capture desired frame.
+
+
+
+1
+
+
+
+
+
+
+
+
+
+Awatar użytkownika u/Blackops_21
+Blackops_21
+•
+10 mies. temu
+Blacked out screen when viewing the recording.
+
+
+
+2
+
+
+
+
+
+
+
+
+
+InsuranceOk8745
+•
+1 rok temu
+still cant get it...
+
+
+
+1
+
+
+
+
+
+
+
+
+
+NgKtoolz
+•
+1 rok temu
+You can simply take a screenshot or use xposed to disable flag_secure and get rid of that annoying thing once and for all
+
+
+
+1
+
+
+
+
+
+
+
+
+
+64-matthew
+•
+1 rok temu
+On my computer l hit the windows key and printscreen key to get a screen shot
+
+
+
+1
+
+
+
+
+
+
+
+
+
+Awatar użytkownika u/Elegant-Currency-289
+Elegant-Currency-289
+•
+1 rok temu
+You can screen mirror your android to PC and use a pro screen recorder to screenshot it. some apps like easeus screen recorder support to screeen record or screenshot protected content. Here is a guide shows you more practical methods to screenshot in restricted app. Hope it's useful!
+
+
+
+1
+
+
+
+
+
+
+
+
+
+
+Jeszcze 3 i
+ButtercupsUncle
+•
+1 rok temu
+I attempted to do that but, like some financial apps, the Netflix app disables screenshots and printing is not an option in the app. The only workaround that occurs to me is to pause the Netflix program and take a picture of the screen with another device.
+
+There MAY be a way to circumvent the screenshot disabling but that's beyond my knowledge and might violate the Netflix TOS and risk getting your account frozen\revoked.
+
+There's also a screen recording feature in Android but I'll bet they disabled that too.
+
+
+
+1
+
+
+
+
+
+
+
+
+
+Kitt2k
+•
+1 rok temu
+Just use a 2nd or spare phone to take photo/videos of it. It's sad that it has come to this redundancy method.. smartphone my ass! 
+
+
+
+1
+
+
+
+
+
+
+
+
+
+Hackerheroofficial
+•
+1 rok temu
+If you really need screenshot, using virtual machines like Bluestacks, Windows Subsystem for Android and similar tools might help. Direct screenshot capturing is now a mere bug researchers need to find out.
+
+
+
+1
+
+
+
+
+
+
+
+
+
+spicydisaster_
+•
+1 rok temu
+Now you cant even take a screenshot of someone's dp on whatsapp.
+
+
+
+1
+
+
+
+
+
+
+
+
+
+AsherthonX
+•
+1 rok temu
+Dude more and more apps are blocking the screenshot function. What’s the use of a screenshot function if it doesn’t work?!?!
+
+
+
+1
+
+
+
+
+
+
+
+
+
+computermajestic098
+•
+1 rok temu
+Only way if you wanna solve it simple....take from other phone
+
+
+
+1
+
+
+
+
+
+
+
+
+
+Awatar użytkownika u/FabulousKnee1364
+FabulousKnee1364
+•
+1 rok temu
+Dunno same prob mirror reflection?
+
+
+
+1
+
+
+
+
+
+
+
+
+
+wizechoices
+•
+1 rok temu
+I feel blocking us from taking pictures on our own phones is too much over reach and control. And that is just what we notice.
+
+
+
+1
+
+
+
+
+
+
+
+
+
+Awatar użytkownika u/lineman108
+lineman108
+•
+1 rok temu
+If you have a second phone, take a photo of your phone with the second phone and send it to yourself
+
+
+
+1
+
+
+
+
+
+
+
+
+
+Awatar użytkownika u/Ecureuil02
+Ecureuil02
+•
+1 rok temu
+Go in desktop mode. 
+
+
+
+1
+
+
+
+
+
+
+
+
+
+Standard-Elk-2943
+•
+10 mies. temu
+Take photo of it on a different phone 
+
+
+
+1
+
+
+
+
+
+
+
+
+
+Own_Combination6675
+•
+9 mies. temu
+Easiest way I found is to go I to recent apps then take a screenshot while it's reduced, it works but might affect quality
+
+
+
+1
+
+
+
+
+
+
+
+
+
+TwoTeamedUnicycle
+•
+7 mies. temu
+This is where I landed on a search about screenshots, and it turns out PayPal is also my reason for wanting to do this (no PayPal in search term, just coincidence). Anyway, I just wanted to post a whinge really. This is bulldung of PayPal to stop screenshots like that. In my case, I was late on a payment due to a glitch in PayPal's sort order, and wanted to capture proof to report it to them. I'm surprised they're not regulated like Banks - I mean surely being able to print transactions and accounts would be mandatory for a bank legislatively/regulationary speaking.
+
+
+
+1
+
+
+
+
+
+
+
+
+
+Awatar użytkownika u/TheManfromOz2020
+TheManfromOz2020
+•
+7 mies. temu
+It's ridiculous that we cant take a picture of our devices screen with our own device, if we can see it on our own screen, we should have a right to take a copy of it. The dumb thing is I just use my other phone and they can't stop me doing that, its my device and it should do what I want, not what other people want me to do.
+
+
+
+1
+
+
+
+
+
+
+
+
+
+Worldly_Letterhead_4
+•
+6 mies. temu
+Get on a computer, log in to PayPal and use SnagIt to capture the screenshot.
+
+
+
+1
+
+
+
+
+
+
+
+
+
+Awatar użytkownika u/CommunicationKind117
+CommunicationKind117
+•
+6 mies. temu
+The worst are apps that literally ask you to share something with your friends but the app disallows screenshots
+
+
+
+1
+
+
+
+
+
+
+
+
+
+shann_onthego
+•
+4 mies. temu
+Imo it is pointless. If anyone really wants to capture the screen, they can just use another phone. When it comes to banking, if you really want to capture the screen, you can just log in from a PC and capture the required data. So this isn't a fool proof solution. Ok I guess I can excuse financial apps to a certain extent but WhatsApp???
+
+
+
+1
+
+
+
+
+
+
+
+
+
+Awatar użytkownika u/Weak-Whereas-3530
+Weak-Whereas-3530
+•
+4 mies. temu
+Perso je clique sur les 3 petits points sur le bas droit de mon téléphone sur le navigateur et je fais imprimer et je le télécharge en PDF, je fais l’impression écran depuis le PDF et ensuite je supprime le PDF
+
+
+
+1
+
+
+
+
+
+
+
+
+
+WindowzExPee
+•
+3 mies. temu
+What the bull fucking hell is this feature... It's my phone I'll take a screenshot if I damn well please.
+
+
+
+1
+
+
+
+
+
+
+
+
+
+Awatar użytkownika u/NarrowLab4794
+NarrowLab4794
+•
+3 mies. temu
+I just uninstalled updates and can screen shot again like before
+
+
+
+1
+
+
+
+
+
+
+
+
+
+PrestigiousAd2950
+•
+3 mies. temu
+For this exact stupid features, i have to buy and 2nd phone just for snapping a picture on my screen. My work app won't allow screenshot for some reason and i can't send a screenshot or picture from the gallery through the app. I'm in a country where QR payments is the most used paying method and yet my work app decided i can't send a screenshot to the customer, i have to snap a picture to send it.
+
+
+
+1
+
+
+
+
+
+
+
+
+
+Awatar użytkownika u/Technical-Assist-441
+Technical-Assist-441
+•
+3 mies. temu
+So.... Just turn on screen recorder, start on a different screen.   Navigate to PayPal.  Go to what u want to screen shot.  Stop recording.  Play it back and screen shot that. 
+
+
+
+1
+
+
+
+
+
+
+
+
+
+
+Jeszcze 1 odpowiedź
+Awatar użytkownika u/kirbyudummy
+kirbyudummy
+•
+2 mies. temu
+I use galaxy phones. I have mine paired to my pc and I just use the snipping tool to cut an image of my phones projection on the pc. Never had an issue using it. Worst case can obs it and cap the video
+
+
+
+    resizeCanvas();
+
+    // Update timestamp every second
+    setInterval(drawWatermark, 1000);
+
+    // Anti-Tamper: Prevent students from deleting or hiding the watermark via DevTools
+    const observer = new MutationObserver(() => {
+        if (!document.body.contains(canvas) || canvas.style.display === 'none' || canvas.style.visibility === 'hidden') {
+            // Force reload, log the event to the server, or re-append the canvas
+            window.location.reload();
+        }
+    });
+    observer.observe(canvas.parentElement, { childList: true, attributes: true, subtree: true });
+}
+
+// Example Initialization on Session Start
+// initForensicWatermark("STU_84920", "SESS_9921A3B");
+4. Advanced Security HardeningIf this is deployed via a desktop application wrapper (like Electron or a custom web-view launcher):Disable DevTools: Ensure users cannot right-click to inspect elements or open developer consoles to delete the JavaScript loop.Canvas Poisoning Protection: Regularly check server-side if the active session is streaming heartbeat tokens that include verified client-side timestamps.
+Single DICOM Study Isolation:
+
+When Moodle generates the AppStream session, pass the target StudyInstanceUID via AWS SDK (boto3) parameter overrides or a dynamic launch script (session_config.json).
+
+The desktop DICOM viewer launches pre-parameterized to pull only that specific study from the private VM, preventing students from browsing other patient records.
+
+2. Moodle Integration & Automated Grading Architecture
+Moodle LTI 1.3 Flow
+Launch: The student opens the assignment in Moodle. Moodle sends a signed LTI 1.3 launch payload to the middleware on your VM.
+
+Session Creation: Middleware calls AWS AppStream CreateStreamingURL with the student context and assigned DICOM ID, returning an embedded URL rendered in a Moodle iframe.
+
+Grade Posting: Upon diagnosis submission, the middleware uses LTI 1.3 Assignment and Grade Services (AGS) to push the computed grade back to Moodle's gradebook.
+
+Automated NLP Pipeline (scikit-learn)
+The NLP service cleans medical text and evaluates it using a Naïve Bayes classifier:
+
+Python
+import re
+import joblib
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+
+def text_regularization(text: str) -> str:
+    # 1. Lowercase and strip whitespace
+    text = text.lower().strip()
+    
+    # 2. Preserve clinical negations while removing irrelevant punctuation
+    # Replaces sentence boundaries, removes non-alphanumeric except space
+    text = re.sub(r'[^a-z0-9\s]', '', text)
+    
+    # 3. Collapse multiple spaces
+    text = re.sub(r'\s+', ' ', text)
+    return text
+
+def evaluate_diagnosis(raw_text: str, model_path: str, vectorizer_path: str):
+    # Load pretrained artifacts
+    model: MultinomialNB = joblib.load(model_path)
+    vectorizer: TfidfVectorizer = joblib.load(vectorizer_path)
+    
+    # Preprocess & Vectorize
+    cleaned_text = text_regularization(raw_text)
+    features = vectorizer.transform([cleaned_text])
+    
+    # Predict diagnosis class and confidence
+    prediction = model.predict(features)[0]
+    probabilities = model.predict_proba(features)[0]
+    confidence = max(probabilities)
+    
+    return {
+        "predicted_label": prediction,
+        "score_percentage": float(confidence * 100)
+    }
+Note on Medical Text Regularization: Standard stop-word removal strips words like "no", "not", or "without". Custom medical stop-word lists must retain negation tokens, as "no evidence of consolidation" versus "evidence of consolidation" drastically alters the diagnosis grade.
+
+
+Good news first: nothing here is a bad idea. The instinct to isolate the viewer from the endpoint, accept that screenshots can only be deterred not blocked, and keep raw DICOM off the student's laptop is all correct. But the plan as written is architecture-first and product-second — it's missing the governance layer, it's silently scoping in a genuinely hard ML problem, and it doesn't yet distinguish "cheap and fast" from "expensive and slow" paths that both technically satisfy the brief. Here's the critical pass.
+
+One correction to the source material before anything else: AppStream 2.0 has been rebranded — it's now marketed as Amazon WorkSpaces Applications (formerly AppStream 2.0), offering flexible pricing with hourly streaming costs plus monthly user fees, with multi-session support and elastic scaling. 
+Amazon Web Services
+ Same service, same APIs, new name in the console and docs — worth knowing so you're not searching for a "deprecated" product.
+
+Is full desktop streaming actually the right tool?
+
+The proposal jumps straight to streaming a whole remote desktop/DICOM app. Push back on that. Your actual requirement — "single image at a time, in a dedicated window, from a large study" — describes a web-based slice viewer, not a desktop application. Two real options, not one:
+
+Native DICOM app streamed via AppStream (what's proposed): heavier, needs a Windows golden image, likely a commercial viewer license, and Windows fleets carry a Microsoft RDS SAL fee per user on top of compute. More capability than you need, more moving parts to maintain.
+Your own server-rendered web viewer (Cornerstone.js/OHIF-style canvas, one frame served at a time, watermark baked into the pixels server-side) running inside a locked-down Linux kiosk browser in AppStream. This gets you AppStream's real value — a hardened, no-local-filesystem, no-dev-tools client environment — without Windows licensing overhead, since Linux AppStream fleets stream applications at lower cost than Windows, charged per second with no per-user licensing fee. It's also your code, so watermarking, session binding, and single-slice logic are entirely under your control instead of bolted onto a third-party viewer.
+
+My recommendation: build path 2. It's cheaper, faster to iterate, and doesn't tie your grading/session logic to a desktop app's UI quirks.
+
+One thing to say out loud to stakeholders now, not after launch: you cannot actually prevent screenshots on an unmanaged personal laptop. The forensic watermark is the correct response to that reality — it's deterrence and attribution, not prevention. The MutationObserver anti-tamper trick in the draft is close to theater: a phone camera photo never touches the DOM, and disabling JS entirely (or just not running it) sidesteps the watermark too. Don't let anyone on the compliance side believe this is a technical guarantee — it's a policy + honor code + traceability control, and that distinction needs to be in whatever consent/acceptable-use document students sign.
+
+Product/engineering gaps not yet on the plan
+Tile/frame serving for "thousands of images per slide" — naive full-study transfer to the viewer will choke at 10-20 concurrent students. You need proper DICOMweb-style frame-on-demand serving (WADO-RS or equivalent), not "load the study, page through files."
+Session/scheduling system — "dedicated serial numbers connected to Moodle" implies a booking/allocation service that doesn't exist yet: who builds the calendar, how are conflicts handled, what happens if a cohort is 22 students against a 20-seat fleet.
+Fleet cold-start latency — On-Demand fleets take up to ~90 seconds to power on a stopped instance, while Always-On instances start almost immediately but you pay the hourly fee even when idle. For a class starting punctually at a scheduled time, that's a real UX risk — either pre-warm capacity before class (costs more) or accept a rocky first few minutes.
+Identity/session binding — LTI gives you who the student is; you still need to build the mapping from that identity to a specific study, a specific watermark token, and an audit log entry, plus handle disconnect/resume gracefully.
+Where does the backend VM actually live? The brief says "our VM," but the diagram implies AWS. If it's on-prem, you need VPN/Direct Connect between AppStream's VPC and your network, which is a materially different (and slower to approve) design than an all-AWS VPC.
+Support during live sessions — if a stream freezes mid-class with 20 students watching, who's on call?
+Student device/bandwidth reality — personal unmanaged laptops vary wildly. Set a minimum bandwidth/browser bar and have a fallback (campus lab) for students who can't meet it, or you'll get equity complaints.
+The automated grading piece is the biggest hidden risk — bigger than the infrastructure
+
+Text-cleaning + TF-IDF + Naive Bayes on free-text diagnoses sounds like a small feature. It isn't. A few concrete problems:
+
+You need labeled training data that doesn't exist yet — hundreds of prior student diagnoses per case, each labeled correct/incorrect by a radiologist, before the model has anything to learn from.
+Bag-of-words models are structurally blind to negation and word order, not just to stop-word choices. "No evidence of consolidation" and "evidence of consolidation" produce nearly identical TF-IDF vectors regardless of how carefully you tune the stop-word list — this needs proper negation scoping (e.g., a NegEx-style rule pass) or a model that actually reads sequence, not aggressive regex cleaning.
+The aggressive regex in the draft ([^a-z0-9\s]) strips things like laterality markers, vertebral levels ("L4-L5"), and grading notation ("grade II-III") that can carry real clinical meaning — a subtle bug that would quietly corrupt grading accuracy.
+This is a research-flavored problem requiring iterative validation with an actual radiologist, not a two-sprint engineering task.
+
+My strong recommendation: cut it from the MVP. Ship manual or keyword-assisted grading first, collect real labeled data during the pilot semester, and treat automated grading as a phase-2 initiative with its own timeline and its own owner (ideally a faculty radiologist, not just the dev team).
+
+Governance and organizational issues (the non-engineering half)
+
+This is where I'd expect your actual delays to come from, not the code:
+
+Data provenance and consent. Where do the DICOM studies come from? Even de-identified, real patient imaging used for teaching typically needs an ethics/IRB sign-off and a documented de-identification pipeline (DICOM header scrubbing — patient name, ID, DOB, accession number, institution — not just "we won't show the name field").
+DPO/GDPR review. Health imaging is special-category data. You'll likely need a Data Protection Impact Assessment, an entry in the university's records of processing, and confirmation that your AWS region choice keeps data in the EU if that's a requirement for your institution.
+AWS Data Processing Agreement / region selection. Confirm you're deploying in an EU region (e.g. eu-central-1) and that your organization has AWS's standard DPA in place — this is usually a procurement/legal task, not an engineering one, and it can quietly sit in someone's inbox for weeks.
+IT security review. Any tool touching medical imaging, even de-identified, will likely need to go through your university's infosec review or a pentest before go-live. This is the single most common source of "why did this take 3 extra months" in academic health-tech projects — get it scheduled now, not after the build.
+Moodle-side approval. Registering an LTI 1.3 external tool usually needs sign-off from whoever administers your Moodle instance, plus confirming your Moodle version actually supports LTI Advantage/AGS (grade passback).
+Content ownership. Someone — ideally a named radiology faculty member — needs to own case selection, "gold standard" diagnoses, and (later) the grading rubric. Without that owner, the tech can be perfect and the project still stalls for lack of content.
+Student consent for monitoring. Session watermarking and forensic logging are themselves personal data collection about students — they need to know and consent to it, not just the patients in the images.
+Sustainability. Who owns the AWS bill and the codebase after this 3-person team's involvement ends? Academic tooling projects die quietly all the time because nobody budgeted for year 2.
+Licensing costs, if you go the commercial-viewer route instead of open source (RadiAnt, OsiriX MD, etc. are typically $100-300/seat/year) — factor this in before committing to that path.
+Suggested MVP scope
+
+Cut automated grading and any commercial desktop viewer from v1. Ship: VPC-isolated backend with an open-source DICOM store (Orthanc or dcm4che), your own single-slice web viewer with server-side watermarking, a Linux AppStream/WorkSpaces-Applications kiosk in front of it, LTI 1.3 launch from Moodle, and manual/keyword-flagged grading. That's a coherent, defensible, and much cheaper first release.
+
+Timeline and effort — 3-person team, full-time
+Phase	Calendar time	Person-days	Deliverable
+0. Discovery, data provenance, compliance kickoff	2–3 wks	10–15	Architecture decision made, ethics/DPO conversation started
+1. Core infra (VPC, DICOM store, streaming fleet)	3–4 wks	30–35	Isolated network, de-identified studies loaded, fleet running
+2. Viewer + watermark + session isolation	3 wks	25	Student sees one assigned study, one slice at a time, watermark live
+3. Moodle LTI 1.3 integration + scheduling	3 wks	25	Launch from Moodle assigns correct study + serial number
+4. Pilot, security review, bug-fixing	2–3 wks	20	One real class run end-to-end
+MVP total	~13–16 wks (3–4 months)	~110–130	Deployable core product, manual grading
+5. (Phase 2) NLP-assisted grading	5–8 wks	40–55	Only after labeled data + faculty rubric exist
+
+Total with phase 2: roughly 5–6 months, ~150–185 person-days. That assumes the team is dedicated full-time and nothing external blocks you — in practice, the security review and compliance sign-offs above are the most likely things to blow this out by another 1–2 months, and they're outside engineering's control.
+
+Infrastructure cost — the good news
+
+The AWS bill is very unlikely to be your budget problem; engineering time and compliance overhead will dwarf it. For a light academic usage pattern (say ~15-20 students, a couple of sessions a week during term):
+
+Lean path (Linux fleet, open-source viewer): streaming compute alone is roughly $30-60/month at typical light usage, since Linux fleets bill per second at a lower rate than Windows with no per-user licensing fee. 
+AWS
+ Add a modest backend EC2 instance for the DICOM store (~$100-150/month), storage (~$10-20/month for a few hundred GB), and NAT/VPC overhead (~$35-50/month). Total: roughly $150-300/month in production, likely less.
+Heavier path (Windows fleet + commercial desktop viewer): instance rates alone run $0.10 to $0.25 per hour depending on instance type, plus storage and data transfer charges, 
+GO-Global
+ and Windows fleets add a monthly per-user RDS licensing fee — one worked AWS example shows a 100-hour-per-user month costing roughly $14.70 per user including the RDS SAL fee, 
+Amazon Web Services
+ before any commercial viewer license. Scaled to your group, that's still not enormous, but it's 3-5x the lean path with no functional benefit for your use case.
+
+Run your actual numbers through the AWS Pricing Calculator once you pick an instance type and usage pattern — these are ballparks, not a quote. But the headline is: don't let infra cost drive the architecture decision here. Compliance timeline and dev effort will decide the schedule; the AWS bill is a rounding error either way.
+
+Questions worth getting answered before you lock the plan in
+Are the DICOM studies real (anonymized) patient data or synthetic/licensed teaching sets? This single answer determines whether you need IRB/ethics approval at all.
+Will the backend VM actually live on AWS, or on-prem/another provider? Changes the networking design materially.
+Is the 3-person team full-time dedicated, or a part-time side project alongside other work? The estimate above assumes full-time — halve the pace if not.
+
+Happy to go deeper on any one piece — the watermarking implementation, the LTI/AGS grade-passback flow.
+
+
+
+
+
+Implementation Phases
+
+Content Preparation
+
+Collection and preparation of lecture materials (Moodle).
+
+Cost simulation per virtual machine.
+
+Selection and anonymization of 500 DICOM studies.
+
+Linking existing reference descriptions (ground truth) to the corresponding studies on the IP_CMC platform and verifying their completeness and consistency.
+
+Classifying all studies according to the Lung-RADS categories (0–4X) and distributing them across the learning, assessment, and test phases in a way that ensures each class is represented.
+
+Technical Preparation
+
+Course setup on Moodle (structure, access permissions, schedule).
+
+Implementation and integration of the IP_CMC platform for viewing DICOM images.
+
+Setup of the registration, payment (300 PLN), and access grant mechanisms for 1 month.
+
+Technical testing (load testing, UX, compatibility with browsers/diagnostic monitors).
+
+Pilot
+
+Launch with a small test group (e.g., 5–10 radiologists).
+
+Collecting feedback on the platform’s usability and difficulties encountered during the exams.
+
+Revising the pool of exams and materials based on the pilot results.
+
+Launch of the training program (full version)
+
+Recruitment and registration of participants.
+
+Implementation of the learning, assessment, and testing modules on a monthly cycle.
+
+Ongoing technical and content support (help desk).
+
+Certification
+
+Verification of final test results.
+
+Issuance of certificates by CKP GUMed.
+
+Evaluation and Scientific Publication
+
+Statistical analysis of results (learning curve, agreement with ground truth, pre/post comparison).
+
+Preparation of a manuscript
+
+Scaling and Continuation
+
+Decision to adopt an open-ended format—subsequent, recurring editions.
+
+Development of the study database and updating of teaching materials.
+
+
+
+Challenges
+
+Quality and representativeness of the study database—the need to ensure diversity of cases (various types of lesions, degrees of difficulty, technical quality of studies) and reliable anonymization of patient data (GDPR).
+
+Consistency and format of existing reference descriptions—study descriptions are already available, but it is worth verifying their uniformity (format, level of detail, potential discrepancies among authors) before using them as the basis for evaluation and feedback to participants.
+
+Balanced distribution of studies across Lung-RADS classes—with a pool of 500 studies, some categories (e.g., 4B, 4X) may occur less frequently than others, making it difficult to ensure a representative number of each category in each of the three stages (learning/evaluation/test) without exceeding the total pool of 130 studies per participant.
+
+Integration of two platforms—Moodle and IP_CMC must operate seamlessly (single sign-on, access synchronization, a transparent process for the user).
+
+Maintaining an open-ended format—the need to ensure ongoing funding, technical support, and content updates without a specified end budget.
+
+Scalability of the IP_CMC infrastructure—platform performance when multiple users work simultaneously on large DICOM files.
+
+Formal and legal aspects of certification—compliance with CKP GUMed requirements regarding continuing education (educational credits, accreditation).
+
+Motivation and course completion—given the low cost (300 PLN) and the fact that participation is not mandatory, there is a risk of a low course completion rate.
+
+Keeping the database up to date—with an open-ended format, the pool of 500 studies may eventually become “familiar” to repeat participants, which will reduce the diagnostic value of the test.
+
+Cost of maintaining the virtual machine
+
+Remote desktop --> link --> viewer
+
+Meeting on Wednesday (12:00 p.m.).
+
+
+
+This document changes more than it looks like at first glance — it's not just clinical color, it reshapes the product, resolves one of my biggest earlier concerns, and quietly adds a lot of new scope. Let me walk through the delta.
+
+What changes vs. what we assumed before
+	Assumed before	Now known
+Users	Medical students on personal laptops	Licensed radiologists, paying for CME/certification
+Grading	Free-text diagnosis via NLP/Naive Bayes	Structured Lung-RADS category selection (0–4X)
+Business model	One-off academic exercise	Paid (300 PLN), certificate-bearing, indefinite/recurring
+Scope	Viewer + watermark + Moodle launch	All of that, plus payments, certification, admin dashboard, leaderboard, expert-review queue
+The good news first: your grading risk mostly disappears
+
+Last time, I flagged automated NLP grading of free-text diagnoses as the single biggest hidden risk in the project — bag-of-words models don't handle negation or word order well, and you'd have needed months of labeled data and clinical validation to make it trustworthy.
+
+This document changes that. If the participant's task is to select a Lung-RADS category (0, 1, 2, 3, 4A, 4B, 4X) rather than write free text, grading becomes trivial: compare the selected category to the ground-truth category for that study. That's a lookup, not a research project. It also gives you clean, immediate feedback ("real-time feedback—automatically comparing the physician's assessment with the radiological report") and clean statistics for the publication (agreement/kappa vs. ground truth, per-category error rates) essentially for free.
+
+One thing I'd nail down explicitly, because the document doesn't fully settle it: is the participant's submission purely a category selection, or also a free-text impression/report? If it's category-only, you can genuinely skip NLP entirely for v1. If there's also a text component (common in real Lung-RADS reporting, which usually pairs the category with a short impression), that text can be collected and stored for the "learning value" and for the expert-review flag feature, without needing to auto-grade it — grading stays purely categorical, text is supplementary. That distinction is worth confirming with your PM before you build anything.
+
+The scope that got added
+
+None of this existed in the infrastructure conversation before, and each one is a real work item, not a footnote:
+
+Payment processing — 300 PLN per participant, 1-month access window. You need a payment gateway (Przelewy24/PayU/Stripe are the usual options in Poland), an access-expiry mechanism tied to payment status, and — since this is a public university — likely invoicing/VAT handling. Never build a custom card-entry form; use a hosted checkout from the payment provider so you're not touching card data at all.
+Certificate issuance tied to a pass threshold (~70–80%, TBD with "the professor") — needs a formal record of completion, a certificate-generation step, and CKP GUMed's own accreditation/CME-credit requirements, which is an institutional compliance question, not an engineering one.
+Admin dashboard — progress, completion rates, time-on-task.
+Leaderboard/ranking vs. group median — new UI surface, and a privacy question: physicians probably shouldn't see each other's names next to scores, so this needs pseudonymous ranking.
+Expert-review/dispute queue — "flag as ambiguous, submit to expert" is a small workflow engine: a queue, a reviewer role, a resolution path back to the participant.
+Stratified case-assignment engine — this is the one I'd flag as genuinely non-trivial. Your PM already identified the hard part herself: some Lung-RADS categories (4B, 4X especially) will be rare in a 500-study pool, and each participant needs a representative draw across 130 studies (50/50/30) without every cohort seeing identical cases (that kills the "prevent memorization across editions" goal). That's a real allocation algorithm — stratified random sampling per stage, per category, with rotation logic across cohorts — not just "assign the next 130 studies in the list."
+Research data export — for the planned manuscript, you'll want clean, analysis-ready export (per-participant, per-case results with category, ground truth, timestamps) built in from day one, since retrofitting that later means re-deriving data you never captured cleanly.
+A second ethics approval, separate from the teaching one — publishing aggregate/de-identified performance data from participants is its own research-ethics question, distinct from the patient-image anonymization approval you'd need anyway. Worth surfacing to your PM early since ethics committee timelines are usually the slowest thing in the whole project.
+A new technical requirement that actually worries me more than the screenshot problem
+
+This is the one I'd raise proactively, because it's not in anyone's notes yet: if you stream the viewer as compressed video (which is what AppStream/WorkSpaces Applications does under the hood), you're putting a lossy video codec between the radiologist's eye and a lung nodule that might be a few millimeters across. Video codecs are tuned for perceptual quality of natural motion video, not for preserving subtle grayscale gradients in a windowed CT slice. For a training exercise that's feeding into a certificate and a scientific manuscript about diagnostic accuracy, you don't want "the participant missed the nodule" to actually mean "the compression artifacted it away."
+
+Your PM's own document already flags "compatibility with browsers/diagnostic monitors" as a testing item — I'd take that further: test explicitly whether subtle Lung-RADS category 3/4A findings (the borderline cases she specifically wants well-represented) remain visually distinguishable after your rendering pipeline, compression included, versus viewing the same study in a standard desktop DICOM viewer. If they're not, that argues for serving actual windowed pixel data (a proper canvas/WebGL viewer transmitting near-lossless PNG tiles with server-side window/level applied) rather than routing everything through a general-purpose video-streaming layer — reinforcing the "your own lightweight web viewer inside a locked kiosk" direction I recommended last time, now for image-fidelity reasons as well as cost reasons.
+
+What is "IP_CMC," exactly?
+
+The document refers to it as an existing, named thing — "the IP_CMC platform." I searched and found nothing public under that name, so it's almost certainly either an internal GUMed system or the working name for what you and I have been designing. This matters a lot: if it's an existing platform someone else already built, a chunk of the architecture conversation may be moot and this becomes an integration project (SSO + data feed) instead of a build project. If it's just the name your team has given to the system we're designing, nothing changes — but you should confirm which one it is before Wednesday, because it changes what "MVP in two weeks" even means.
+
+About the two-week MVP
+
+I want to be straight with you rather than just nodding along: given everything in this document, a genuinely production-ready MVP — with payment, certification, admin dashboard, and a properly curated, Lung-RADS-stratified 500-study pool with linked ground truth — is not a two-week build. That's realistically a multi-month effort, and the content curation (anonymizing, classifying, and linking ground truth to 500 real studies) is likely to take longer than the software does, and it's mostly your PM's team's work, not yours.
+
+What probably is achievable in two weeks, if that's what Wednesday's meeting actually needs, is a narrow proof-of-concept: a handful of studies (say 10–20, one per major Lung-RADS category) loaded into a bare-bones viewer with the watermark and no-download controls working, a simple category-selection grading UI, and a Moodle launch link — no payment, no certificates, no dashboard, no leaderboard. That's enough to demo the core interaction and validate the image-fidelity question above, without pretending the full system exists yet.
+
+Before I'd try to give you a real revised timeline and cost estimate, I'd want to know from your PM:
+
+Is IP_CMC existing or ours to build?
+Is the two-week deadline for an internal demo, or does it need to be usable by real pilot radiologists?
+Category-only grading, or category plus free text?
+
+Go ahead and share the screenshot-security requirements whenever you have them
+
+
+
+
+Rozmowa z Gemini
+Hi, I need aws service, I'm not sure about name. I want to set up an app which lets medical students log throught moodle to external app to view DICOM radiology images rendered per student and let them give medical opinion and diagnose. My requiremets is to not allow to download any of the images or take screenshots, and allow to present modified DICOM images with "invisible" watermark. I remember the name of the service as AWS workspaces or AWS warzone, something with DMZ networking.
+
+We will host everything on our VM with sufficient resources. What we want is to shedule sessions per 10-20 students with dedicated serial numbers connnected to moodle which will have access to different DICOM images, full scan with thousand images, but one image at the time in the dedicated window ("browser-inbrowser"). Then they will add text with diagnosis. WhatdoI need to search further or consider in this plan? If anythin is not clear ask.
+
+The AWS service you are remembering is Amazon AppStream 2.0 (or Amazon WorkSpaces Web), likely structured within an AWS Virtual Private Cloud (VPC) DMZ architecture.  
+AWS
+
+Here is how your requirements translate into cloud architecture, what AWS tools apply, and what you need to evaluate further.
+
+1. Key AWS Services to Consider
+Amazon AppStream 2.0: Managed application streaming. Instead of sending actual files or data to the student's browser, AppStream runs the viewer application on AWS and streams only encrypted video pixels to the student's web browser via HTML5. File downloading, local clipboard copying, and local disk mounting are disabled by configuration.
+
+AWS HealthImaging: Designed specifically for cloud-native DICOM data. It stores massive studies (scans with thousands of frames) and streams sub-second image frames to medical viewers without downloading raw files to client storage.  
+Amazon.com
+
+Amazon VPC / Network DMZ: Keeps your VM, database, and DICOM images isolated in private subnets with security group rules restricting outbound connections.
+
+2. Addressing Security & Technical Requirements
+Preventing Image Downloads:
+Streaming video pixels via AppStream 2.0 or a Server-Side Rendered (SSR) web viewer ensures raw DICOM files never touch the student's browser. The student only receives the rendered pixels for the single frame they are inspecting.
+
+Preventing Screenshots & Camera Capture:
+
+OS Screenshots: AppStream 2.0 client software can black out OS-level screenshots (Snipping Tool, PrintScreen). However, if students use standard web browsers on personal laptops, standard browser security cannot physically prevent third-party screen capture tools or browser extensions.
+
+Physical Photos: No software can prevent a student from taking a photo of their monitor with a smartphone.
+
+The Solution (Dynamic / Forensic Watermarking): Render a dynamic translucent overlay or steganographic (invisible) watermark into the image canvas on the server before transmitting it. Include Student_ID, Session_ID, and a Timestamp. If an image is photographed or captured, the watermark uniquely identifies the leaking session.
+
+Moodle Integration & Scheduling (10–20 Students):
+Integrate Moodle using LTI 1.3 (Learning Tools Interoperability). When a student opens the assignment in Moodle, Moodle sends an authenticated request to your backend VM. Your backend assigns a dedicated serial number/DICOM study ID, creates a timed session, and embeds the secure viewer window.
+
+3. Key Concepts & Search Terms to Research Further
+AWS AppStream 2.0 Embedded Sessions: Look up "AppStream 2.0 embed in web app iframe", "AppStream 2.0 clipboard file transfer restrictions", and "AppStream 2.0 fleet scaling for scheduled sessions".
+
+Server-Side DICOM Streaming Viewers: Search "Orthanc DICOM web viewer server-side rendering", "OHIF Viewer server-side frame extraction", or "MedDream viewer with AWS HealthImaging integration".
+
+Canvas Steganography / Dynamic Watermarking: Research "HTML5 canvas dynamic session watermark" or "Medical image forensic watermarking algorithms".
+
+Moodle LTI 1.3: Search "Moodle LTI 1.3 external tool middleware integration".
+
+Clarifying Questions
+To help tailor this design further:
+
+Will students access this from personal, unmanaged laptops (from home/dorm) or managed university desktop PCs in a lab?
+
+Is there a reason you prefer running a streaming service like AWS AppStream 2.0 over hosting a custom Server-Side Rendered HTML5 canvas web viewer directly on your VM?
+
+Should the text diagnoses submitted by students sync automatically back into Moodle's gradebook, or stay in your VM's backend database?
+
+1. their own personal, unmanaged laptops
+
+2. We need way to share with them DICOM viewing software, it will be similar to DICOM viewer on their PC, but with the security of screenshots and opening only one diagnosis per student. AppStream 2.0 will act as a "DMZ" for their network access, nothing is processed locally on their machines. AWS is our cloud.
+
+3. Ideally yes, it should be able to perform text regularization (cleaning) and Naïve Bayes model using the scikit-learn library to grade the diagnosis which students will perform based on the images. But most important issue is setting the app with infrastructure.
+
+An Amazon AppStream 2.0 architecture configured within an AWS Virtual Private Cloud (VPC) provides complete network isolation ("DMZ") for streaming a native desktop DICOM viewer to unmanaged student laptops.
+
+       [ Unmanaged Laptop ]
+                │
+                │ (HTML5 / HTTPS Port 443 - Pixel Streaming Only)
+                ▼
+      ┌─────────────────────────────────────────────────────────┐
+      │ AWS VPC (DMZ Layer)                                     │
+      │                                                         │
+      │  ┌─────────────────────────┐                            │
+      │  │ Private Subnet A / B    │                            │
+      │  │ AppStream 2.0 Fleet     │ (App Stream Instances)     │
+      │  └────────────┬────────────┘                            │
+      │               │ (Private Network Traffic Only)          │
+      │               ▼                                         │
+      │  ┌─────────────────────────┐                            │
+      │  │ Private Subnet C        │                            │
+      │  │ Backend VM              │                            │
+      │  │ ├─ DICOM Server / Store │                            │
+      │  │ ├─ Moodle LTI Middleware│                            │
+      │  │ └─ scikit-learn Engine  │                            │
+      │  └─────────────────────────┘                            │
+      └─────────────────────────────────────────────────────────┘
+1. AppStream 2.0 & VPC Infrastructure Configuration
+Network Isolation (DMZ):
+
+Deploy the backend VM (hosting DICOM storage, LTI middleware, and the NLP grading service) in a private VPC subnet with no public IP.
+
+Launch an AppStream 2.0 On-Demand Fleet in isolated subnets. Use AWS Security Groups to restrict outbound traffic from AppStream instances so they can only reach the private IP of the backend VM on dedicated DICOM/web ports (e.g., Port 104 or 8042).
+
+Students connect exclusively via HTML5 pixel streaming over HTTPS. No raw DICOM data, binaries, or network connections reach the student's machine.
+
+Data Loss Prevention & Screenshot Security:
+
+Apply an AppStream Stack Policy disabling ClipboardRedirection, LocalDriveRedirection, Printing, and FileDownload.
+
+Because web browsers on personal laptops cannot fully block OS-level PrintScreen tools, inject a Forensic Watermark. Configure the desktop DICOM app launcher to render a transparent, semi-opaque overlay containing Student_ID, Timestamp, and Session_ID across the viewer canvas. Any physical camera photo or external screenshot will directly trace back to the student.
+
+Single DICOM Study Isolation:
+
+When Moodle generates the AppStream session, pass the target StudyInstanceUID via AWS SDK (boto3) parameter overrides or a dynamic launch script (session_config.json).
+
+The desktop DICOM viewer launches pre-parameterized to pull only that specific study from the private VM, preventing students from browsing other patient records.
+
+2. Moodle Integration & Automated Grading Architecture
+Moodle LTI 1.3 Flow
+Launch: The student opens the assignment in Moodle. Moodle sends a signed LTI 1.3 launch payload to the middleware on your VM.
+
+Session Creation: Middleware calls AWS AppStream CreateStreamingURL with the student context and assigned DICOM ID, returning an embedded URL rendered in a Moodle iframe.
+
+Grade Posting: Upon diagnosis submission, the middleware uses LTI 1.3 Assignment and Grade Services (AGS) to push the computed grade back to Moodle's gradebook.
+
+Automated NLP Pipeline (scikit-learn)
+The NLP service cleans medical text and evaluates it using a Naïve Bayes classifier:
+
+Python
+import re
+import joblib
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+
+def text_regularization(text: str) -> str:
+    # 1. Lowercase and strip whitespace
+    text = text.lower().strip()
+    
+    # 2. Preserve clinical negations while removing irrelevant punctuation
+    # Replaces sentence boundaries, removes non-alphanumeric except space
+    text = re.sub(r'[^a-z0-9\s]', '', text)
+    
+    # 3. Collapse multiple spaces
+    text = re.sub(r'\s+', ' ', text)
+    return text
+
+def evaluate_diagnosis(raw_text: str, model_path: str, vectorizer_path: str):
+    # Load pretrained artifacts
+    model: MultinomialNB = joblib.load(model_path)
+    vectorizer: TfidfVectorizer = joblib.load(vectorizer_path)
+    
+    # Preprocess & Vectorize
+    cleaned_text = text_regularization(raw_text)
+    features = vectorizer.transform([cleaned_text])
+    
+    # Predict diagnosis class and confidence
+    prediction = model.predict(features)[0]
+    probabilities = model.predict_proba(features)[0]
+    confidence = max(probabilities)
+    
+    return {
+        "predicted_label": prediction,
+        "score_percentage": float(confidence * 100)
+    }
+Note on Medical Text Regularization: Standard stop-word removal strips words like "no", "not", or "without". Custom medical stop-word lists must retain negation tokens, as "no evidence of consolidation" versus "evidence of consolidation" drastically alters the diagnosis grade.
+
+Hi, i have document from my PM, she is a radiologist assigned to guide me throught the design of the whole infrastructure for this project. How this document is changing the current project of the infrastructure? 
+
+
+
+
+
+Training for Radiologists on the Interpretation of Low-Dose Lung CT Scans
+
+
+
+The goal of the project is to develop and launch a training program for radiologists designed to enhance their skills in interpreting low-dose computed tomography (LDCT) scans of the chest, which are used, among other things, in lung cancer screening programs.
+
+
+
+The training will be conducted online and will be based on two complementary platforms:
+
+
+
+Moodle—an educational platform where theoretical materials (lectures, presentations, teaching materials) will be made available.
+
+
+
+The IP_CMC platform—a dedicated environment for viewing and evaluating DICOM images, enabling work with actual radiological studies.
+
+
+
+Stage
+
+
+
+Number of studies
+
+
+
+Objective
+
+
+
+Learning
+
+
+
+50
+
+
+
+Familiarization with lesion patterns, visual calibration
+
+
+
+Assessment with results
+
+
+
+50
+
+
+
+Practical assessment with immediate feedback
+
+
+
+Final test
+
+
+
+30
+
+
+
+Verification of acquired competencies
+
+
+
+
+
+
+
+Parameter
+
+
+
+Value
+
+
+
+Participation cost
+
+
+
+300 PLN
+
+
+
+Access period for physicians
+
+
+
+1 month
+
+
+
+Certificate-issuing entity
+
+
+
+GUMed Center for Postgraduate Education
+
+
+
+Number of studies on the platform
+
+
+
+approx. 500
+
+
+
+Training duration (overall)
+
+
+
+indefinite/as long as possible
+
+
+
+
+
+
+
+Lung-RADS Classification
+
+
+
+The evaluation of studies as part of the training should be based on the Lung-RADS (Lung CT Screening Reporting and Data System) system—a standard used in low-dose lung CT screening for the uniform classification of lesions and recommendations for further management. The system organizes study results into the following categories
+
+
+
+
+
+
+
+Category
+
+
+
+Clinical Significance
+
+
+
+0
+
+
+
+Incomplete scan/comparison with previous scans required
+
+
+
+1
+
+
+
+Negative result—no nodules or clearly benign lesions
+
+
+
+2
+
+
+
+Benign lesions—very low risk of malignancy
+
+
+
+3
+
+
+
+Likely benign lesions—low risk; short-term follow-up recommended
+
+
+
+4A
+
+
+
+Suspicious—moderate risk of malignancy
+
+
+
+4B
+
+
+
+Highly suspicious—high risk of malignancy
+
+
+
+4X
+
+
+
+Category 3/4 with additional features increasing suspicion of malignancy
+
+
+
+
+
+
+
+The use of Lung-RADS as a common language for assessment not only standardizes reporting but also allows for the objective measurement of participants’ compliance with the reference standard in each training module (learning, evaluation, test).
+
+
+
+Key methodological requirement: The pool of studies at each of the three stages (50 for learning, 50 for assessment, 30 for testing) must be divided into Lung-RADS classes in a representative and purposeful manner so that participants are exposed to the full spectrum of categories (from 1 to 4X), rather than only obvious cases. This applies in particular to:
+
+
+
+ensuring an adequate number of borderline cases (categories 3 and 4A), which in clinical practice are the most common source of interpretive errors,
+
+
+
+maintaining similar class proportions between the learning phase and the test so that the test reliably verifies the skills acquired in the earlier phase,
+
+
+
+the ability to analyze results by class (e.g., whether participants are more likely to make mistakes when differentiating between 3 and 4A than between 1 and 2), which adds value to the planned scientific publication.
+
+
+
+
+
+
+
+Ideas for discussion
+
+
+
+Difficulty progression system—organizing the 50 “training” cases from simple cases (normal findings, obvious changes) to more difficult ones (subtle changes, artifacts, diagnostic pitfalls).
+
+
+
+Real-time feedback—automatically comparing the physician’s assessment with the radiological report.
+
+
+
+Classification of studies into Lung-RADS categories at each stage—categorizing all 500 studies according to Lung-RADS (0–4X) and planning a proportional representation of each category in the learning, assessment, and test modules.
+
+
+
+Scoring and ranking system—the ability to compare one’s own results with the group median (gamification element, motivation to complete the course).
+
+
+
+Conditional certificate—issued upon reaching a specified pass threshold on the final test (e.g., ≥70–80%)—to be determined in consultation with the professor.
+
+
+
+Feedback/question submission module—the ability to flag a case as ambiguous and submit it for consultation with an expert.
+
+
+
+Versioning and updating the study database—rotating or expanding the pool of 500 studies in subsequent editions to limit “learning” of specific cases.
+
+
+
+Administrative dashboard—ongoing monitoring of participant progress, completion rates, and time spent on the study.
+
+
+
+Publication—planning data collection (assessment time, compliance, common errors) from the very beginning to avoid having to collect data retroactively.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Implementation Phases
+
+
+
+Content Preparation
+
+
+
+Collection and preparation of lecture materials (Moodle).
+
+
+
+Cost simulation per virtual machine.
+
+
+
+Selection and anonymization of 500 DICOM studies.
+
+
+
+Linking existing reference descriptions (ground truth) to the corresponding studies on the IP_CMC platform and verifying their completeness and consistency.
+
+
+
+Classifying all studies according to the Lung-RADS categories (0–4X) and distributing them across the learning, assessment, and test phases in a way that ensures each class is represented.
+
+
+
+Technical Preparation
+
+
+
+Course setup on Moodle (structure, access permissions, schedule).
+
+
+
+Implementation and integration of the IP_CMC platform for viewing DICOM images.
+
+
+
+Setup of the registration, payment (300 PLN), and access grant mechanisms for 1 month.
+
+
+
+Technical testing (load testing, UX, compatibility with browsers/diagnostic monitors).
+
+
+
+Pilot
+
+
+
+Launch with a small test group (e.g., 5–10 radiologists).
+
+
+
+Collecting feedback on the platform’s usability and difficulties encountered during the exams.
+
+
+
+Revising the pool of exams and materials based on the pilot results.
+
+
+
+Launch of the training program (full version)
+
+
+
+Recruitment and registration of participants.
+
+
+
+Implementation of the learning, assessment, and testing modules on a monthly cycle.
+
+
+
+Ongoing technical and content support (help desk).
+
+
+
+Certification
+
+
+
+Verification of final test results.
+
+
+
+Issuance of certificates by CKP GUMed.
+
+
+
+Evaluation and Scientific Publication
+
+
+
+Statistical analysis of results (learning curve, agreement with ground truth, pre/post comparison).
+
+
+
+Preparation of a manuscript
+
+
+
+Scaling and Continuation
+
+
+
+Decision to adopt an open-ended format—subsequent, recurring editions.
+
+
+
+Development of the study database and updating of teaching materials.
+
+
+
+
+
+
+
+Challenges
+
+
+
+Quality and representativeness of the study database—the need to ensure diversity of cases (various types of lesions, degrees of difficulty, technical quality of studies) and reliable anonymization of patient data (GDPR).
+
+
+
+Consistency and format of existing reference descriptions—study descriptions are already available, but it is worth verifying their uniformity (format, level of detail, potential discrepancies among authors) before using them as the basis for evaluation and feedback to participants.
+
+
+
+Balanced distribution of studies across Lung-RADS classes—with a pool of 500 studies, some categories (e.g., 4B, 4X) may occur less frequently than others, making it difficult to ensure a representative number of each category in each of the three stages (learning/evaluation/test) without exceeding the total pool of 130 studies per participant.
+
+
+
+Integration of two platforms—Moodle and IP_CMC must operate seamlessly (single sign-on, access synchronization, a transparent process for the user).
+
+
+
+Maintaining an open-ended format—the need to ensure ongoing funding, technical support, and content updates without a specified end budget.
+
+
+
+Scalability of the IP_CMC infrastructure—platform performance when multiple users work simultaneously on large DICOM files.
+
+
+
+Formal and legal aspects of certification—compliance with CKP GUMed requirements regarding continuing education (educational credits, accreditation).
+
+
+
+Motivation and course completion—given the low cost (300 PLN) and the fact that participation is not mandatory, there is a risk of a low course completion rate.
+
+
+
+Keeping the database up to date—with an open-ended format, the pool of 500 studies may eventually become “familiar” to repeat participants, which will reduce the diagnostic value of the test.
+
+
+
+Cost of maintaining the virtual machine
+
+
+
+Remote desktop --> link --> viewer
+
+
+
+Meeting on Wednesday (12:00 p.m.).
+
+This document completely shifts the project from a simple "submit text and grade it" application to a structured, clinical-trial-grade educational platform. Your project manager has outlined an excellent methodology, particularly for the Interdyscyplinarne Pomorskie Centrum Medycyny Cyfrowej (IP_CMC) at GUMed.  
+Gdański Uniwersytet Medyczny
+
+Here is exactly how this document changes your previous AWS/VM infrastructure and software design, and what you need to build instead.
+
+1. The NLP Grading is Out. Structured Lung-RADS is In.
+Old Plan: Students write a free-text diagnosis, and you use a scikit-learn NLP Naïve Bayes model to grade it.
+
+New Plan: The grading engine is entirely categorical. The student must select a discrete Lung-RADS category (0, 1, 2, 3, 4A, 4B, 4X) for each scan.
+
+Architecture Change: You can scrap the NLP pipeline. Your backend VM database now needs a strict comparison algorithm. When a student submits a category, the system simply compares their selection (e.g., "4A") against the database's Ground Truth (e.g., "3") for that specific DICOM study.
+
+2. Implementation of a Three-Stage State Machine
+Old Plan: A single session where a student views a scan and submits a diagnosis.
+
+New Plan: The system must enforce a strict, three-stage progression logic (Learning → Assessment → Final Test) across 130 cases per student.
+
+Architecture Change: Your backend (LTI Middleware) must act as a State Machine.
+
+Stage 1 (50 cases): User selects a category. The system immediately reveals the Ground Truth and reference description.
+
+Stage 2 (50 cases): User selects a category. The system provides immediate correct/incorrect feedback.
+
+Stage 3 (30 cases): Exam mode. No feedback is given. The final score is calculated at the end and pushed to Moodle's gradebook. The AppStream launcher must dynamically alter the user interface based on which stage the user is currently in.
+
+3. Stratified Database Sampling (The Hardest Math Problem)
+New Requirement: The PM noted that borderline cases (3 and 4A) must be heavily represented, and the 130 studies assigned to a user must be proportionally distributed across Lung-RADS classes.
+
+Architecture Change: You cannot just randomly pull 130 studies from the 500-study pool. Your backend database (e.g., PostgreSQL) must categorize all 500 studies by their Ground Truth Lung-RADS class. When a student registers via Moodle (paying 300 PLN), your backend must execute a Stratified Random Sampling script. It will generate a personalized, locked list of 130 case IDs for that user, ensuring the exact required percentages of 4A, 4B, etc., are met in all three stages.
+
+4. Handling LDCT (Low-Dose CT) vs. Standard X-Rays
+New Requirement: The document specifies these are Lung CT scans.
+
+Architecture Change: CT scans are massive. Unlike a chest X-ray (1 image), a single LDCT scan contains hundreds or thousands of thick/thin 2D slices.
+
+Validation of AppStream 2.0: Your choice of AWS AppStream 2.0 is validated here. If you used a web viewer, downloading 1,000 CT slices to a student's unmanaged laptop over home Wi-Fi would cause massive lag. Because AppStream renders the heavy DICOM files on the AWS VPC and only streams pixels to the student, performance will remain smooth regardless of how large the CT study is. However, your VM hosting the DICOM server must have fast SSDs (e.g., AWS EBS gp3 or io2 volumes) to serve the CT slices quickly to the AppStream fleet.
+
+5. Data Logging for Scientific Publication
+New Requirement: The PM explicitly wants to publish a paper analyzing where radiologists make mistakes (e.g., confusing 3 with 4A).
+
+Architecture Change: Your database must log highly granular telemetry. For every single study viewed, you must record:
+
+user_id (anonymized)
+
+dicom_study_id
+
+true_lung_rads_class
+
+predicted_lung_rads_class
+
+time_spent_in_seconds (required for the Administrative Dashboard)
+
+This data will eventually be exported as a Confusion Matrix (a standard data science table showing true vs. predicted classifications) for their scientific manuscript.
+
+Questions to ask your PM on Wednesday (12:00 PM):
+To finalize the database design and AWS sizing before you build, you need to clarify these points with her:
+
+The Ground Truth Ambiguity: The PM mentioned a "Feedback/question submission module" for ambiguous cases. If a student flags a case in Stage 3 (Final Test) and an expert agrees the Ground Truth was wrong, does the system need the ability to retroactively recalculate all previous students' Moodle grades who also encountered that scan?
+
+Storage Sizing: Roughly how large (in Megabytes or Gigabytes) is the average LDCT scan in the 500-study pool? (This dictates how much SSD storage you need on the VM).
+
+The Stratification Rules: What exact percentage of the 50/50/30 splits should be dedicated to borderline cases (3 and 4A) versus obvious cases (1 and 2)?
+
+
+Hi, I want to set up virtual environment to allow students to grade DICOM scans for research and knowledge veryfication. My idea is to have VMs, one per student with DICOM viewer installed there with configured grading system, all streamed through the Amazon WorkSpaces Applications (previously AppStream 2.0). I have all the security requiremnets. Is this project feasible?
+
+
+Sec requriements:
+Methods to Prevent/Deter Screen Capture Beyond DevTools Blocking
+Based on the Reddit thread you shared, here's what people actually try as bypasses — and what you can implement to counter them. Critical caveat upfront: the Reddit post confirms what we discussed before — no software solution is 100% foolproof. The most upvoted comments ("just take a photo with another phone") prove this. Your strategy must be deterrence + attribution, not prevention.
+
+1. Technical Blocking Methods (Deterrents)
+Web-based viewer (your IP_CMC platform)
+Canvas.toBlob() / toDataURL() override — monkey-patch these APIs so any script attempting to extract canvas pixels gets a blank or watermarked result
+CSP (Content Security Policy) — restrict to your own origin, blocking injected screenshot/capture extensions
+disablepictureinpicture attribute on video/canvas elements
+controlsList="nodownload nofullscreen noremoteplayback" on media elements
+CSS user-select: none + -webkit-touch-callout: none — prevents text selection and long-press save on mobile
+Detect DevTools via timing/size checks — but the Reddit thread shows users disable JS entirely, so this is theater
+Block common screen-recorder browser extensions by detecting their injected DOM elements or known extension IDs
+AppStream 2.0 Stack Policy (your primary tool)
+The Reddit thread shows Scrcpy, screen recording, and Samsung Secure Folder all bypass app-level blocks. AppStream gives you stronger OS-level controls:
+
+DisableClipboard — blocks copy/paste of image data
+DisableFileUpload / DisableFileDownload — no local filesystem access
+DisablePrinting — blocks PrintScreen-to-PDF (the Reddit user's workaround)
+DisableLocalDriveRedirection — no mounting local drives
+AppStream client application (not browser) — can hook OS-level screenshot APIs (PrintScreen, Snipping Tool, Win+Shift+S) and black them out. The HTML5 web client cannot.
+Strong recommendation: force students to use the AppStream native client application, not the HTML5 web client. This is the single biggest technical control you have.
+
+Native viewer (if you build one)
+FLAG_SECURE on Android — sets the secure window flag. Reddit confirms this black-screens Scrcpy, Google Assistant screenshots, screen recording, and most apps. Bypasses: rooted devices with Xposed/LSPosed, Frida hooks, Samsung Secure Folder.
+UIScreen.isCaptured on iOS — detect screen recording/replayKit and black out the view.
+Detect rooted/jailbroken devices and refuse to launch.
+SafetyNet / Play Integrity API on Android — verify device integrity before allowing access.
+2. Forensic Watermarking (Your Real Defense)
+This is the only thing that survives a phone-camera photo, which the Reddit thread confirms is the unbeatable bypass. Build it properly:
+
+Per-pixel steganographic watermark baked into the rendered image server-side — encode Student_ID + Session_ID + Timestamp + Frame_ID into LSBs or DCT coefficients
+Visible translucent overlay with the same metadata, rotating position every few seconds so users can't easily crop it out
+Per-frame unique token — so if a leak surfaces, you know exactly which student, which session, which slice, which timestamp
+Frame-on-demand serving — never send the full study; serve one frame at a time, each watermarked
+MutationObserver on the canvas — detects DOM-level tampering (Reddit users' first move), forces reload
+Server-side rendering only — never let raw DICOM pixels touch the client; the watermark is burned in before transmission
+3. Session & Identity Binding
+The Reddit post reveals people try:
+
+Android emulators (Bluestacks) → block emulator signatures
+App cloning (Parallel Space) → bind session to single device fingerprint + Moodle LTI identity
+Multiple logins → enforce single concurrent session; new login kills old session
+4. Policy Layer (the part that actually works)
+Looking at the Reddit thread, the user legally needed their PayPal receipts and won a court case. Your medical scenario is different, but the lesson holds: pure technical blocks create legitimate-user friction without stopping determined adversaries.
+
+Acceptable Use Policy signed at registration (before the 300 PLN payment) — explicitly prohibits screen capture, photography, redistribution
+Honor code acknowledgment before each Final Test attempt
+Watermark visibility notice — tell students their sessions are forensically watermarked; deterrence works better when known
+Audit trail — log every frame served, every session, every device fingerprint. The watermark's value is in proving a leak, not preventing one
+5. What Will Not Work (Save Your Time)
+Per the Reddit thread, these are bypassable or theater:
+
+Blocking Google Assistant — users still get black screens but other methods work
+Screen recording blocks — bypassed by rooted devices, Samsung Secure Folder, emulators
+MutationObserver alone — bypassed by disabling JS or photographing the screen
+App-level screenshot blocks — bypassed by Scrcpy on older Android, Frida hooks, Xposed
+PrintScreen blocking in browsers — bypassed by Snipping Tool, OS-level capture, second device
+Recommendation for Your IP_CMC Project
+Given the 500-study pool, paid certification, and scientific publication goals, prioritize in this order:
+
+AppStream 2.0 native client (not HTML5) with full Stack Policy — this kills 90% of software-based bypasses from the Reddit thread
+Server-side forensic watermarking on every frame — this is your attribution layer for the remaining 10%
+Stratified case assignment so no two students see identical case sets — limits damage of any single leak
+AUP + honor code at registration — the legal/policy backbone
+Skip — browser DevTools blocking alone, MutationObserver-only anti-tamper, any client-side screenshot detection (all theater per Reddit)
+
+
+Radiology requirements:
+Lung-RADS Classification
+
+The evaluation of examinations as part of training should be based on the Lung-RADS (Lung CT Screening Reporting and Data System) system—a standard used in low-dose lung CT screening for the uniform classification of lesions and recommendations for further management. The system organizes examination results into the following categories
+
+
+
+Category
+
+Clinical Significance
+
+0
+
+Incomplete study/comparison with previous studies required
+
+1
+
+Negative result—no nodules or clearly benign lesions
+
+2
+
+Benign lesions—very low risk of malignancy
+
+3
+
+Likely benign lesions—low risk; short-term follow-up recommended
+
+4A
+
+Suspicious—moderate risk of malignancy
+
+4B
+
+Highly suspicious—high risk of malignancy
+
+4X
+
+Category 3/4 with additional features increasing suspicion of malignancy
+
+
+
+The use of Lung-RADS as a common language for assessment not only standardizes reporting but also allows for the objective measurement of participants’ compliance with the reference standard in each training module (learning, evaluation, test).
+
+Key methodological requirement: The pool of studies at each of the three stages (50 for learning, 50 for assessment, 30 for testing) must be divided into Lung-RADS classes in a representative and purposeful manner so that participants are exposed to the full spectrum of categories (from 1 to 4X), rather than only obvious cases. This applies in particular to:
+
+ensuring an adequate number of borderline cases (categories 3 and 4A), which in clinical practice are the most common source of interpretive errors,
+
+maintaining similar class proportions between the training phase and the test so that the test reliably assesses the skills acquired in the earlier phase,
+
+the ability to analyze results by class (e.g., whether participants are more likely to make mistakes when differentiating between 3 and 4A than between 1 and 2), which adds value to the planned scientific publication.
+
+
+Thinking completed
+Yes, this project is highly feasible, and your approach to both security and radiological methodology is exceptionally well-thought-out. You have correctly identified that pure technical prevention of screen capture is a losing battle, and your pivot toward deterrence, forensic attribution, and policy is the exact right mindset for medical research.
+However, before diving into the implementation, we need to clarify a critical architectural misconception in your prompt, followed by specific recommendations for the AWS infrastructure, the DICOM viewer integration, and the research data pipeline.
+1. Critical Architectural Clarification: WorkSpaces vs. AppStream 2.0
+You mentioned: "Amazon WorkSpaces Applications (previously AppStream 2.0)".
+This is factually incorrect. Amazon WorkSpaces and Amazon AppStream 2.0 are two distinct, sibling services. They were not renamed; they serve different purposes. Choosing the wrong one will either break your budget or your security model.
+Amazon WorkSpaces (VDI): Provisions a full, persistent (or non-persistent) virtual desktop (1:1). You manage the OS, updates, and individual instances. This is overkill and too expensive for just viewing DICOMs.
+Amazon AppStream 2.0 (Application Streaming): Provisions a pooled fleet of instances that stream specific applications to users (1:many). Users don't get a full desktop; they just get the app. This is exactly what you need.
+Recommendation: Use Amazon AppStream 2.0. It allows you to create a single "Image" containing Windows Server, your DICOM viewer, and your grading UI. You then deploy a "Fleet" of instances that scale automatically based on student demand, and a "Stack" to enforce the strict security policies you outlined.
+2. Refining the Security & Anti-Capture Strategy
+Your security strategy is excellent. Here is how to implement it specifically within the AppStream 2.0 Native Client context:
+The Native Client is Mandatory: As you noted, force students to download the AppStream 2.0 native client (Windows/Mac). The HTML5 web client cannot block OS-level screenshot tools. The native client hooks into the OS and blacks out the screen if PrintScreen, Snipping Tool, or Win+Shift+S is pressed.
+AppStream Stack Policies: In the AWS Console, configure your Stack with:
+DisableClipboard (True)
+DisableFileUpload / DisableFileDownload (True)
+DisablePrinting (True)
+LocalDriveRedirection (Disabled)
+Forensic Watermarking in AppStream: Because AppStream streams the desktop pixels to the client, you cannot easily do "server-side rendering" in the traditional web sense. Instead, implement watermarking on the AppStream instance itself:
+Invisible/Steganographic: Write a lightweight background service on the AppStream image that intercepts the DICOM files as they are loaded from the virtual network drive, injects the Student ID/Session ID into the pixel data (LSB), and passes it to the viewer.
+Visible Overlay: Use a transparent, always-on-top window (built in C# or Python) that floats over the DICOM viewer, displaying a faint, rotating watermark of the Student ID and Timestamp.
+3. Addressing Radiology & Methodological Requirements (Lung-RADS)
+Your requirement to stratify cases (50 learning, 50 assessment, 30 testing) and ensure a representative distribution of Lung-RADS categories (especially the critical 3 and 4A borderline cases) is excellent for scientific validity.
+A. Case Pool Management & Stratification
+Do not rely on manual assignment. Build a backend database (e.g., PostgreSQL) to manage the case pool.
+Ground Truth Tagging: Every DICOM study in your pool of 130+ cases must be pre-tagged by expert radiologists with its true Lung-RADS category (0 to 4X).
+Stratified Randomization Script: Write a Python script that pulls from the master pool. If your target distribution for a 50-case module is 20% Cat 1, 30% Cat 2, 25% Cat 3, 15% Cat 4A, 10% Cat 4B/X, the script ensures the assigned subset perfectly matches this ratio.
+Isolation: Ensure the "Learning" and "Assessment" pools do not overlap with the "Testing" pool to prevent memorization.
+B. The Grading UI (The Missing Link)
+Native DICOM viewers (like RadiAnt, MicroDicom, or Horos) are great for viewing, but they do not natively support structured Lung-RADS reporting. You need a way for students to submit their grades.
+Solution: Build a custom "Side Panel" UI.
+On the AppStream instance, run a local lightweight web server (e.g., Python Flask/Streamlit or Node.js) alongside the DICOM viewer.
+Create a split-screen layout: The DICOM viewer takes up 75% of the screen, and the Grading UI takes up 25%.
+The Grading UI should have dropdowns for Lung-RADS (0, 1, 2, 3, 4A, 4B, 4X), text boxes for measurements (e.g., nodule size in mm), and a "Submit" button.
+Alternative: If you prefer a unified experience, use a web-based viewer like OHIF Viewer inside the AppStream browser, and build the Lung-RADS grading UI directly into the OHIF React extension ecosystem.
+C. Data Extraction for Scientific Publication
+For your paper, you need granular data. Your backend must log:
+Student_ID, Session_ID, Case_ID
+True_Lung_RADS (Ground Truth) vs Student_Lung_RADS (Prediction)
+Time_to_first_decision (Time from opening the study to clicking submit)
+Scroll_time (Total time spent scrolling through the DICOM slices)
+Analysis: This allows you to run statistical analyses (e.g., Cohen’s Kappa for inter-rater reliability, ROC curves for Cat 3 vs 4A differentiation) directly for your publication.
+4. Recommended Technology Stack
+Cloud Infrastructure: Amazon AppStream 2.0 (Windows Server 2019/2022 Image). Use Standard instances (e.g., stream.standard.large) unless you are doing heavy 3D volume rendering, in which case use Graphics instances.
+DICOM Viewer: RadiAnt DICOM Viewer (Windows). It is lightweight, highly optimized for CT/MRI, supports multi-planar reconstruction (MPR), and allows for external plugin/integration. Alternatively, Weasis (Java-based, cross-platform).
+Backend Database: PostgreSQL (hosted on Amazon RDS) for relational data (students, scores, case metadata).
+DICOM Storage: Amazon S3. Crucial: Do not store raw DICOMs on the AppStream instance's local C: drive. Map an S3 bucket as a virtual drive, or use a lightweight local DICOM server (like dcm4chee) on the AppStream instance that pulls from S3 on demand.
+Grading UI: Streamlit (Python) or React. Streamlit is incredibly fast to build for internal research tools.
+5. Step-by-Step Implementation Plan
+Phase 1: Data Preparation & Backend
+Anonymize all 130+ DICOM studies (ensure no PHI remains).
+Have experts assign ground-truth Lung-RADS scores to all studies.
+Build the PostgreSQL database and the stratified randomization scripts.
+Phase 2: AppStream Image Building
+Create an AppStream Image Builder.
+Install the DICOM viewer (e.g., RadiAnt).
+Install your custom Grading UI (e.g., Streamlit app).
+Install the forensic watermarking overlay tool.
+Configure Windows OS policies (disable local admin, hide taskbar, set viewer and UI to launch automatically on login).
+Create the final Image.
+Phase 3: AppStream Fleet & Stack Configuration
+Create the AppStream Stack. Apply the strict security policies (No clipboard, no file transfer, no printing).
+Create the Fleet. Set it to "Always On" for the duration of the testing window, or "On-Demand" to save costs (though on-demand adds a 2-3 minute boot time for students).
+Link the Fleet to the Stack.
+Phase 4: Student Onboarding & Authentication
+Integrate AppStream with your identity provider (e.g., Moodle LTI, SAML, or simple SAML via AWS IAM Identity Center).
+Generate the streaming URLs for the students.
+Phase 5: Pilot Testing
+Run a pilot with 5-10 friendly users.
+Test the latency of scrolling through high-res CT slices.
+Verify that the Snipping Tool is successfully blocked by the native client.
+Ensure the grading UI correctly syncs with the database.
+6. Potential Pitfalls to Watch Out For
+Latency/Network Issues: Streaming high-resolution CT scans requires a stable internet connection. If students are on poor Wi-Fi, the image rendering will lag. Mitigation: Ensure the AppStream instances are in an AWS region geographically close to your student body. Advise students to use wired Ethernet.
+AppStream Costs: AppStream charges by the hour per instance. If you leave a fleet of 50 instances running 24/7 "just in case," your AWS bill will be massive. Mitigation: Use AppStream's Auto Scaling rules. Set it to scale up 30 minutes before a scheduled class/test, and scale down to 0 immediately after.
+Viewer Crashes: If the DICOM viewer crashes, the student loses their session. Mitigation: Configure the AppStream image to automatically restart the viewer application if it crashes, and ensure the grading UI saves progress to the database every time a slice is viewed, not just when "Submit" is clicked.
+Summary
+Your project is not only feasible but architecturally sound. By utilizing Amazon AppStream 2.0 (not WorkSpaces), enforcing the Native Client, implementing forensic watermarking on the instance, and building a stratified, database-driven Lung-RADS grading pipeline, you will create a highly secure, scientifically rigorous environment suitable for high-level medical research and publication.
+AI context Documentation
+.txt
+78.5 KB
+Can you create plan for the whole process of creating the app? Also I will need Block diagram or flowchart for the app worklfow. 
+i have radiologist PM assigned to me to walk throught the process. Everything will stay inside the hospital and medical university, the data does not move outside the inside med servers. All IOD/RODO standards are already met. We are in contact with the IT and security team. Data will be anonimised and random. DICOm viewer license is not needed, I'll use something ilke 
+DocOrbit DICOM Viewer:
+DicomViewer.net: 
+OHIF Viewer: 
+
+MicroDicom (Windows): 
+Weasis (Cross-platform / Windows & Web): 
+Horos (macOS): 
+IMAIOS DICOM Viewer (Web & Mobile): 
+
+6. Potential Pitfalls to Watch Out For
+Latency/Network Issues: very walid, we can only suggest best option.
+AppStream Costs: Also valid, the whole learning process will be parallel in groups, so fleet auto scaling is good option 
+AppStream Costs: also valid. 
+
+
+You can also suggest other Potential Pitfalls if you see any.
+
+
+
+Thinking completed
+Here is a comprehensive, step-by-step project plan and a workflow block diagram tailored to your specific constraints: strictly on-premise/internal medical servers, open-source DICOM viewers, Lung-RADS categorical grading, and full RODO/GDPR compliance.
+Since you specified that data does not move outside the internal medical servers, I have adjusted the architecture from public AWS AppStream to an On-Premise / Private Cloud Streaming Solution (e.g., Kasm Workspaces, Apache Guacamole, or local Windows RDS). This guarantees zero data egress while maintaining the "pixel-only" streaming security model.
+📊 App Workflow Block Diagram (Mermaid)
+You can view this flowchart in any Mermaid-compatible viewer (like Notion, GitHub, or mermaid.live).
+mermaid
+
+Code
+Preview
+
+12345678910111213141516171819202122232425262728293031
+📅 Comprehensive Project Plan (Estimated 12–14 Weeks)
+Phase 1: Discovery & Compliance Finalization (Weeks 1–2)
+Goal: Lock down technical specs with the Radiologist PM and IT Security.
+Actions:
+Confirm the exact on-premise streaming technology (Recommendation: Kasm Workspaces for containerized isolation, or Apache Guacamole for HTML5 RDP/VNC streaming).
+Finalize the Lung-RADS distribution matrix (e.g., exactly how many Category 3/4A cases out of the 50/50/30 split).
+Validate the DICOM anonymization pipeline (ensure all 500 studies are scrubbed of PHI using tools like dcmtk or Orthanc’s anonymization scripts).
+Confirm Moodle version supports LTI 1.3 Advantage (required for secure grade passback).
+Phase 2: Infrastructure & Data Preparation (Weeks 3–5)
+Goal: Build the internal server environment and prepare the 500-study pool.
+Actions:
+Deploy the internal DICOM Store (e.g., Orthanc or dcm4chee) on the hospital’s secure servers.
+Set up the Streaming Gateway (Kasm/Guacamole) in a DMZ-like internal subnet, accessible only via HTTPS from the hospital/university network.
+Ingest the 500 anonymized DICOM studies.
+PM/Radiologists tag all 500 studies with definitive Ground Truth Lung-RADS categories in the PostgreSQL database.
+Phase 3: Core Application Development (Weeks 6–9)
+Goal: Build the middleware, viewer integration, and grading logic.
+Actions:
+Middleware: Develop the LTI 1.3 handler, payment status checker, and the Stratified Random Sampling Engine (ensures no two students get the exact same 130-case sequence, while maintaining Lung-RADS proportions).
+Viewer Integration: Deploy OHIF Viewer (recommended for web) or Weasis (if desktop streaming is preferred). Configure it to fetch only the assigned StudyInstanceUID.
+Watermarking: Implement a semi-transparent, rotating CSS/Canvas overlay in the viewer displaying: Student_ID | Session_ID | Timestamp.
+Grading Logic: Build the categorical comparison engine (Predicted vs. Ground Truth) and telemetry logger (time spent, clicks).
+Phase 4: Testing, Security Review & Pilot (Weeks 10–12)
+Goal: Validate security, performance, and clinical usability.
+Actions:
+Internal IT/Security penetration test (verify no DICOM data leaks to the browser, verify watermark persistence).
+Load testing: Simulate 20 concurrent users to ensure the internal DICOM store and streaming gateway do not bottleneck.
+Pilot: Run the full 130-case flow with 5–10 friendly radiologists. Gather feedback on UI, latency, and Lung-RADS category clarity.
+Phase 5: Deployment & Launch (Weeks 13–14)
+Goal: Go live for the first cohort.
+Actions:
+Enable the payment gateway integration (e.g., Przelewy24/PayU) linked to the middleware.
+Activate the 1-month access expiration cron jobs.
+Launch the administrative dashboard for the PM to monitor completion rates and flag ambiguous cases.
+Phase 6: Evaluation & Scientific Publication (Ongoing)
+Goal: Extract data for research and maintain the platform.
+Actions:
+Export anonymized telemetry data (Confusion Matrices of Predicted vs. True Lung-RADS, time-on-task) for the scientific manuscript.
+Rotate 10–20% of the study pool every 6 months to prevent "case memorization" by repeat participants.
+⚠️ Additional Potential Pitfalls to Watch Out For
+You already identified Latency and Streaming Costs. Here are 5 critical, non-obvious pitfalls specific to this medical/academic context:
+DICOM Metadata Leakage (The "Hidden PHI" Trap)
+Risk: Even if the patient name is removed, DICOM files often contain hidden PHI in obscure tags (e.g., InstitutionName, ReferringPhysicianName, or even burned-in pixels on the image itself).
+Mitigation: Do not rely on manual anonymization. Use a strict, automated DICOM scrubbing pipeline (like Orthanc’s anonymization plugin) that strips all non-essential tags and flags images with burned-in text for manual review.
+Stratification Exhaustion (The "Rare Case" Bottleneck)
+Risk: If Category 4B and 4X cases are rare in your 500-study pool, the stratified sampling algorithm might "exhaust" them in the first few cohorts, making it mathematically impossible to maintain the required proportions for later cohorts without reusing cases (which ruins the "no memorization" rule).
+Mitigation: Work with the PM now to ensure the 500-study pool has a statistically viable minimum count of Category 4B/4X cases to support the expected number of concurrent students over the platform’s lifespan.
+Moodle LTI 1.3 Grade Passback Failures
+Risk: Many university Moodle installations are outdated or lack the specific "LTI Advantage" plugins required for secure, automated grade passback (AGS). If this fails, the PM will have to grade 500 students manually.
+Mitigation: Have the university’s Moodle administrator verify LTI 1.3 Advantage compatibility during Phase 1, before any code is written.
+Session State Loss on Network Blips
+Risk: If a student’s home Wi-Fi drops for 10 seconds, the streaming session might disconnect. If the app doesn’t save state, they lose their place in the 1,000-slice CT scan and their progress for that case.
+Mitigation: Implement "auto-save" on every Lung-RADS selection. Ensure the streaming gateway is configured with generous session timeout/reconnection windows (e.g., 5–10 minutes of grace time).
+Multi-Planar Reconstruction (MPR) Performance on Thin Clients
+Risk: Low-Dose CT (LDCT) scans require scrolling through hundreds of slices, and radiologists often need to toggle between axial, sagittal, and coronal views (MPR). Rendering this on the server and streaming it as video requires significant server-side CPU/GPU resources.
+Mitigation: Ensure the internal streaming servers have adequate vCPU/RAM (or GPU if using heavy 3D rendering). Test OHIF/Weasis MPR performance explicitly during the Phase 4 load testing.
+💡 Next Steps for Your Wednesday Meeting with the PM
+To keep the project moving efficiently, bring these 3 questions to your meeting:
+"Can we confirm the exact percentage breakdown of Lung-RADS categories (especially 3, 4A, 4B, 4X) required in the 50/50/30 splits, so I can build the sampling algorithm correctly?"
+"Has the IT team approved a specific on-premise streaming technology (like Kasm or Guacamole), or are we restricted to a specific existing hospital VDI solution?"
+"Are the 500 DICOM studies already fully anonymized and tagged with Ground Truth, or is that a task we need to schedule time for in Phase 2?"
+This plan gives you a realistic, secure, and clinically sound roadmap that respects all hospital data boundaries while delivering the advanced features the PM requested. Let me know if you want to deep-dive into the Stratified Sampling Algorithm or the Watermarking Implementation next!
+Ok, I want to work on one detail. "Since you specified that data does not move outside the internal medical servers, I have adjusted the architecture from public AWS AppStream to an On-Premise / Private Cloud Streaming Solution (e.g., Kasm Workspaces, Apache Guacamole, or local Windows RDS)." We have computing power, but can we host VM on our bare metal servers thgought proxmox and give access to the VMs through AWS AppStream? 
+The access will be 
+Our VMs -> they host OS or other solution with Weasis (Cross-platform / Windows & Web) -> AWS AppStream with configured options for grading -> access through unique link for each student. 
+
+In my opinion it is the cheapest option with medical data not leaving our servers. 
+
+
+Thinking completed
+I need to clarify a critical technical limitation here to save you from a costly architectural dead end.
+The short answer is: No, AWS AppStream 2.0 cannot natively stream applications hosted on your local on-premise Proxmox servers.
+AppStream 2.0 is a fully managed AWS service that only runs and streams applications from AWS-managed EC2 instances within an AWS VPC. It does not support "Bring Your Own VM" (BYOVM) from external environments like Proxmox, VMware, or Hyper-V.
+The "Workaround" (And Why You Should Avoid It)
+The only way to make your proposed architecture work is to set up a complex hybrid network:
+Your local Proxmox VM runs Weasis and exposes an RDP/VNC port.
+You establish an AWS Site-to-Site VPN or Direct Connect between your hospital network and the AWS VPC.
+The AWS AppStream instance runs a remote desktop client (like FreeRDP) that connects back through the VPN to your local Proxmox VM.
+AppStream then streams that RDP session to the student.
+Why this is a bad idea:
+It is NOT the cheapest option: You are now paying for AWS AppStream compute hours + AWS data transfer/VPN fees + your local Proxmox server electricity/maintenance. You are paying for compute twice.
+It introduces latency: Video is encoded on the local VM, sent over a VPN to AWS, re-encoded by AppStream, and sent to the student. This will cause noticeable lag when scrolling through hundreds of CT slices.
+It violates the spirit of your security model: You are opening a persistent, complex network tunnel between your secure medical network and AWS, which your IT/Security team will likely reject or heavily scrutinize.
+The Actual Cheapest & Most Secure On-Premise Solutions
+If your primary goals are 100% on-premise data isolation and lowest cost, you should drop AWS AppStream entirely and use a dedicated on-premise application streaming solution that runs directly on your existing Proxmox bare-metal servers.
+Here are the two best options for your specific use case:
+Option 1: Kasm Workspaces (Highly Recommended)
+Kasm is a containerized streaming platform designed exactly for this. It runs directly on your Proxmox servers (as LXC containers or VMs).
+How it works: You create a "Workspace" image containing a Linux desktop and the Weasis DICOM viewer (or a web-based viewer like OHIF). When a student clicks the Moodle link, Kasm instantly spins up an isolated, ephemeral container for that specific student.
+Security: The student only receives an HTML5 video stream of the browser/desktop. No DICOM data, no files, and no raw pixels ever leave the Proxmox server. Kasm has built-in policies to disable clipboard, file uploads/downloads, and right-clicking.
+Watermarking: Kasm has native, built-in support for dynamic, rotating session watermarks (Student ID + Timestamp) overlaid on the stream.
+Cost: There is a free Community Edition (which might suffice for 10-20 concurrent users) and a paid Enterprise edition. Zero AWS compute fees.
+Option 2: Apache Guacamole (Free & Open Source)
+Guacamole is a clientless remote desktop gateway. It supports standard protocols like VNC and RDP.
+How it works: You install Guacamole on a lightweight Linux VM in your Proxmox cluster. Your Proxmox VMs run Windows (with Weasis desktop) or Linux (with Weasis web). Guacamole connects to them via local RDP/VNC and translates the output to HTML5 for the student's browser.
+Security: Like Kasm, it streams only pixels. You can configure it to disable clipboard and file transfer.
+Cost: 100% free and open-source. However, you will need to build the dynamic watermarking and Moodle LTI integration yourself (or use a third-party plugin), as Guacamole is more of a raw protocol translator than a polished SaaS product like Kasm.
+How the "Unique Link" Workflow Actually Looks (On-Premise)
+Instead of AWS, your architecture would look like this:
+Student logs into Moodle and clicks "Start LDCT Training".
+Moodle sends an LTI 1.3 launch request to your local Middleware (hosted on a Proxmox VM).
+Middleware verifies payment, selects the stratified 130-case list, and sends an API call to Kasm Workspaces (or Guacamole).
+Kasm instantly provisions an isolated, ephemeral container/VM with Weasis pre-loaded, applies the dynamic forensic watermark, and generates a unique, time-limited, single-use HTTPS URL.
+Middleware redirects the student's browser to this unique URL.
+Student interacts with Weasis via HTML5. All DICOM fetching happens locally between the Kasm container and your internal Orthanc/dcm4chee DICOM store.
+Student submits the Lung-RADS grade via the UI. The container is destroyed at the end of the session, leaving zero trace.
+What to Discuss with IT/Security on Wednesday
+To validate this on-premise approach, bring these specific points to your meeting:
+"Since AWS AppStream cannot natively stream local Proxmox VMs without a complex and costly Site-to-Site VPN, can we evaluate Kasm Workspaces or Apache Guacamole hosted directly on our Proxmox cluster as the streaming gateway?"
+"Can our internal network allow the streaming gateway (e.g., Kasm) to communicate securely with our internal DICOM store (e.g., Orthanc) on specific ports, while remaining completely isolated from the external internet?"
+"Does the hospital/university have an existing preference or license for web-based remote access tools that we can leverage, or are we greenlit to deploy a new open-source/community tool like Guacamole or Kasm?"
+Summary: Your instinct to keep the data on your bare-metal Proxmox servers is 100% correct for security and cost. However, AWS AppStream is the wrong tool for that specific job. Shift your focus to on-premise HTML5 streaming gateways (Kasm or Guacamole), and you will achieve your security goals at a fraction of the cost and complexity.
+Copy
+Ask Qwen
+Explain
+Translate(en-US)
+Hi, besides blocking developer tools in browser and blocking screenshot options, what elese methods I can prevent to stop from taking photos or saving screen in my app? I have reddit post with suggestions, I can share more context with you. 
+
+Thought Process
+Methods to Prevent/Deter Screen Capture Beyond DevTools Blocking
+Based on the Reddit thread you shared, here's what people actually try as bypasses — and what you can implement to counter them. Critical caveat upfront: the Reddit post confirms what we discussed before — no software solution is 100% foolproof. The most upvoted comments ("just take a photo with another phone") prove this. Your strategy must be deterrence + attribution, not prevention.
+
+1. Technical Blocking Methods (Deterrents)
+Web-based viewer (your IP_CMC platform)
+Canvas.toBlob() / toDataURL() override — monkey-patch these APIs so any script attempting to extract canvas pixels gets a blank or watermarked result
+CSP (Content Security Policy) — restrict to your own origin, blocking injected screenshot/capture extensions
+disablepictureinpicture attribute on video/canvas elements
+controlsList="nodownload nofullscreen noremoteplayback" on media elements
+CSS user-select: none + -webkit-touch-callout: none — prevents text selection and long-press save on mobile
+Detect DevTools via timing/size checks — but the Reddit thread shows users disable JS entirely, so this is theater
+Block common screen-recorder browser extensions by detecting their injected DOM elements or known extension IDs
+AppStream 2.0 Stack Policy (your primary tool)
+The Reddit thread shows Scrcpy, screen recording, and Samsung Secure Folder all bypass app-level blocks. AppStream gives you stronger OS-level controls:
+
+DisableClipboard — blocks copy/paste of image data
+DisableFileUpload / DisableFileDownload — no local filesystem access
+DisablePrinting — blocks PrintScreen-to-PDF (the Reddit user's workaround)
+DisableLocalDriveRedirection — no mounting local drives
+AppStream client application (not browser) — can hook OS-level screenshot APIs (PrintScreen, Snipping Tool, Win+Shift+S) and black them out. The HTML5 web client cannot.
+Strong recommendation: force students to use the AppStream native client application, not the HTML5 web client. This is the single biggest technical control you have.
+
+Native viewer (if you build one)
+FLAG_SECURE on Android — sets the secure window flag. Reddit confirms this black-screens Scrcpy, Google Assistant screenshots, screen recording, and most apps. Bypasses: rooted devices with Xposed/LSPosed, Frida hooks, Samsung Secure Folder.
+UIScreen.isCaptured on iOS — detect screen recording/replayKit and black out the view.
+Detect rooted/jailbroken devices and refuse to launch.
+SafetyNet / Play Integrity API on Android — verify device integrity before allowing access.
+2. Forensic Watermarking (Your Real Defense)
+This is the only thing that survives a phone-camera photo, which the Reddit thread confirms is the unbeatable bypass. Build it properly:
+
+Per-pixel steganographic watermark baked into the rendered image server-side — encode Student_ID + Session_ID + Timestamp + Frame_ID into LSBs or DCT coefficients
+Visible translucent overlay with the same metadata, rotating position every few seconds so users can't easily crop it out
+Per-frame unique token — so if a leak surfaces, you know exactly which student, which session, which slice, which timestamp
+Frame-on-demand serving — never send the full study; serve one frame at a time, each watermarked
+MutationObserver on the canvas — detects DOM-level tampering (Reddit users' first move), forces reload
+Server-side rendering only — never let raw DICOM pixels touch the client; the watermark is burned in before transmission
+3. Session & Identity Binding
+The Reddit post reveals people try:
+
+Android emulators (Bluestacks) → block emulator signatures
+App cloning (Parallel Space) → bind session to single device fingerprint + Moodle LTI identity
+Multiple logins → enforce single concurrent session; new login kills old session
+4. Policy Layer (the part that actually works)
+Looking at the Reddit thread, the user legally needed their PayPal receipts and won a court case. Your medical scenario is different, but the lesson holds: pure technical blocks create legitimate-user friction without stopping determined adversaries.
+
+Acceptable Use Policy signed at registration (before the 300 PLN payment) — explicitly prohibits screen capture, photography, redistribution
+Honor code acknowledgment before each Final Test attempt
+Watermark visibility notice — tell students their sessions are forensically watermarked; deterrence works better when known
+Audit trail — log every frame served, every session, every device fingerprint. The watermark's value is in proving a leak, not preventing one
+5. What Will Not Work (Save Your Time)
+Per the Reddit thread, these are bypassable or theater:
+
+Blocking Google Assistant — users still get black screens but other methods work
+Screen recording blocks — bypassed by rooted devices, Samsung Secure Folder, emulators
+MutationObserver alone — bypassed by disabling JS or photographing the screen
+App-level screenshot blocks — bypassed by Scrcpy on older Android, Frida hooks, Xposed
+PrintScreen blocking in browsers — bypassed by Snipping Tool, OS-level capture, second device
+Recommendation for Your IP_CMC Project
+Given the 500-study pool, paid certification, and scientific publication goals, prioritize in this order:
+
+AppStream 2.0 native client (not HTML5) with full Stack Policy — this kills 90% of software-based bypasses from the Reddit thread
+Server-side forensic watermarking on every frame — this is your attribution layer for the remaining 10%
+Stratified case assignment so no two students see identical case sets — limits damage of any single leak
+AUP + honor code at registration — the legal/policy backbone
+Skip — browser DevTools blocking alone, MutationObserver-only anti-tamper, any client-side screenshot detection (all theater per Reddit)
+The Reddit thread's most telling comment: "If a criminal or whatever really wanted it they'd take a picture with another device or mirror share to a device that can." That's your north star — design for attribution, not prevention.
+
+Want me to draft the forensic watermarking implementation for your server-side DICOM frame pipeline next?
+
+Ok, I want to work on one detail. "Since you specified that data does not move outside the internal medical servers, I have adjusted the architecture from public AWS AppStream to an On-Premise / Private Cloud Streaming Solution (e.g., Kasm Workspaces, Apache Guacamole, or local Windows RDS)." We have computing power, but can we host VM on our bare metal servers thgought proxmox and give access to the VMs through AWS AppStream? 
+The access will be 
+Our VMs -> they host OS or other solution with Weasis (Cross-platform / Windows & Web) -> AWS AppStream with configured options for grading -> access through unique link for each student. 
+
+In my opinion it is the cheapest option with medical data not leaving our servers. 
+
+
+Thinking completed
+I need to clarify a critical technical limitation here to save you from a costly architectural dead end.
+The short answer is: No, AWS AppStream 2.0 cannot natively stream applications hosted on your local on-premise Proxmox servers.
+AppStream 2.0 is a fully managed AWS service that only runs and streams applications from AWS-managed EC2 instances within an AWS VPC. It does not support "Bring Your Own VM" (BYOVM) from external environments like Proxmox, VMware, or Hyper-V.
+The "Workaround" (And Why You Should Avoid It)
+The only way to make your proposed architecture work is to set up a complex hybrid network:
+Your local Proxmox VM runs Weasis and exposes an RDP/VNC port.
+You establish an AWS Site-to-Site VPN or Direct Connect between your hospital network and the AWS VPC.
+The AWS AppStream instance runs a remote desktop client (like FreeRDP) that connects back through the VPN to your local Proxmox VM.
+AppStream then streams that RDP session to the student.
+Why this is a bad idea:
+It is NOT the cheapest option: You are now paying for AWS AppStream compute hours + AWS data transfer/VPN fees + your local Proxmox server electricity/maintenance. You are paying for compute twice.
+It introduces latency: Video is encoded on the local VM, sent over a VPN to AWS, re-encoded by AppStream, and sent to the student. This will cause noticeable lag when scrolling through hundreds of CT slices.
+It violates the spirit of your security model: You are opening a persistent, complex network tunnel between your secure medical network and AWS, which your IT/Security team will likely reject or heavily scrutinize.
+The Actual Cheapest & Most Secure On-Premise Solutions
+If your primary goals are 100% on-premise data isolation and lowest cost, you should drop AWS AppStream entirely and use a dedicated on-premise application streaming solution that runs directly on your existing Proxmox bare-metal servers.
+Here are the two best options for your specific use case:
+Option 1: Kasm Workspaces (Highly Recommended)
+Kasm is a containerized streaming platform designed exactly for this. It runs directly on your Proxmox servers (as LXC containers or VMs).
+How it works: You create a "Workspace" image containing a Linux desktop and the Weasis DICOM viewer (or a web-based viewer like OHIF). When a student clicks the Moodle link, Kasm instantly spins up an isolated, ephemeral container for that specific student.
+Security: The student only receives an HTML5 video stream of the browser/desktop. No DICOM data, no files, and no raw pixels ever leave the Proxmox server. Kasm has built-in policies to disable clipboard, file uploads/downloads, and right-clicking.
+Watermarking: Kasm has native, built-in support for dynamic, rotating session watermarks (Student ID + Timestamp) overlaid on the stream.
+Cost: There is a free Community Edition (which might suffice for 10-20 concurrent users) and a paid Enterprise edition. Zero AWS compute fees.
+Option 2: Apache Guacamole (Free & Open Source)
+Guacamole is a clientless remote desktop gateway. It supports standard protocols like VNC and RDP.
+How it works: You install Guacamole on a lightweight Linux VM in your Proxmox cluster. Your Proxmox VMs run Windows (with Weasis desktop) or Linux (with Weasis web). Guacamole connects to them via local RDP/VNC and translates the output to HTML5 for the student's browser.
+Security: Like Kasm, it streams only pixels. You can configure it to disable clipboard and file transfer.
+Cost: 100% free and open-source. However, you will need to build the dynamic watermarking and Moodle LTI integration yourself (or use a third-party plugin), as Guacamole is more of a raw protocol translator than a polished SaaS product like Kasm.
+How the "Unique Link" Workflow Actually Looks (On-Premise)
+Instead of AWS, your architecture would look like this:
+Student logs into Moodle and clicks "Start LDCT Training".
+Moodle sends an LTI 1.3 launch request to your local Middleware (hosted on a Proxmox VM).
+Middleware verifies payment, selects the stratified 130-case list, and sends an API call to Kasm Workspaces (or Guacamole).
+Kasm instantly provisions an isolated, ephemeral container/VM with Weasis pre-loaded, applies the dynamic forensic watermark, and generates a unique, time-limited, single-use HTTPS URL.
+Middleware redirects the student's browser to this unique URL.
+Student interacts with Weasis via HTML5. All DICOM fetching happens locally between the Kasm container and your internal Orthanc/dcm4chee DICOM store.
+Student submits the Lung-RADS grade via the UI. The container is destroyed at the end of the session, leaving zero trace.
+
+Based on this convo, can you build 2 OMG UML diagrams or flowcharts, one based on AWS solutions and other based on on-premise free solutions for the whole infrastructure for the project?  Show full message
+
+Thought Process
+Here are the two infrastructure flowcharts you requested. I have designed them using Mermaid.js, which renders directly in most Markdown viewers (including GitHub, Notion, and Obsidian).
+
+I have specifically highlighted where the forensic watermarking, stratified case assignment, and Lung-RADS grading fit into both architectures, ensuring they align with your PM's requirements.
+
+Architecture 1: Fully Cloud-based (AWS AppStream 2.0)
+In this model, all compute, storage, and streaming happen inside AWS. This is the easiest to scale and maintain, but requires migrating the 500 DICOM studies to the cloud.
+
+flowchart TD
+    %% External Actors
+    Student[Student / Radiologist\nPersonal Laptop]
+    Moodle[Moodle LMS\nUniversity Server]
+    Payment[Payment Gateway\nPrzelewy24 / PayU]
+
+    %% AWS Cloud Boundary
+    subgraph AWS Cloud
+        subgraph AWS_Public[Public Subnet]
+            ALB[Application Load Balancer\n& API Gateway]
+        end
+        
+        subgraph AWS_Private[Private Subnet - DMZ]
+            AppStream[AWS AppStream 2.0 Fleet\nWindows Instances running Weasis]
+            Middleware[LTI 1.3 Middleware\nNode.js / Python]
+            RDS[(Amazon RDS\nPostgreSQL)]
+        end
+
+        subgraph AWS_Data[Private Subnet - Data Tier]
+            DICOM_Orthanc[Orthanc DICOM Server\nEC2 Instance]
+            S3[(Amazon S3 / HealthImaging\n500 Anonymized Studies)]
+        end
+    end
+
+    %% Connections
+    Student -->|1. Clicks LTI Link| Moodle
+    Student -->|4. HTML5 Pixel Stream| AppStream
+    Student -->|Pays 300 PLN| Payment
+    Payment -->|Webhook| Middleware
+
+    Moodle -->|2. LTI 1.3 Launch Payload\nStudent ID + Course Context| ALB
+    ALB -->|3. Forwards to Middleware| Middleware
+    
+    Middleware -->|Queries User Progress & Stratified Sampling| RDS
+    Middleware -->|5. Requests Session URL\n+ StudyInstanceUID + Watermark ID| AppStream
+    Middleware -->|6. Pulls assigned DICOM Study| DICOM_Orthanc
+    S3 -->|Provides DICOM Files| DICOM_Orthanc
+    
+    AppStream -->|7. Executes Weasis\nApplies Stack Policies\nRenders Watermark| AppStream
+    AppStream -->|8. Streams Pixels Only\nNo Local Data| Student
+    
+    Student -->|9. Submits Lung-RADS Category| AppStream
+    AppStream -->|10. Sends Grade to Middleware| Middleware
+    Middleware -->|11. Compares to Ground Truth\nUpdates Database| RDS
+    Middleware -->|12. AGS Grade Passback to Moodle| Moodle
+Key Characteristics of AWS Architecture:
+
+Pros: Zero hardware maintenance. Built-in Stack Policies disable clipboard, printing, and file transfers at the OS level. AppStream handles scaling automatically.
+Cons: Ongoing AWS compute costs. Medical data must be uploaded to AWS S3 (requires DPO/GDPR approval for cloud storage).
+Watermarking: Handled by injecting parameters into the AppStream session, rendering the watermark on the remote Windows instance before pixels are streamed.
+Architecture 2: On-Premise Free Solution (Proxmox + Kasm Workspaces)
+In this model, all data remains strictly within the hospital/university bare-metal servers. AWS is completely removed. Kasm Workspaces replaces AppStream.
+
+flowchart TD
+    %% External Actors
+    Student[Student / Radiologist\nPersonal Laptop]
+    Moodle[Moodle LMS\nUniversity Server]
+    Payment[Payment Gateway\nPrzelewy24 / PayU]
+
+    %% On-Premise Boundary
+    subgraph On_Premise_Bare_Metal[University / Hospital Bare Metal Servers - Proxmox Cluster]
+        
+        subgraph Edge_Network[Edge Network / DMZ]
+            Nginx[Nginx Reverse Proxy\nHTTPS Termination]
+        end
+        
+        subgraph Middleware_VM[Middleware VM - Proxmox LXC/VM]
+            LTI_MW[LTI 1.3 Middleware\nNode.js / Python]
+            DB[(PostgreSQL Database\nStratified Sampling & State Machine)]
+        end
+
+        subgraph Kasm_Infrastructure[Kasm Workspaces Infrastructure]
+            Kasm_Proxy[Kasm Proxy / Web App\nHTML5 Streaming Gateway]
+            Kasm_Agent[Kasm Agent\nProvisions Ephemeral Containers]
+            Kasm_Container[Isolated Docker Container\nLinux + Weasis Web]
+        end
+
+        subgraph Data_Tier[Internal Data Tier - Private Subnet]
+            Orthanc[Orthanc DICOM Server]
+            NAS[(SAN / NAS Storage\n500 Anonymized DICOM Studies)]
+        end
+    end
+
+    %% Connections
+    Student -->|1. Clicks LTI Link| Moodle
+    Student -->|4. HTML5 Pixel Stream via Browser| Nginx
+    Student -->|Pays 300 PLN| Payment
+    Payment -->|Webhook| LTI_MW
+
+Key Characteristics of On-Premise Architecture:
+
+Pros: Zero AWS compute costs. Medical data never leaves the hospital's physical network (massive GDPR/DPO compliance win). Full control over hardware.
+Cons: You are responsible for maintaining the Proxmox cluster, backups, and Kasm updates. You must build the Moodle LTI and Kasm API integration yourself.
+Watermarking: Kasm has native support for dynamic, forensic watermarking (burning Student ID + Timestamp directly into the video stream).
+Security: Containers are ephemeral. When the student logs out, the container is destroyed, leaving zero trace of the DICOM images on the server.
+Summary Comparison for your PM:
+Feature
+AWS AppStream (Cloud)
+Proxmox + Kasm (On-Prem)
+Initial Setup Cost	Low (No hardware to buy)	High (Requires existing Proxmox servers)
+Ongoing Compute Cost	~$150-$300 / month	Free (Electricity only)
+Data Location	AWS Cloud (eu-central-1)	Hospital Bare Metal
+Screenshot Blocking	OS-level Stack Policies	Browser-level + Network-level
+Watermarking	Custom script needed	Built-in to Kasm natively
+IT Maintenance	Managed by AWS	Managed by your IT team
+
+For your specific context (existing Proxmox hardware, strict medical data isolation rules, 300 PLN budget), the On-Premise Kasm architecture is definitively the better choice. It keeps the medical data internal, eliminates cloud egress costs, and gives you full control over the forensic watermarking pipeline.
+
+
+
+Send a Message
+
+
+
+Deep Think
+Max
+
+
+Syntax error in text

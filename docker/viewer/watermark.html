@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IP_CMC DICOM Viewer</title>
+<style>
+  /* Deterrence, not prevention: see CLAUDE.md / Dokumentacja for why this is attribution-layer only. */
+  html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#000; }
+  #frame { position:absolute; inset:0; width:100%; height:100%; border:0; }
+  #watermark { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:10; }
+  /* Reduce (not eliminate) casual copy/print attempts inside this session's own browser */
+  * { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  @media print { body::before { content:"Printing disabled for this session."; } #frame,#watermark{display:none;} }
+</style>
+</head>
+<body>
+  <iframe id="frame" src="" allow="fullscreen"></iframe>
+  <canvas id="watermark"></canvas>
+
+<script>
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  const studentId = params.get("student_id") || "UNKNOWN_STUDENT";
+  const sessionId = params.get("session_id") || "UNKNOWN_SESSION";
+  // Orthanc lives on its own origin (see nginx.conf comment on why it isn't
+  // reverse-proxied under a subpath). Defaults to this machine's local test
+  // setup; the Kasm launcher (custom_startup.sh) passes the real internal
+  // address per deployment via this same query param.
+  const orthancUrl = params.get("orthanc_url") || "http://localhost:8042/";
+  document.getElementById("frame").src = orthancUrl;
+
+  const canvas = document.getElementById("watermark");
+  const ctx = canvas.getContext("2d");
+
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener("resize", resizeCanvas);
+  resizeCanvas();
+
+  function drawWatermark() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const text = `${studentId} | ${sessionId} | ${new Date().toISOString()}`;
+    ctx.font = "16px monospace";
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.textBaseline = "top";
+
+    // Rotate the watermark position every tick so it can't be cropped out easily.
+    const positions = [
+      [20, 20], [canvas.width - 420, 20],
+      [20, canvas.height - 40], [canvas.width - 420, canvas.height - 40],
+      [canvas.width / 2 - 200, canvas.height / 2],
+    ];
+    const pos = positions[Math.floor(Date.now() / 3000) % positions.length];
+    ctx.fillText(text, pos[0], pos[1]);
+  }
+
+  drawWatermark();
+  setInterval(drawWatermark, 1000);
+
+  // Anti-tamper: reload if the watermark canvas is hidden or removed from the DOM.
+  // NOTE: this deters casual DOM tampering; it does NOT stop a camera photo of the
+  // screen or a determined attacker disabling JS. See Dokumentacja for the full
+  // threat-model discussion — attribution via the watermark is the real control.
+  const observer = new MutationObserver(() => {
+    if (!document.body.contains(canvas) ||
+        canvas.style.display === "none" ||
+        canvas.style.visibility === "hidden") {
+      window.location.reload();
+    }
+  });
+  observer.observe(document.body, { childList: true, attributes: true, subtree: true });
+
+  // Best-effort deterrents (all bypassable locally, kept for friction + audit signal)
+  document.addEventListener("contextmenu", e => e.preventDefault());
+  document.addEventListener("keydown", e => {
+    const k = e.key.toLowerCase();
+    if (e.key === "PrintScreen" || (e.ctrlKey && ["p","s","c"].includes(k))) {
+      e.preventDefault();
+    }
+  });
+})();
+</script>
+</body>
+</html>
