@@ -9,14 +9,16 @@ services:
       - orthanc-storage:/var/lib/orthanc/db
     networks:
       - ipcmc-internal
+      - kasm_default_network
     ports:
       # Bound to localhost only: convenience for local testing/debugging so
       # the watermark wrapper's browser (running on this same machine) can
       # iframe Orthanc's own UI directly, avoiding subpath-proxy breakage
       # (Orthanc's Explorer2/Stone-Viewer assets assume they're served from
-      # the root of their own origin). In the real Kasm deployment this port
-      # is never published to a host at all — Kasm's internal browser reaches
-      # `orthanc:8042` over the same internal Docker/Proxmox network instead.
+      # the root of their own origin). Reachability for Kasm's own session
+      # containers comes from the kasm_default_network attachment above
+      # instead (by container name, e.g. http://ipcmc-orthanc:8042/) — not
+      # from this published port, which stays loopback-only.
       - "127.0.0.1:8042:8042"
 
   viewer:
@@ -31,10 +33,18 @@ services:
                        # see README.md "From MVP to the real thing".
     networks:
       - ipcmc-internal
+      - kasm_default_network
 
 networks:
   ipcmc-internal:
     driver: bridge
+  kasm_default_network:
+    # Created by the Kasm Workspaces installer, not by this compose file —
+    # attaching here is what lets Kasm's session containers reach `orthanc`
+    # and `viewer` by container name (see comments above). If Kasm isn't
+    # installed yet, comment this network out of both services above and
+    # this block, and use `docker compose up` for local-only testing.
+    external: true
 
 volumes:
   orthanc-storage:
