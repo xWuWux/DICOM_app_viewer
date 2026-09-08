@@ -1,0 +1,7 @@
+# Sourced by the base nginx image's own entrypoint (docker-entrypoint.d/*.envsh
+# convention) before 20-envsubst-on-templates.sh runs. Computes the Basic-Auth
+# token for the auth-injecting Orthanc proxy (see default.conf.template) from
+# ORTHANC_USER/ORTHANC_PASSWORD at container start, instead of a hardcoded
+# base64 string baked into a file committed to git.
+export ORTHANC_AUTH_B64
+ORTHANC_AUTH_B64="$(printf '%s:%s' "${ORTHANC_USER:-orthanc}" "${ORTHANC_PASSWORD:?ORTHANC_PASSWORD must be set (see .env.example)}" | base64 -w0)"
