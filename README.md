@@ -87,37 +87,53 @@ Per the docs' own recommendation (`Dokumentacja/AI_context_Documentation_DICOM.t
 - Stratified case sampling (50/50/30 across Lung-RADS classes).
 - Admin dashboard, leaderboard, expert-review queue.
 
-## From MVP to the real thing: adding Kasm Workspaces
+## Kasm Workspaces: real per-student links
 
-This is a bigger, host-level change (downloads several GB, installs a
-systemd service, wants port 443, modifies the machine it runs on) — deliberately
-**not** automated here. Do this step yourself, on whichever machine/VM will
-actually host it (this machine for another local test, or the real Proxmox VM):
+Kasm Workspaces Community Edition is installed on this machine (via
+<https://kasm.com/docs/latest/install/single-server-install/>, using
+`sudo bash kasm_release/install.sh` — a host-level change with its own
+systemd service on port 443, deliberately not scripted here since it needs
+an interactive sudo password; see git history for the exact steps if setting
+this up somewhere else, e.g. the real Proxmox VM).
 
-1. Install Kasm Workspaces Community Edition following
-   <https://kasmweb.com/docs/latest/install/installation.html>.
-2. Build the custom workspace image and register it in Kasm:
-   ```bash
-   docker build -t ipcmc/dicom-viewer:mvp docker/kasm-workspace
-   ```
-   Point `VIEWER_URL` in `docker/kasm-workspace/Dockerfile` at wherever the
-   `viewer` container from this repo is actually reachable from the Kasm host.
-3. In the Kasm admin UI, register the image as a Workspace, and set its
-   **Permissions** to disable clipboard, file upload/download, and printing
-   for this workspace (Kasm's own DLP controls — the equivalent of the
-   AppStream "Stack Policy" the docs discuss, done the on-prem way).
-4. Generate an API key/secret (Kasm admin UI → Access → API Keys), then mint
-   an individual session link per user:
+What's wired up, end to end, and confirmed working:
+
+1. **Custom workspace image** (`docker/kasm-workspace/`): a Kasm Chrome
+   workspace in kiosk mode, pinned to the watermarked viewer. Build/rebuild
+   with `docker build -t ipcmc/dicom-viewer:mvp docker/kasm-workspace`, then
+   register it in the Kasm admin UI as a Workspace (type **Container**,
+   Docker Image `ipcmc/dicom-viewer:mvp`, registry blank since it's built
+   locally on the same Docker host Kasm's agent uses).
+2. **Networking**: `docker-compose.yml` attaches `orthanc`/`viewer` to
+   `kasm_default_network` (external, created by the Kasm installer) so Kasm's
+   session containers reach them by container name — `http://ipcmc-viewer:8080/`
+   and the auth-injecting proxy at `http://ipcmc-viewer:8043/` (see
+   `docker/viewer/nginx.conf` for why Orthanc isn't reached directly: an
+   iframe can't answer its Basic Auth challenge).
+3. **Per-student links** (`scripts/create-session.py`): calls Kasm's public
+   API (`/api/public/request_kasm`) to mint a one-off session with
+   `STUDENT_ID`/`SESSION_ID` baked into its environment — that's what
+   `custom_startup.sh` reads to launch Chrome with the right watermark
+   identity already in the URL. Needs an API key from the admin UI
+   (**Settings → Developers → Add API Key**, with the **"Users Auth Session"**
+   and **"User"** permissions enabled — `request_kasm` 403s without both) and
+   the workspace's image_id (from its edit URL in the admin UI):
    ```bash
    KASM_SERVER=https://your-kasm-host \
    KASM_API_KEY=... KASM_API_KEY_SECRET=... KASM_IMAGE_ID=... \
-   python3 scripts/create-session.py --student-id STU_12345
+   python3 scripts/create-session.py --student-id STU_12345 --insecure  # drop --insecure with a real cert
    ```
-   **`scripts/create-session.py` is an unverified template** — Kasm wasn't
-   installed as part of this session, so its API response shape hasn't been
-   checked against a live instance. Confirm field names against
-   <https://kasmweb.com/docs/api.html> (linked in `CLAUDE.md`) before relying
-   on it, and expect to adjust.
+   Prints a ready-to-share `link` — no login required, it's pre-authenticated
+   via a session token Kasm generates. The script also tries a readiness
+   check (`get_kasm_status`) but treats it as best-effort: a scoped API key
+   commonly lacks the separate "impersonate another user" permission that
+   call needs for an anonymous/other user, so it's fine if that part logs a
+   non-fatal warning and skips straight to printing the link.
+
+**Not yet done**: the workspace's own DLP settings (disable clipboard,
+file upload/download, printing — Kasm's per-workspace Permissions tab,
+the on-prem equivalent of AppStream's "Stack Policy") haven't been
+configured yet. Worth doing before this goes anywhere near real students.
 
 ## Security note (read this before assuming more than it does)
 
@@ -130,10 +146,12 @@ enforce:
 
 - Raw DICOM pixels never reach a browser outside the internal Docker network
   (Orthanc has no published port).
-- Every session's viewer page carries a rotating, timestamped identity
-  watermark, reconstructed every second server-side-adjacent (in the wrapper
-  page, not user-controllable JS state).
-- A DOM-tamper check reloads the page if the watermark canvas is hidden or
+- Every session's viewer page carries a sparse, tiled, timestamped identity
+  watermark (student/session ID baked in server-side via the Kasm API, not
+  user-controllable JS state), rendered with `mix-blend-mode:difference` so
+  it stays visible against light or dark content and re-rendered every
+  second.
+- A DOM-tamper check reloads the page if the watermark is hidden or
   removed — a deterrent, not a guarantee (disabling JS entirely defeats it,
   same as noted in the docs).
 
@@ -149,5 +167,5 @@ docker/kasm-workspace/        custom Kasm workspace image (build after Kasm is i
 sample-data/                  public-domain sample DICOM files
 scripts/fetch-public-samples.sh  pulls larger public teaching studies (BRAINIX) into sample-data/
 scripts/load-sample-studies.sh   uploads sample-data/ (recursively) into Orthanc
-scripts/create-session.py     mints a per-student Kasm session link (template, unverified)
+scripts/create-session.py     mints a per-student Kasm session link (tested against a live instance)
 ```
