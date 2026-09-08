@@ -32,6 +32,7 @@ for the real Kasm deployment.
 
 ```bash
 docker compose up -d --build
+./scripts/fetch-public-samples.sh   # pulls in BRAINIX (~64MB, not committed to git)
 ./scripts/load-sample-studies.sh
 ```
 
@@ -59,10 +60,19 @@ this ever touches real data or a shared network.
 `sample-data/*.dcm` are [pydicom](https://github.com/pydicom/pydicom)'s own
 bundled test fixtures (`CT_small.dcm`, `MR_small.dcm`) — synthetic/test files
 used for exactly this purpose upstream, not real patient data, and safe to
-commit to a public repo. Real studies still need the anonymization pipeline
-described in `CLAUDE.md` (hard rule: *"All DICOM files must be anonymized and
-stripped of PHI before ingestion"*) — that pipeline doesn't exist yet and is
-out of scope for this MVP.
+commit to a public repo.
+
+`sample-data/brainix/` is the classic **BRAINIX** MRI teaching study (232
+instances / 7 series / ~64MB), pulled from Orthanc's own official public demo
+server (`orthanc.uclouvain.be/demo`) via `scripts/fetch-public-samples.sh`.
+It's a long-standing public/anonymized teaching dataset, not real patient
+data — but at ~64MB it's **not committed to git** (see `.gitignore`); re-run
+the fetch script to get it back after a fresh clone.
+
+Real studies still need the anonymization pipeline described in `CLAUDE.md`
+(hard rule: *"All DICOM files must be anonymized and stripped of PHI before
+ingestion"*) — that pipeline doesn't exist yet and is out of scope for this
+MVP.
 
 ## What's NOT in this MVP (on purpose)
 
@@ -137,6 +147,7 @@ docker/orthanc/               Orthanc config
 docker/viewer/                nginx + the watermark wrapper page
 docker/kasm-workspace/        custom Kasm workspace image (build after Kasm is installed)
 sample-data/                  public-domain sample DICOM files
-scripts/load-sample-studies.sh   uploads sample-data/ into Orthanc
+scripts/fetch-public-samples.sh  pulls larger public teaching studies (BRAINIX) into sample-data/
+scripts/load-sample-studies.sh   uploads sample-data/ (recursively) into Orthanc
 scripts/create-session.py     mints a per-student Kasm session link (template, unverified)
 ```
