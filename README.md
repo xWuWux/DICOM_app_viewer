@@ -17,10 +17,10 @@ sampling yet.
 ┌──────────────┐      ┌───────────────────────┐      ┌─────────────┐
 │  Your browser│ ───► │ viewer (nginx:8080)   │ ───► │  orthanc    │
 │  (stand-in   │      │ watermark.html +      │      │  (DICOM     │
-│  for Kasm's   │      │ reverse proxy         │      │  store,     │
-│  streamed     │      └───────────────────────┘      │  internal   │
-│  session)     │                                      │  only)      │
-└──────────────┘                                      └─────────────┘
+│  for Kasm's  │      │ reverse proxy         │      │  store,     │
+│  streamed    │      └───────────────────────┘      │  internal   │
+│  session)    │                                     │  only)      │
+└──────────────┘                                     └─────────────┘
 ```
 
 Orthanc is **not** published on any host port — only the `viewer` container
