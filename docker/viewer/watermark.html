@@ -26,7 +26,7 @@
   // reverse-proxied under a subpath). Defaults to this machine's local test
   // setup; the Kasm launcher (custom_startup.sh) passes the real internal
   // address per deployment via this same query param.
-  const orthancUrl = params.get("orthanc_url") || "http://localhost:8042/";
+  const orthancUrl = params.get("orthanc_url") || "http://localhost:8043/";
   document.getElementById("frame").src = orthancUrl;
 
   const canvas = document.getElementById("watermark");
