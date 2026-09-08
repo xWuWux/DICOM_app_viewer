@@ -36,7 +36,8 @@
     font: bold 15px monospace;
     white-space:nowrap;
     flex: 0 0 auto;
-    padding: 28px 36px;
+    padding: 90px 130px; /* sparse tiling on purpose — a mark, not a wall of text */
+    opacity: 0.55; /* still guaranteed-contrast via mix-blend-mode, just softer */
   }
 
   /* Reduce (not eliminate) casual copy/print attempts inside this session's own browser */
@@ -62,7 +63,7 @@
 
   const rotator = document.getElementById("watermark-rotator");
   const grid = document.getElementById("watermark-grid");
-  const CELL_W = 340, CELL_H = 90; // approximate — real layout wraps via flexbox
+  const CELL_W = 600, CELL_H = 260; // approximate — real layout wraps via flexbox
 
   function rebuildGrid() {
     // watermark-rotator is 2x the viewport in both dimensions (to stay fully
