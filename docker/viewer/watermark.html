@@ -7,7 +7,14 @@
   /* Deterrence, not prevention: see CLAUDE.md / Dokumentacja for why this is attribution-layer only. */
   html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#000; }
   #frame { position:absolute; inset:0; width:100%; height:100%; border:0; }
-  #watermark { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:10; }
+  /* mix-blend-mode:difference guarantees contrast against ANY underlying
+     content (white page -> dark text, black page -> light text, any color
+     -> its complement) — a fixed color/opacity went invisible on Orthanc's
+     white UI (see git log), which defeats a forensic watermark entirely. */
+  #watermark {
+    position:absolute; inset:0; width:100%; height:100%;
+    pointer-events:none; z-index:10; mix-blend-mode:difference;
+  }
   /* Reduce (not eliminate) casual copy/print attempts inside this session's own browser */
   * { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
   @media print { body::before { content:"Printing disabled for this session."; } #frame,#watermark{display:none;} }
@@ -42,18 +49,29 @@
   function drawWatermark() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const text = `${studentId} | ${sessionId} | ${new Date().toISOString()}`;
-    ctx.font = "16px monospace";
-    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.font = "14px monospace";
+    ctx.fillStyle = "#fff"; // color barely matters under mix-blend-mode:difference
     ctx.textBaseline = "top";
 
-    // Rotate the watermark position every tick so it can't be cropped out easily.
-    const positions = [
-      [20, 20], [canvas.width - 420, 20],
-      [20, canvas.height - 40], [canvas.width - 420, canvas.height - 40],
-      [canvas.width / 2 - 200, canvas.height / 2],
-    ];
-    const pos = positions[Math.floor(Date.now() / 3000) % positions.length];
-    ctx.fillText(text, pos[0], pos[1]);
+    // Tile the watermark across the whole canvas, diagonally, instead of one
+    // rotating spot — a single instance is trivial to crop out of a
+    // screenshot; a repeating tiled pattern covering the whole frame isn't.
+    ctx.save();
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate(-20 * Math.PI / 180);
+    ctx.translate(-canvas.width / 2, -canvas.height / 2);
+
+    const stepX = 340;
+    const stepY = 90;
+    // Drift the whole tile grid slowly so a static crop from one frame
+    // doesn't reliably dodge every instance in the next.
+    const drift = (Date.now() / 20000) % stepX;
+    for (let y = -stepY; y < canvas.height + stepY; y += stepY) {
+      for (let x = -stepX; x < canvas.width + stepX * 2; x += stepX) {
+        ctx.fillText(text, x - drift, y);
+      }
+    }
+    ctx.restore();
   }
 
   drawWatermark();
