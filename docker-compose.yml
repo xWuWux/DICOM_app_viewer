@@ -31,6 +31,9 @@ services:
       - "8080:8080"   # This is the only thing that should ever be reachable directly for this MVP,
                        # and in the real deployment even this gets replaced by Kasm's own gateway —
                        # see README.md "From MVP to the real thing".
+      - "127.0.0.1:8043:8043"   # Auth-injecting Orthanc proxy — loopback only. Publishing
+                                 # this beyond localhost would hand out unauthenticated Orthanc
+                                 # access to anyone who can reach it (see nginx.conf comment).
     networks:
       - ipcmc-internal
       - kasm_default_network

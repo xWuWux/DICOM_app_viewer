@@ -24,7 +24,10 @@ USER root
 # field (see scripts/create-session.py) — these are just sane defaults so the
 # workspace also works from a plain "Launch" click in the Kasm admin UI.
 ENV VIEWER_URL="http://ipcmc-viewer:8080/"
-ENV ORTHANC_URL="http://ipcmc-orthanc:8042/"
+# Port 8043 on the viewer container, NOT Orthanc's own 8042 — that's the
+# auth-injecting proxy in nginx.conf. Pointing here directly at Orthanc
+# would hit its Basic Auth challenge, which an iframe can't answer.
+ENV ORTHANC_URL="http://ipcmc-viewer:8043/"
 
 COPY custom_startup.sh /dockerstartup/custom_startup.sh
 RUN chmod +x /dockerstartup/custom_startup.sh
