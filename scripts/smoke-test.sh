@@ -68,6 +68,8 @@ check() {
 check "orthanc" "200" "http://localhost:8042/system" "orthanc:${ORTHANC_PASSWORD}"
 check "watermarked viewer wrapper" "200" "http://localhost:8080/?student_id=CI_TEST&session_id=CI_TEST"
 check "auth-injecting Orthanc proxy (401 would mean auth injection is broken)" "307" "http://localhost:8043/"
+check "grading-api, direct" "200" "http://localhost:8080/api/healthz"
+check "grading-api, first case for a fresh student" "200" "http://localhost:8080/api/case?student_id=CI_TEST_$$"
 
 if [ "$status" -eq 0 ]; then
   echo "All smoke checks passed."

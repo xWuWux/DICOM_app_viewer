@@ -45,12 +45,22 @@ services:
     ports:
       - "${BIND_ADDR:-0.0.0.0}:8042:8042"
 
+  grading-api:
+    build: ./docker/grading-api
+    container_name: ipcmc-grading-api
+    restart: unless-stopped
+    volumes:
+      - grading-db:/data
+    networks:
+      - ipcmc-internal
+
   viewer:
     build: ./docker/viewer
     container_name: ipcmc-viewer
     restart: unless-stopped
     depends_on:
       - orthanc
+      - grading-api
     environment:
       - ORTHANC_PASSWORD=${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD in .env -- see .env.example}
     ports:
@@ -65,3 +75,4 @@ networks:
 
 volumes:
   orthanc-storage:
+  grading-db:

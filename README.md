@@ -76,6 +76,52 @@ Real studies still need the anonymization pipeline described in `CLAUDE.md`
 ingestion"*) — that pipeline doesn't exist yet and is out of scope for this
 MVP.
 
+## Lung-RADS grading
+
+A new `grading-api` service (FastAPI + SQLite, `docker/grading-api/`)
+implements the 3-stage state machine from the PM's spec, in Polish:
+
+1. **Nauka (learning)** — free-text impression, submit, then the real
+   reference report appears to cross-check against. Not graded — no NLP,
+   no correctness scoring (matches CLAUDE.md's "no NLP or free-text
+   grading" hard rule exactly).
+2. **Ocena (assessment)** — structured Lung-RADS category (`0`–`4X`,
+   dropdown) + "S" modifier (radio), submit, immediate correct/incorrect
+   feedback against ground truth.
+3. **Test (exam)** — same structured inputs, submit, **no** feedback until
+   all test-stage cases are done, then a final score summary.
+
+The grading panel lives in `watermark.html` as a sidebar next to the DICOM
+viewer iframe (same page, no separate route) — on loading a case it
+deep-links the iframe to that one assigned study
+(`ui/app/index.html#/filtered-studies?StudyInstanceUID=...`), not the full
+patient list, matching `Dokumentacja/`'s "Single DICOM Study Isolation"
+requirement. **Worth knowing**: Orthanc's Explorer 2 has no true per-study
+*viewer* deep-link (confirmed against its actual router source — no route
+takes a study ID at all); this filters the list to one row, which still
+needs one click from the student to open the viewer on it. The
+`stone-webviewer` plugin this project assumed earlier isn't even installed
+on this Orthanc image (confirmed via `GET /plugins`) — corrected once
+actually tested against the real instance, not left as an assumption.
+
+Ground truth + reference reports are **placeholder content** on the
+existing sample studies (CT_small/MR_small/BRAINIX — none of which are
+actually lung CTs) — one case per stage, purely to prove the mechanics work
+end to end. Real curated content (500 studies, real ground truth, a real
+radiologist's reference reports) is separate work tracked in `Dokumentacja/`.
+
+`grading-api` is internal-only (no host port, not on `kasm_default_network`
+— nothing outside `viewer`'s nginx needs to reach it directly), reached via
+a same-origin `/api/` proxy so the panel's `fetch()` calls need no CORS
+handling. SQLite chosen deliberately over the Postgres `Dokumentacja/`
+originally specified — lighter for proving out the mechanics now; migrating
+later means changing a connection string, not the app logic. (Flagging
+explicitly: this means CLAUDE.md's literal "Stratified random sampling via
+PostgreSQL" hard rule doesn't hold today — no Postgres, and no real
+stratified sampling yet either, since there's no real 500-study pool to
+stratify. Worth revisiting CLAUDE.md's wording once this direction is
+confirmed as lasting.)
+
 ## What's NOT in this MVP (on purpose)
 
 Per the docs' own recommendation (`Dokumentacja/AI_context_Documentation_DICOM.txt`,
@@ -85,8 +131,10 @@ Per the docs' own recommendation (`Dokumentacja/AI_context_Documentation_DICOM.t
   it needs (the workspace image + session-minting script below).
 - Moodle / LTI 1.3 launch and grade passback.
 - Payments (300 PLN), certificates, access expiry.
-- Lung-RADS category selection UI, grading, ground-truth comparison.
-- Stratified case sampling (50/50/30 across Lung-RADS classes).
+- Real stratified case sampling (50/50/30 across Lung-RADS classes, drawn
+  from a real curated 500-study pool) — see "Lung-RADS grading" below for
+  what's actually built: the 3-stage mechanics, with 1 placeholder case per
+  stage rather than a real stratified pool.
 - Admin dashboard, leaderboard, expert-review queue.
 
 ## Kasm Workspaces: real per-student links
@@ -202,7 +250,8 @@ Dokumentacja/                 source design discussion + radiology requirements
 .env.example                  copy to .env and fill in a real ORTHANC_PASSWORD (gitignored)
 docker-compose.yml            Orthanc + watermarked viewer, for local testing
 docker/orthanc/               Orthanc config (no credentials in here -- see .env.example)
-docker/viewer/                nginx (config templated + auth token computed from env, not hardcoded) + the watermark wrapper page
+docker/viewer/                nginx (config templated + auth token computed from env, not hardcoded) + the watermark wrapper page + grading panel
+docker/grading-api/           Lung-RADS 3-stage grading mechanics (FastAPI + SQLite)
 docker/kasm-workspace/        custom Kasm workspace image (build after Kasm is installed)
 sample-data/                  public-domain sample DICOM files
 scripts/fetch-public-samples.sh  pulls larger public teaching studies (BRAINIX) into sample-data/
