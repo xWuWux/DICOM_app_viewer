@@ -163,6 +163,27 @@ def submit(body: SubmitBody):
         conn.close()
 
 
+class ResetBody(BaseModel):
+    student_id: str
+
+
+@app.post("/reset")
+def reset(body: ResetBody):
+    """Start over from the beginning. There's no separate 'main screen' in
+    this single-page kiosk app (viewer + grading panel) -- once a student
+    reaches 'complete', this is the way back to a fresh learning-stage case.
+    Clears past submissions too (not just progress), so a repeat run
+    doesn't leave stale rows alongside the new ones and skew /results."""
+    conn = db.get_connection()
+    try:
+        conn.execute("DELETE FROM progress WHERE student_id = ?", (body.student_id,))
+        conn.execute("DELETE FROM submissions WHERE student_id = ?", (body.student_id,))
+        conn.commit()
+        return {"reset": True}
+    finally:
+        conn.close()
+
+
 @app.get("/results")
 def results(student_id: str):
     conn = db.get_connection()
