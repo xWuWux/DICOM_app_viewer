@@ -1,0 +1,67 @@
+# Standalone compose file for running Orthanc + viewer on their own
+# Proxmox-hosted VM/LXC, separate from wherever Kasm Workspaces runs --
+# instead of the same-Docker-host setup in docker-compose.yml (which relies
+# on attaching to Kasm's own `kasm_default_network` for container-name
+# reachability, only possible when both are on the same Docker daemon).
+#
+# This is a full standalone file, not an override layered on top of
+# docker-compose.yml (docker compose's array-merge semantics for `ports`/
+# `networks` turned out to append rather than replace when this was tried as
+# an override -- see git history. A second complete file is more duplication
+# but avoids that entirely).
+#
+# Usage (on the Proxmox VM/LXC, not your Kasm host):
+#   docker compose -f docker-compose.remote-host.yml up -d --build
+#
+# See docs/PROXMOX_DEPLOYMENT.md for the full picture: provisioning the
+# VM/LXC, the firewall rule this REQUIRES (see warning below), and pointing
+# the Kasm workspace's Docker Run Config Override at this host's address.
+#
+# ============================================================================
+# REQUIRED: firewall this host's 8042 and 8043 to ONLY your Kasm host's IP.
+# ============================================================================
+# The same-host setup (docker-compose.yml) gets this isolation for free --
+# kasm_default_network is a Docker-internal bridge nothing outside the host
+# can reach. This file has no equivalent: BIND_ADDR defaults to 0.0.0.0,
+# meaning without a firewall rule, 8042 (Orthanc's Basic-Auth-protected UI)
+# and especially 8043 (the auth-injecting proxy -- valid Orthanc access with
+# NO auth of its own, see docker/viewer/default.conf.template) are reachable
+# by anyone who can reach this host's network at all. This is not optional
+# hardening, it's the thing that makes this setup equivalent to the
+# same-host one at all.
+
+services:
+  orthanc:
+    image: orthancteam/orthanc:latest
+    container_name: ipcmc-orthanc
+    restart: unless-stopped
+    environment:
+      - ORTHANC_PASSWORD=${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD in .env -- see .env.example}
+    volumes:
+      - ./docker/orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
+      - orthanc-storage:/var/lib/orthanc/db
+    networks:
+      - ipcmc-internal
+    ports:
+      - "${BIND_ADDR:-0.0.0.0}:8042:8042"
+
+  viewer:
+    build: ./docker/viewer
+    container_name: ipcmc-viewer
+    restart: unless-stopped
+    depends_on:
+      - orthanc
+    environment:
+      - ORTHANC_PASSWORD=${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD in .env -- see .env.example}
+    ports:
+      - "${BIND_ADDR:-0.0.0.0}:8080:8080"
+      - "${BIND_ADDR:-0.0.0.0}:8043:8043"
+    networks:
+      - ipcmc-internal
+
+networks:
+  ipcmc-internal:
+    driver: bridge
+
+volumes:
+  orthanc-storage:

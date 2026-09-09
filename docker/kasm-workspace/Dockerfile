@@ -18,16 +18,23 @@ USER root
 # Kiosk launch config: open the watermarked viewer instead of a normal browser
 # chrome/session URLs are provided per-session by scripts/create-session.py,
 # which appends ?student_id=...&session_id=... to VIEWER_URL below.
-# Reachable because docker-compose.yml attaches `viewer`/`orthanc` to
-# kasm_default_network — Docker's embedded DNS resolves them by container name.
-# Both can still be overridden per-session via the Kasm API's `environment`
-# field (see scripts/create-session.py) — these are just sane defaults so the
-# workspace also works from a plain "Launch" click in the Kasm admin UI.
-ENV VIEWER_URL="http://ipcmc-viewer:8080/"
-# Port 8043 on the viewer container, NOT Orthanc's own 8042 — that's the
-# auth-injecting proxy in nginx.conf. Pointing here directly at Orthanc
+#
+# REMOTE_HOST defaults to "ipcmc-viewer" -- the container-name DNS entry
+# that only resolves when Kasm and the viewer/orthanc containers share the
+# same Docker host (docker-compose.yml's kasm_default_network attachment).
+#
+# Deploying viewer/orthanc on a separate Proxmox VM/LXC instead (see
+# docker-compose.remote-host.yml, docs/PROXMOX_DEPLOYMENT.md)? Build with:
+#   docker build --build-arg REMOTE_HOST=<that VM's hostname or IP> \
+#     -t ipcmc/dicom-viewer:mvp docker/kasm-workspace
+# (Same effect, no rebuild needed: set VIEWER_URL/ORTHANC_URL directly in the
+# Kasm admin UI's "Docker Run Config Override" for the registered workspace.)
+ARG REMOTE_HOST=ipcmc-viewer
+ENV VIEWER_URL="http://${REMOTE_HOST}:8080/"
+# Port 8043, NOT Orthanc's own 8042 — that's the auth-injecting proxy in
+# docker/viewer/default.conf.template. Pointing here directly at Orthanc
 # would hit its Basic Auth challenge, which an iframe can't answer.
-ENV ORTHANC_URL="http://ipcmc-viewer:8043/"
+ENV ORTHANC_URL="http://${REMOTE_HOST}:8043/"
 
 COPY custom_startup.sh /dockerstartup/custom_startup.sh
 RUN chmod +x /dockerstartup/custom_startup.sh

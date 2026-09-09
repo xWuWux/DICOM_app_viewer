@@ -98,6 +98,11 @@ systemd service on port 443, deliberately not scripted here since it needs
 an interactive sudo password; see git history for the exact steps if setting
 this up somewhere else, e.g. the real Proxmox VM).
 
+Everything below assumes Orthanc/viewer run on this same machine as Kasm.
+Running them on a separate Proxmox VM/LXC instead? See
+`docs/PROXMOX_DEPLOYMENT.md` and `docker-compose.remote-host.yml` — only the
+networking/firewall piece differs, everything else here still applies.
+
 What's wired up, end to end, and confirmed working:
 
 1. **Custom workspace image** (`docker/kasm-workspace/`): a Kasm Chrome
