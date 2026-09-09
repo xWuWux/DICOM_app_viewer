@@ -28,12 +28,25 @@ services:
       # from this published port, which stays loopback-only.
       - "127.0.0.1:8042:8042"
 
+  grading-api:
+    build: ./docker/grading-api
+    container_name: ipcmc-grading-api
+    restart: unless-stopped
+    volumes:
+      - grading-db:/data
+    networks:
+      # Internal only -- no host port, no kasm_default_network. Nothing
+      # outside viewer's nginx (which proxies /api/ to this) needs to reach
+      # it directly, same least-exposure pattern as orthanc.
+      - ipcmc-internal
+
   viewer:
     build: ./docker/viewer
     container_name: ipcmc-viewer
     restart: unless-stopped
     depends_on:
       - orthanc
+      - grading-api
     environment:
       # Same password as the orthanc service above -- used to compute the
       # auth-injecting proxy's Basic-Auth header at container start (see
@@ -63,3 +76,4 @@ networks:
 
 volumes:
   orthanc-storage:
+  grading-db:
