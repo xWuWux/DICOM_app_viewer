@@ -172,6 +172,28 @@ enforce:
   removed — a deterrent, not a guarantee (disabling JS entirely defeats it,
   same as noted in the docs).
 
+## Testing
+
+Two scripts, both run in CI (`.github/workflows/ci.yml`) on every push/PR:
+
+- `scripts/lint.sh` — bash syntax check on every script, `docker compose
+  config` validation on both compose files. No infrastructure needed, safe
+  to run anytime.
+- `scripts/smoke-test.sh` — brings the main stack up for real (building
+  images, stubbing `kasm_default_network` if it doesn't exist) and checks
+  the HTTP status codes that were, until this was added, verified by hand
+  after every change: Orthanc healthy, the watermarked viewer wrapper
+  loads, the auth-injecting proxy actually injects auth (307, not 401).
+  **Tears the stack down with `docker compose down -v` when it's done** —
+  don't run this against an environment with data you care about; it's
+  meant for a disposable/CI environment.
+
+Deliberately not covered by either (needs real Kasm infrastructure a CI
+runner doesn't have, stays manual): actually launching a Kasm session,
+`custom_startup.sh`, `create-session.py` against a live instance, DLP
+settings — see this project's own commit history for how each of those was
+actually verified.
+
 ## Repo layout
 
 ```
