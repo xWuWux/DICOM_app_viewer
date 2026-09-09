@@ -13,7 +13,8 @@ Ephemeral containers: Kasm containers must be destroyed on logout; zero data per
 All DICOM files must be anonymized and stripped of PHI before ingestion.
 Kasm Workspaces Community Edition is non-commercial/non-profit/personal use only (EULA §2.2) and capped at 5 concurrent sessions -- do not build around working past this cap. Needs a paid tier + legal/procurement review before any real (paid, 10-20+ concurrent) deployment.
 Links / Authority
-README.md -- architecture, what's built vs. deferred, verification notes
+README.md -- what's built vs. deferred, verification notes
+docs/ARCHITECTURE.md -- current-state diagrams (session flow, deployment topology)
 docs/LOCAL_SETUP_GUIDE.md -- full environment setup walkthrough
 docs/PROXMOX_DEPLOYMENT.md -- separate-host deployment
 Kasm Workspaces Developer API: https://docs.kasm.com/docs/reference/developer-api
