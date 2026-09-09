@@ -4,6 +4,12 @@ __pycache__/
 *.zip
 *:Zone.Identifier
 
+# Claude Code /export transcripts -- these capture the full conversation,
+# including any real credentials pasted into chat along the way (e.g. the
+# Kasm API key/secret used earlier in this project). Never commit these.
+session.md
+/*.txt
+
 # Fetched by scripts/fetch-public-samples.sh — not committed, re-fetched from
 # Orthanc's public demo server on demand (see that script's own comments).
 # The small pydicom fixtures directly under sample-data/ ARE committed.
