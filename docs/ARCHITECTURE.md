@@ -72,12 +72,13 @@ diagram.
 ## Deployment topology
 
 ```mermaid
+%%{init: {'flowchart': {'nodeSpacing': 65, 'rankSpacing': 75}}}%%
 flowchart TD
     Coordinator(["Coordinator<br/>runs scripts/create-session.py"])
     Student(["Radiologist / Tester<br/>web browser only"])
 
-    subgraph Host["Single Docker host (currently this dev laptop -- see docs/PROXMOX_DEPLOYMENT.md for a separate-host variant)"]
-        subgraph KasmInfra["Kasm Workspaces (installed, Community Edition -- see CLAUDE.md for its licensing constraints)"]
+    subgraph Host["Single Docker host (see docs/PROXMOX_DEPLOYMENT.md for a separate-host variant)"]
+        subgraph KasmInfra["Kasm Workspaces (Community Edition)"]
             KasmProxy["Kasm Proxy"]
             KasmAPI["Kasm Manager / Public API"]
             KasmAgent["Kasm Agent"]
@@ -108,6 +109,13 @@ flowchart TD
 
     KasmAgent -.->|"destroys on logout"| KasmContainer
 ```
+
+"Single Docker host" is currently this dev laptop, not yet anything
+reachable from the GUMed/UCK network — see `docs/PROXMOX_DEPLOYMENT.md`
+for the separate-host variant. Kasm Workspaces is installed as Community
+Edition, which comes with real licensing constraints (non-commercial-use
+restriction, 5-concurrent-session cap) — see CLAUDE.md's hard rules, not
+this diagram, for the authoritative statement of those.
 
 Notes on what this diagram deliberately does *not* show, because it
 doesn't exist yet: Moodle, a payment gateway, LTI Advantage, a
