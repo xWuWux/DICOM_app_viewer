@@ -14,3 +14,8 @@ session.md
 # Orthanc's public demo server on demand (see that script's own comments).
 # The small pydicom fixtures directly under sample-data/ ARE committed.
 /sample-data/brainix/
+
+# Local-only radiologist testing guide -- will eventually name the actual
+# server address, deliberately kept out of the public repo. See
+# docs/LOCAL_SETUP_GUIDE.md (committed) for the developer-facing equivalent.
+/PRZEWODNIK_TESTY_LOKALNY.md
