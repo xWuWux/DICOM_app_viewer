@@ -11,6 +11,10 @@ behind Kasm Workspaces so each viewer session comes from its own unique,
 individually-issued link. No Moodle, no payments, no grading, no stratified
 sampling yet.
 
+**Setting up your own copy?** See `docs/LOCAL_SETUP_GUIDE.md` for a
+complete, step-by-step walkthrough (no assumed context) — the sections
+below are more of a technical decisions log than an onboarding doc.
+
 ## What's actually running today (this machine, via Docker)
 
 ```
