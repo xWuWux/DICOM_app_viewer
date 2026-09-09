@@ -33,6 +33,16 @@
   .feedback-correct { color:#4caf50; }
   .feedback-incorrect { color:#e05252; }
 
+  /* Visually separate boxes for "your answer" vs "real diagnosis" -- the
+     point of the learning stage is comparing the two, so they need to read
+     as distinct blocks, not just stacked paragraphs. */
+  .answer-box {
+    border:1px solid #444; border-radius:4px; padding:8px 10px; margin:6px 0 14px;
+    background:#20202a;
+  }
+  .answer-box.reference { background:#1a2a1f; border-color:#3a5a40; }
+  .answer-box p { margin:0; white-space:pre-wrap; }
+
   /* mix-blend-mode:difference guarantees contrast against ANY underlying
      content (white page -> dark text, black page -> light text, any color
      -> its complement) — a fixed color/opacity went invisible on Orthanc's
@@ -239,8 +249,10 @@
       // Stacked one above the other on purpose — the whole point of this
       // stage is comparing your own read against the real one, side by side
       // (well, top-to-bottom) rather than just being told the answer.
-      html = `<h3>Twoja ocena</h3><p>${escapeHtml(submitted.text)}</p>
-        <h3>Opis referencyjny (prawdziwa diagnoza)</h3><p>${escapeHtml(result.reference_report)}</p>`;
+      html = `<h3>Twoja ocena</h3>
+        <div class="answer-box"><p>${escapeHtml(submitted.text)}</p></div>
+        <h3>Opis referencyjny (prawdziwa diagnoza)</h3>
+        <div class="answer-box reference"><p>${escapeHtml(result.reference_report)}</p></div>`;
     } else if (stage === "assessment") {
       const cls = result.correct ? "feedback-correct" : "feedback-incorrect";
       const label = result.correct ? "Poprawnie" : "Niepoprawnie";

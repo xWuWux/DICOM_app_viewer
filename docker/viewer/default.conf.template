@@ -8,6 +8,17 @@ server {
         index watermark.html;
     }
 
+    # `index` above internally redirects "/" to this path -- add_header on
+    # `location = /` alone does NOT apply to that redirected request (classic
+    # nginx gotcha: it only applies to responses generated directly by that
+    # same location block), so it has to be set here, on the resolved path,
+    # to actually take effect. no-store: this page changes often during
+    # active development, and each Kasm session should always get the
+    # current version, never a browser-cached one from an earlier build.
+    location = /watermark.html {
+        add_header Cache-Control "no-store" always;
+    }
+
     # Orthanc is deliberately NOT reverse-proxied under a subpath here: its
     # Explorer2/Stone-Viewer front ends assume they're served from their own
     # origin's root, and a /orthanc/ prefix breaks their asset paths. The
