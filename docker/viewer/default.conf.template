@@ -1,3 +1,6 @@
+# Rate limiting zone (issue #4: missing rate limiting)
+limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
+
 server {
     listen 8080;
     server_name _;
@@ -30,6 +33,10 @@ server {
     # Orthanc's SPA has), so a subpath proxy is fine here -- keeps
     # watermark.html's fetch() calls same-origin, no CORS needed.
     location /api/ {
+        # Rate limiting (issue #4: missing rate limiting)
+        limit_req zone=api_limit burst=20 nodelay;
+        limit_req_status 429;
+
         proxy_pass http://grading-api:8000/;
         proxy_set_header Host $host;
     }
