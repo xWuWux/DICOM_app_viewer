@@ -24,7 +24,14 @@ def _startup():
 
 @app.get("/healthz")
 def healthz():
-    return {"status": "ok"}
+    """Health check with database connection verification (issue #6)."""
+    try:
+        conn = db.get_connection()
+        conn.execute("SELECT 1")
+        conn.close()
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(503, f"Database error: {str(e)}")
 
 
 def _get_or_create_progress(conn, student_id: str):
@@ -114,6 +121,14 @@ class SubmitBody(BaseModel):
     modifier_s: Optional[bool] = None
     time_spent_seconds: Optional[float] = None
 
+    @staticmethod
+    def validate_time_spent(value: Optional[float]) -> Optional[float]:
+        """Validate time_spent_seconds is within reasonable bounds (issue #2)."""
+        if value is not None:
+            if value < 0 or value > 7200:  # Max 2 hours
+                raise ValueError("time_spent_seconds must be between 0 and 7200 seconds")
+        return value
+
 
 @app.post("/submit")
 def submit(body: SubmitBody):
@@ -126,6 +141,11 @@ def submit(body: SubmitBody):
         case = conn.execute("SELECT * FROM cases WHERE id = ?", (body.case_id,)).fetchone()
         if case is None or case["stage"] != body.stage:
             raise HTTPException(400, "case_id doesn't match the submitted stage")
+
+        # Validate time_spent_seconds (issue #2: missing validation)
+        if body.time_spent_seconds is not None:
+            if body.time_spent_seconds < 0 or body.time_spent_seconds > 7200:
+                raise HTTPException(400, "time_spent_seconds must be between 0 and 7200 seconds")
 
         # Correctness is category-only: the modifier is recorded for later
         # analysis but doesn't affect scoring -- matches Dokumentacja/'s
