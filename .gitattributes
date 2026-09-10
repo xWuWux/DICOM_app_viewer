@@ -1,0 +1,5 @@
+# Normalize line endings to LF for all text files, regardless of the
+# committer's editor/OS -- added after a PR round-tripped every touched
+# file through CRLF, inflating its diff far beyond the actual logical
+# changes and making it much harder to review.
+* text=auto eol=lf

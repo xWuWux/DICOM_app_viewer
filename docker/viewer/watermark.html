@@ -198,7 +198,12 @@
       frame.src = `${orthancUrl}ui/app/index.html#/filtered-studies?StudyInstanceUID=%22${encodeURIComponent(data.orthanc_study_uid)}%22`;
       renderForm(data);
     } catch (err) {
-      panel.innerHTML = `<p class="error" style="color: #e05252;">Błąd ładowania: ${err.message}</p><button onclick="loadCase()">Spróbuj ponownie</button>`;
+      // loadCase lives in this closure, not on window -- an inline onclick=""
+      // attribute runs in global scope and can't see it (confirmed the hard
+      // way: the button silently did nothing). addEventListener instead,
+      // matching how every other button in this file is wired up.
+      panel.innerHTML = `<p class="error" style="color: #e05252;">Błąd ładowania: ${err.message}</p><button id="retry-btn">Spróbuj ponownie</button>`;
+      document.getElementById("retry-btn").addEventListener("click", loadCase);
     }
   }
 
@@ -256,7 +261,8 @@
       const result = await res.json();
       renderFeedback(currentCase.stage, result, body);
     } catch (err) {
-      panel.innerHTML = `<p class="error" style="color: #e05252;">Błąd zapisu: ${err.message}</p><button onclick="loadCase()">Wróć</button>`;
+      panel.innerHTML = `<p class="error" style="color: #e05252;">Błąd zapisu: ${err.message}</p><button id="back-btn">Wróć</button>`;
+      document.getElementById("back-btn").addEventListener("click", loadCase);
     }
   }
 
