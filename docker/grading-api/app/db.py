@@ -104,6 +104,12 @@ def init_db():
             time_spent_seconds REAL,
             submitted_at REAL NOT NULL
         );
+
+        -- Indexes for performance (issue #1: missing indexes)
+        CREATE INDEX IF NOT EXISTS idx_submissions_student ON submissions(student_id);
+        CREATE INDEX IF NOT EXISTS idx_submissions_stage ON submissions(stage);
+        CREATE INDEX IF NOT EXISTS idx_submissions_submitted ON submissions(submitted_at);
+        CREATE INDEX IF NOT EXISTS idx_cases_stage ON cases(stage);
         """
     )
     conn.commit()
