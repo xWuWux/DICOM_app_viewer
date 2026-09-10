@@ -120,14 +120,11 @@ class SubmitBody(BaseModel):
     category: Optional[str] = None
     modifier_s: Optional[bool] = None
     time_spent_seconds: Optional[float] = None
-
-    @staticmethod
-    def validate_time_spent(value: Optional[float]) -> Optional[float]:
-        """Validate time_spent_seconds is within reasonable bounds (issue #2)."""
-        if value is not None:
-            if value < 0 or value > 7200:  # Max 2 hours
-                raise ValueError("time_spent_seconds must be between 0 and 7200 seconds")
-        return value
+    # (validation lives in the /submit handler below, not here -- a
+    # same-named @staticmethod without a @validator/@field_validator
+    # decorator was added alongside it in an earlier revision, but Pydantic
+    # never calls a validation method that isn't actually registered as one;
+    # it was dead code, removed rather than left as misleading no-op "validation")
 
 
 @app.post("/submit")
