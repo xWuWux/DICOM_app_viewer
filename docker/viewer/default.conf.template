@@ -64,7 +64,19 @@ server {
 
     location / {
         proxy_pass http://orthanc:8042/;
-        proxy_set_header Host $host;
+        # $http_host, NOT $host: nginx's $host variable strips the port from
+        # the Host header even when the original request had one -- Orthanc's
+        # DICOMweb plugin has no "Host" override set (deprecated since plugin
+        # 0.7 in favor of exactly this: reading the forwarded Host header), so
+        # it builds every QIDO-RS response's RetrieveURL (tag 00081190) from
+        # whatever Host it receives here. With $host, that came out as
+        # "http://ipcmc-viewer/..." (port silently dropped) -- Weasis's WADO-RS
+        # retrieval then connection-refused against the wrong (default) port.
+        # Confirmed via docker/kasm-workspace-weasis: QIDO-RS queries always
+        # worked (they hit this proxy directly, at :8043), but every
+        # subsequent bulk/thumbnail download against Orthanc's own returned
+        # RetrieveURL failed until this was fixed.
+        proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header Authorization "Basic ${ORTHANC_AUTH_B64}";
         proxy_http_version 1.1;
