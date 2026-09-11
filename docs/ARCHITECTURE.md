@@ -122,3 +122,13 @@ doesn't exist yet: Moodle, a payment gateway, LTI Advantage, a
 Postgres/stratified-sampling layer, a Proxmox cluster (this is one host).
 Each of those is a real, tracked gap — see README.md and CLAUDE.md, not
 this diagram, for the authoritative list so the two don't drift apart.
+
+Separately, a **Weasis-based session flow is being built alongside this
+one** (milestone "Weasis viewer migration", GitHub issues #3-#8) — a second
+Kasm workspace image (`docker/kasm-workspace-weasis/`) exists and is
+verified to launch Weasis correctly, but it isn't wired into any live
+session yet (no auto-launch against an assigned study, no grading panel,
+no watermark overlay for it). Both diagrams above still describe the
+Chrome+Orthanc flow because that's the only one actually running
+end-to-end today; they'll be redrawn once the Weasis flow reaches the same
+point.

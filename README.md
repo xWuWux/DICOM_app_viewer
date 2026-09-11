@@ -23,10 +23,16 @@ Mermaid diagrams (session flow + deployment topology).
 ┌──────────────┐      ┌───────────────────────┐      ┌─────────────┐
 │  Your browser│ ───► │ viewer (nginx:8080)   │ ───► │  orthanc    │
 │  (stand-in   │      │ watermark.html +      │      │  (DICOM     │
-│  for Kasm's  │      │ reverse proxy         │      │  store,     │
-│  streamed    │      └───────────────────────┘      │  internal   │
-│  session)    │                                     │  only)      │
-└──────────────┘                                     └─────────────┘
+│  for Kasm's  │      │ grading panel +       │      │  store,     │
+│  streamed    │      │ reverse proxy         │      │  internal   │
+│  session)    │      └───────────┬───────────┘      │  only)      │
+└──────────────┘                  │                  └─────────────┘
+                                   ▼
+                       ┌───────────────────────┐
+                       │  grading-api          │
+                       │  (FastAPI + SQLite,   │
+                       │  internal only)       │
+                       └───────────────────────┘
 ```
 
 Orthanc is **not** published on any host port — only the `viewer` container
@@ -133,8 +139,6 @@ confirmed as lasting.)
 Per the docs' own recommendation (`Dokumentacja/AI_context_Documentation_DICOM.txt`,
 "About the two-week MVP" section), all of this is deferred:
 
-- Kasm Workspaces itself is not installed yet — this repo only prepares what
-  it needs (the workspace image + session-minting script below).
 - Moodle / LTI 1.3 launch and grade passback.
 - Payments (300 PLN), certificates, access expiry.
 - Real stratified case sampling (50/50/30 across Lung-RADS classes, drawn
@@ -165,6 +169,22 @@ What's wired up, end to end, and confirmed working:
    register it in the Kasm admin UI as a Workspace (type **Container**,
    Docker Image `ipcmc/dicom-viewer:mvp`, registry blank since it's built
    locally on the same Docker host Kasm's agent uses).
+
+   **In progress** (Weasis viewer migration, milestone tracked in GitHub
+   Issues #3-#8): `docker/kasm-workspace-weasis/` is a second, separate
+   workspace image built on Kasm's lean `core-ubuntu-noble` base (XFCE +
+   KasmVNC only, not the bloated "desktop" bundle) with Weasis 4.7.3
+   installed from its own `.deb`. Build with `docker build -t
+   ipcmc/dicom-viewer-weasis:mvp docker/kasm-workspace-weasis`. Confirmed
+   working (issue #3): launched under a virtual X display, the JVM starts,
+   OSGi bundles load, the DICOM codec registers, and the main window renders
+   correctly (DICOM Explorer panel, menus, the standard "not a certified
+   medical device" disclaimer responds to a real click) — Weasis bundles its
+   own JRE at `/opt/weasis/lib/runtime`, so no separate Java package is
+   needed. Not yet wired up: auto-launching against the assigned study
+   (issue #4) or registered in the Kasm admin UI as a selectable workspace —
+   both `docker/kasm-workspace/` (Chrome) and this image can coexist in Kasm
+   side by side while this is validated.
 2. **Networking**: `docker-compose.yml` attaches `orthanc`/`viewer` to
    `kasm_default_network` (external, created by the Kasm installer) so Kasm's
    session containers reach them by container name — `http://ipcmc-viewer:8080/`
@@ -259,6 +279,7 @@ docker/orthanc/               Orthanc config (no credentials in here -- see .env
 docker/viewer/                nginx (config templated + auth token computed from env, not hardcoded) + the watermark wrapper page + grading panel
 docker/grading-api/           Lung-RADS 3-stage grading mechanics (FastAPI + SQLite)
 docker/kasm-workspace/        custom Kasm workspace image (build after Kasm is installed)
+docker/kasm-workspace-weasis/ Weasis-based workspace image, in progress (issues #3-#8)
 sample-data/                  public-domain sample DICOM files
 scripts/fetch-public-samples.sh  pulls larger public teaching studies (BRAINIX) into sample-data/
 scripts/load-sample-studies.sh   uploads sample-data/ (recursively) into Orthanc
