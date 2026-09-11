@@ -71,6 +71,53 @@ check "auth-injecting Orthanc proxy (401 would mean auth injection is broken)" "
 check "grading-api, direct" "200" "http://localhost:8080/api/healthz"
 check "grading-api, first case for a fresh student" "200" "http://localhost:8080/api/case?student_id=CI_TEST_$$"
 
+# Regression check for a real bug (issue #4): the auth-injecting proxy used
+# to forward nginx's $host to Orthanc, which strips the port even when the
+# original request had one. Orthanc's DICOMweb plugin embeds whatever Host
+# it receives into every QIDO-RS response's RetrieveURL (tag 00081190) --
+# so a status-code-only check here would never catch this. QIDO *queries*
+# kept returning 200 the whole time; only the RetrieveURL a real client
+# (Weasis) would try to fetch images from was silently wrong. Uses the
+# small committed CT_small.dcm fixture, not the larger fetch-public-samples.sh
+# download, so this runs offline/in CI with no extra setup.
+echo "--- loading a sample instance for the DICOMweb RetrieveURL check ---"
+curl -sSf -u "orthanc:${ORTHANC_PASSWORD}" -X POST "http://localhost:8042/instances" \
+  --data-binary "@sample-data/CT_small.dcm" -H "Expect:" >/dev/null || {
+  echo "--- could not upload the sample instance -- skipping RetrieveURL check ---"
+  status=1
+}
+
+RETRIEVE_URL=""
+for _ in $(seq 1 30); do
+  RETRIEVE_URL=$(curl -s "http://localhost:8043/dicom-web/studies" 2>/dev/null | python3 -c '
+import sys, json
+try:
+    studies = json.load(sys.stdin)
+    study_uid = studies[0]["0020000D"]["Value"][0]
+except Exception:
+    sys.exit(0)
+import urllib.request
+req = urllib.request.Request(
+    f"http://localhost:8043/dicom-web/studies/{study_uid}/series?includefield=00081190"
+)
+try:
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        series = json.load(resp)
+    print(series[0]["00081190"]["Value"][0])
+except Exception:
+    pass
+' 2>/dev/null)
+  [ -n "$RETRIEVE_URL" ] && break
+  sleep 2
+done
+
+if [[ "$RETRIEVE_URL" == *":8043"* ]]; then
+  echo "--- DICOMweb RetrieveURL includes the proxy port: OK ($RETRIEVE_URL) ---"
+else
+  echo "--- DICOMweb RetrieveURL includes the proxy port: FAIL, got '${RETRIEVE_URL:-<none>}' (expected it to contain :8043 -- see docker/viewer/default.conf.template's \$http_host comment) ---"
+  status=1
+fi
+
 if [ "$status" -eq 0 ]; then
   echo "All smoke checks passed."
 else
