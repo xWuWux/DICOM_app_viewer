@@ -181,10 +181,37 @@ What's wired up, end to end, and confirmed working:
    correctly (DICOM Explorer panel, menus, the standard "not a certified
    medical device" disclaimer responds to a real click) — Weasis bundles its
    own JRE at `/opt/weasis/lib/runtime`, so no separate Java package is
-   needed. Not yet wired up: auto-launching against the assigned study
-   (issue #4) or registered in the Kasm admin UI as a selectable workspace —
-   both `docker/kasm-workspace/` (Chrome) and this image can coexist in Kasm
-   side by side while this is validated.
+   needed.
+
+   **Auto-launch against the assigned study** (issue #4) is also wired up
+   now: `docker/kasm-workspace-weasis/custom_startup.sh` fetches the
+   current case from `grading-api` (same `/api/` proxy the Chrome flow
+   uses) and launches Weasis straight into it via its `dicom:rs` command,
+   with zero manual clicks — the disclaimer dialog from issue #3 is also
+   now suppressed at build time (`weasis.show.disclaimer=false` patched
+   into Weasis's own config, since ephemeral Kasm containers get a fresh
+   `$HOME` every session and would otherwise hit it every time). Getting
+   `dicom:rs` to actually work took real debugging, worth recording:
+   - It only works sent as a `weasis://` URI, not raw CLI tokens — Weasis's
+     own main-argv command parser races the OSGi bundle that provides the
+     command and silently no-ops otherwise (confirmed against
+     `nroduit/Weasis`'s own launcher source).
+   - The query needs an explicit `requestType=STUDY` ahead of `studyUID=`
+     — without it, Weasis's request-type classification (it implements the
+     IHE "Invoke Image Display" profile) falls through with no error.
+   - **A real bug this surfaced, fixed as part of this issue, not a
+     Weasis-side problem**: the auth-injecting proxy (`:8043`) was
+     forwarding nginx's `$host` to Orthanc, which strips the port even
+     when the original request had one — Orthanc's DICOMweb plugin embeds
+     whatever Host it receives into every QIDO-RS response's
+     `RetrieveURL`, so Weasis's *queries* worked but every subsequent
+     *image download* connection-refused against the wrong port. Fixed by
+     forwarding `$http_host` instead (see
+     `docker/viewer/default.conf.template`).
+
+   Registering this image in the Kasm admin UI as a selectable workspace
+   is still outstanding — both it and `docker/kasm-workspace/` (Chrome) can
+   coexist side by side while this is validated.
 2. **Networking**: `docker-compose.yml` attaches `orthanc`/`viewer` to
    `kasm_default_network` (external, created by the Kasm installer) so Kasm's
    session containers reach them by container name — `http://ipcmc-viewer:8080/`
