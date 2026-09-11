@@ -19,3 +19,10 @@ session.md
 # server address, deliberately kept out of the public repo. See
 # docs/LOCAL_SETUP_GUIDE.md (committed) for the developer-facing equivalent.
 /PRZEWODNIK_TESTY_LOKALNY.md
+
+# PM's private correspondence (email exports, Teams chat exports) -- never
+# committed to this public repo. The root-only /*.txt rule above doesn't
+# reach these since they live under Dokumentacja/; this closes that gap
+# explicitly rather than relying on remembering not to `git add` them.
+Dokumentacja/Marlena_*
+Dokumentacja/*.docx
