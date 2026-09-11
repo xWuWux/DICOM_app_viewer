@@ -23,10 +23,16 @@ Mermaid diagrams (session flow + deployment topology).
 ┌──────────────┐      ┌───────────────────────┐      ┌─────────────┐
 │  Your browser│ ───► │ viewer (nginx:8080)   │ ───► │  orthanc    │
 │  (stand-in   │      │ watermark.html +      │      │  (DICOM     │
-│  for Kasm's  │      │ reverse proxy         │      │  store,     │
-│  streamed    │      └───────────────────────┘      │  internal   │
-│  session)    │                                     │  only)      │
-└──────────────┘                                     └─────────────┘
+│  for Kasm's  │      │ grading panel +       │      │  store,     │
+│  streamed    │      │ reverse proxy         │      │  internal   │
+│  session)    │      └───────────┬───────────┘      │  only)      │
+└──────────────┘                  │                  └─────────────┘
+                                   ▼
+                       ┌───────────────────────┐
+                       │  grading-api          │
+                       │  (FastAPI + SQLite,   │
+                       │  internal only)       │
+                       └───────────────────────┘
 ```
 
 Orthanc is **not** published on any host port — only the `viewer` container
@@ -133,8 +139,6 @@ confirmed as lasting.)
 Per the docs' own recommendation (`Dokumentacja/AI_context_Documentation_DICOM.txt`,
 "About the two-week MVP" section), all of this is deferred:
 
-- Kasm Workspaces itself is not installed yet — this repo only prepares what
-  it needs (the workspace image + session-minting script below).
 - Moodle / LTI 1.3 launch and grade passback.
 - Payments (300 PLN), certificates, access expiry.
 - Real stratified case sampling (50/50/30 across Lung-RADS classes, drawn
