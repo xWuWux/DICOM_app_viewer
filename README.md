@@ -209,6 +209,41 @@ What's wired up, end to end, and confirmed working:
      forwarding `$http_host` instead (see
      `docker/viewer/default.conf.template`).
 
+   **The forensic watermark overlay** (issue #6) is also wired up:
+   `docker/kasm-workspace-weasis/overlay.py` is a transparent, always-
+   on-top, click-through native window (GTK3, not a browser page — Weasis
+   is a separate native window a page-based watermark could never cover)
+   tiled with `STUDENT_ID | SESSION_ID | timestamp` text, paired with
+   `watchdog.sh` so killing it just gets it relaunched within about a
+   second. Verified for real, not just assumed:
+   - **True transparency without a compositor**: no compositor (e.g.
+     `picom`) runs in this XFCE/KasmVNC session by default, so this uses
+     the X Shape extension instead (`Gdk.Window.shape_combine_region()`)
+     — only the actual glyph pixels are part of the window at all.
+     Confirmed with a screenshot against a solid-color test background:
+     the color showed through everywhere except the rendered text.
+   - **Genuine click-through**: `input_shape_combine_region()` set to an
+     *empty* region, independent of the bounding shape above. Confirmed
+     by placing a real clickable test button underneath and clicking
+     directly on top of rendered watermark glyphs — the click reached the
+     button every time.
+   - **Stays on top of a real window manager**, not just bare Xvfb (which
+     has no window manager at all, so nothing enforces stacking order):
+     `Gtk.WindowType.POPUP` (override-redirect, outside window manager
+     control entirely) plus `set_keep_above()`, tested under a real
+     `xfwm4` session.
+   - **The watchdog actually relaunches it**: killed the overlay process
+     directly and confirmed a new one appeared within ~1 second, watermark
+     coverage intact in a follow-up screenshot.
+   - **A limitation flagged, not hidden**: without a compositor, CSS-style
+     `mix-blend-mode:difference` (what watermark.html/grading-panel.html
+     use for guaranteed contrast) has no real cross-window equivalent here
+     — that trick only works within one browser's own rendering pipeline.
+     This uses a dark-stroke + light-fill "halo" around each glyph
+     instead (the same technique subtitle overlays use), which is legible
+     against both light and dark content but isn't the same mathematical
+     guarantee.
+
    Registering this image in the Kasm admin UI as a selectable workspace
    is still outstanding — both it and `docker/kasm-workspace/` (Chrome) can
    coexist side by side while this is validated.

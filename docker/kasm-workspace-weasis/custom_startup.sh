@@ -82,6 +82,15 @@ print("weasis://?" + "+".join(urllib.parse.quote(p, safe="") for p in parts))
 PYEOF
 )
 
+# Issue #6: launch the forensic watermark overlay's watchdog in the
+# background *before* the exec below. A backgrounded child survives its
+# parent's later exec (exec replaces this shell's own process image, it
+# doesn't touch already-started children) -- and since Kasm destroys the
+# whole container on logout regardless (ephemeral, zero persistence, see
+# CLAUDE.md), there's no risk of this outliving the session even though
+# Weasis, not this, is the process Kasm's own service monitor tracks.
+STUDENT_ID="$STUDENT_ID" SESSION_ID="$SESSION_ID" /opt/watermark/watchdog.sh &
+
 # exec (not background + exit): same reasoning as
 # docker/kasm-workspace/custom_startup.sh -- the base image's service
 # monitor tracks this script's own PID as the "custom_startup" service and
