@@ -310,7 +310,7 @@ enforce:
 
 ## Testing
 
-Three scripts, all run in CI (`.github/workflows/ci.yml`) on every push/PR:
+Four scripts, all run in CI (`.github/workflows/ci.yml`) on every push/PR:
 
 - `scripts/lint.sh` — bash syntax check on every script, `docker compose
   config` validation on both compose files. No infrastructure needed, safe
@@ -339,12 +339,29 @@ Three scripts, all run in CI (`.github/workflows/ci.yml`) on every push/PR:
   **Tears the stack down with `docker compose down -v` when it's done** —
   don't run this against an environment with data you care about; it's
   meant for a disposable/CI environment.
+- `scripts/test-shell-scripts.sh` (issue #16) — BATS tests for
+  `docker/kasm-workspace/custom_startup.sh` and
+  `docker/kasm-workspace-weasis/custom_startup.sh`: no Docker, no real
+  Kasm/Weasis/grading-api needed. Both scripts gained a small,
+  production-inert seam (`CHROME_BIN`/`WEASIS_BIN`, unset defaults to the
+  real path) so a test can stub the actual binary — a fake executable that
+  just captures its own argv to a file — instead of launching a real
+  browser or Weasis. The Weasis suite also stubs `curl` (via `PATH`) to
+  stand in for `grading-api`'s response, while the real `python3` still
+  runs the actual `dicom:rs` URI-building logic being tested. Verified the
+  suite itself the same way as `test-grading-api.sh`: deliberately removed
+  `requestType=STUDY` from the built URI (the exact bug found and fixed
+  during issue #4), reran, confirmed exactly one test failed, then
+  reverted. Not yet covered: `docker/kasm-workspace-weasis/watchdog.sh`
+  (issue #6) — it isn't on this branch's base yet; add its own `.bats`
+  file once that PR merges.
 
 Deliberately not covered by any of these (needs real Kasm infrastructure a
 CI runner doesn't have, stays manual): actually launching a Kasm session,
-`custom_startup.sh`, `create-session.py` against a live instance, DLP
-settings — see this project's own commit history for how each of those was
-actually verified.
+`create-session.py` against a live instance, DLP settings — see this
+project's own commit history for how each of those was actually verified.
+(`custom_startup.sh`'s own logic — the command it builds, not an actual
+Kasm session launching it — *is* now covered, by the BATS suite above.)
 
 ## Repo layout
 
