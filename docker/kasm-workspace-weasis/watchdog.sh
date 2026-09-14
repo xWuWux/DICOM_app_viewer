@@ -18,8 +18,21 @@
 # Kasm's own service monitor tracks (Weasis is, same as before this issue).
 set -uo pipefail
 
+# OVERLAY_SCRIPT and WATCHDOG_LOG are test-only seams (issue #16's BATS
+# suite overrides them with a stub script and an isolated tmp path) --
+# unset in production, so they always resolve to the real values below.
+OVERLAY_SCRIPT="${OVERLAY_SCRIPT:-/opt/watermark/overlay.py}"
+WATCHDOG_LOG="${WATCHDOG_LOG:-/tmp/watermark-overlay.log}"
+
 while true; do
-    python3 /opt/watermark/overlay.py >>/tmp/watermark-overlay.log 2>&1
-    echo "$(date -u +%FT%TZ) watermark overlay exited (code $?), relaunching in 1s" >>/tmp/watermark-overlay.log
+    python3 "$OVERLAY_SCRIPT" >>"$WATCHDOG_LOG" 2>&1
+    # Captured into a variable *immediately* -- a real bug found while
+    # writing this script's BATS tests (issue #16): the exit code the log
+    # line used to print was always 0, because $(date ...) below runs its
+    # own command (always succeeding) and overwrites $? before the later
+    # "$?" in that same echo's string gets expanded, clobbering python3's
+    # actual exit status before it was ever read.
+    exit_code=$?
+    echo "$(date -u +%FT%TZ) watermark overlay exited (code $exit_code), relaunching in 1s" >>"$WATCHDOG_LOG"
     sleep 1
 done
