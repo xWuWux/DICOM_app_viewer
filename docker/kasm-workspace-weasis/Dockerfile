@@ -51,6 +51,19 @@ ARG REMOTE_HOST=ipcmc-viewer
 ENV VIEWER_URL="http://${REMOTE_HOST}:8080/"
 ENV ORTHANC_URL="http://${REMOTE_HOST}:8043/"
 
+# Issue #6 (Watermark Overlay): python3-gi and python3-cairo are already
+# part of this XFCE base image (it's a GTK desktop), but the actual GI<->
+# Cairo bridge PyGObject needs to hand a native Cairo context to a "draw"
+# signal handler ships in a separate package -- confirmed the hard way
+# ("Couldn't find foreign struct converter for 'cairo.Context'") before
+# adding this.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3-gi-cairo && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY overlay.py watchdog.sh /opt/watermark/
+RUN chmod +x /opt/watermark/watchdog.sh
+
 COPY custom_startup.sh /dockerstartup/custom_startup.sh
 RUN chmod +x /dockerstartup/custom_startup.sh
 
