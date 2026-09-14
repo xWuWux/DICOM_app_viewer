@@ -209,6 +209,36 @@ What's wired up, end to end, and confirmed working:
      forwarding `$http_host` instead (see
      `docker/viewer/default.conf.template`).
 
+   **Weasis's own native save/copy/export is locked down** (issue #7 — a
+   direct answer to the context-menu/export concern raised on a reference
+   screenshot): `docker/kasm-workspace-weasis/patch-weasis-config.py`
+   patches `weasis.export.dicom`, `weasis.export.dicom.send`,
+   `weasis.import.dicom`, `weasis.import.images`, and
+   `weasis.import.dicom.qr` to `false`, and blanks the
+   `felix.auto.start.110` bundle group entirely — Felix never loads the
+   DICOM Send, Q/R, or ISO-writer bundles at all, so that code doesn't
+   exist at runtime, not merely a hidden menu item. Verified against a
+   real running session, not assumed from the preference names:
+   - `weasis.import.images=false` actually removes its menu item
+     (`File > Import` went from 3 entries down to 2).
+   - `weasis.export.dicom=false` / `weasis.import.dicom=false` leave their
+     menu labels visible but genuinely non-functional — clicking
+     `File > Import > DICOM` now shows Weasis's own **"This feature is
+     not enabled"** message instead of opening anything. Confirmed this
+     is deliberate application logic, not silent breakage.
+   - Confirmed no regression: the assigned study still loads, renders,
+     zooms, and measures identically to before the patch.
+   - **A residual gap, flagged rather than hidden**: `File > Export >
+     "Exporting view"` (a screenshot/clipboard-copy of the current view)
+     has no matching preference anywhere in Weasis — confirmed against
+     its own source (`ActionW.EXPORT_VIEW` is an unconditional, always-
+     registered core action, not gated by any property). Mitigated by
+     Kasm's own DLP settings below (downloads, clipboard-out, uploads,
+     sharing, and printing already disabled at the session level), which
+     traps anything this saves inside the ephemeral container regardless
+     — the same reasoning that already covers Weasis's own Print menu,
+     which likewise has no dedicated preference to disable it.
+
    Registering this image in the Kasm admin UI as a selectable workspace
    is still outstanding — both it and `docker/kasm-workspace/` (Chrome) can
    coexist side by side while this is validated.
