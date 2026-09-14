@@ -10,6 +10,13 @@ set -euo pipefail
 
 STUDENT_ID="${STUDENT_ID:-UNKNOWN_STUDENT}"
 SESSION_ID="${SESSION_ID:-$(date +%s)}"
+# Baked in via ENV at image build time (see this image's Dockerfile), but
+# guarded the same explicit way as ORTHANC_URL below regardless -- found
+# while adding this script's BATS tests (issue #16) that it previously had
+# no guard at all, so a genuinely missing value failed with bash's own
+# generic "VIEWER_URL: unbound variable" under `set -u` instead of a
+# message actually pointing at the problem.
+VIEWER_URL="${VIEWER_URL:?set VIEWER_URL to the internal viewer address}"
 # Internal-network address of Orthanc as reachable from wherever Kasm's
 # containers run (e.g. "http://orthanc.internal:8042/") — never a public URL.
 ORTHANC_URL="${ORTHANC_URL:?set ORTHANC_URL to the internal Orthanc address}"
@@ -25,7 +32,12 @@ FULL_URL="${VIEWER_URL}?student_id=${STUDENT_ID}&session_id=${SESSION_ID}&orthan
 # this script's own PID as the "custom_startup" service and expects it to
 # keep running for as long as the app should — backgrounding Chrome and
 # letting this script exit orphans it instead of tracking it properly.
-exec /usr/bin/google-chrome \
+#
+# CHROME_BIN is a test-only seam (issue #16's BATS suite overrides it with
+# a stub that captures argv instead of launching a real browser) --
+# unset in production, so it always resolves to the real path below.
+CHROME_BIN="${CHROME_BIN:-/usr/bin/google-chrome}"
+exec "$CHROME_BIN" \
   --kiosk \
   --app="${FULL_URL}" \
   --no-first-run \

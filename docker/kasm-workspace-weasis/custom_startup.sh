@@ -86,12 +86,17 @@ PYEOF
 # docker/kasm-workspace/custom_startup.sh -- the base image's service
 # monitor tracks this script's own PID as the "custom_startup" service and
 # expects it to keep running for as long as the app should.
+#
+# WEASIS_BIN is a test-only seam (issue #16's BATS suite overrides it with
+# a stub that captures argv instead of launching real Weasis) -- unset in
+# production, so it always resolves to the real path below.
+WEASIS_BIN="${WEASIS_BIN:-/opt/weasis/bin/Weasis}"
 if [ -n "$WEASIS_URI" ]; then
-    exec /opt/weasis/bin/Weasis "$WEASIS_URI"
+    exec "$WEASIS_BIN" "$WEASIS_URI"
 else
     # No case assigned right now (finished all stages, or grading-api was
     # unreachable) -- still launch a plain Weasis session rather than
     # leaving the desktop blank. The grading panel (issue #5) is what
     # actually shows the "you're done" state; this is just a safe fallback.
-    exec /opt/weasis/bin/Weasis
+    exec "$WEASIS_BIN"
 fi
