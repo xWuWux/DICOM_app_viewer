@@ -4,6 +4,11 @@ __pycache__/
 *.zip
 *:Zone.Identifier
 
+# Created/reused by scripts/test-grading-api.sh -- test-only deps (pytest,
+# httpx), never part of the shipped grading-api image.
+docker/grading-api/.venv-test/
+.pytest_cache/
+
 # Claude Code /export transcripts -- these capture the full conversation,
 # including any real credentials pasted into chat along the way (e.g. the
 # Kasm API key/secret used earlier in this project). Never commit these.

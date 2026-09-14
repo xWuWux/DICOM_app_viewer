@@ -310,22 +310,38 @@ enforce:
 
 ## Testing
 
-Two scripts, both run in CI (`.github/workflows/ci.yml`) on every push/PR:
+Three scripts, all run in CI (`.github/workflows/ci.yml`) on every push/PR:
 
 - `scripts/lint.sh` — bash syntax check on every script, `docker compose
   config` validation on both compose files. No infrastructure needed, safe
   to run anytime.
+- `scripts/test-grading-api.sh` (issue #8) — unit tests for `grading-api`'s
+  3-stage state machine (`docker/grading-api/tests/test_state_machine.py`),
+  driven through FastAPI's own `TestClient` against a fresh, isolated
+  SQLite file per test — no Docker, no real stack, runs in well under a
+  second. These exist specifically to protect the invariants this project
+  keeps stating in prose but never had automated coverage for: ground
+  truth/reference reports never leak before the stage that reveals them,
+  the test stage reveals nothing at all, progress advances correctly
+  case→case→stage→"complete", two students' state never crosses, and the
+  existing input validation (stage mismatches, `time_spent_seconds` range)
+  actually behaves as documented. Verified the suite itself, not just that
+  it's green: deliberately broke the test-stage no-reveal invariant in
+  `main.py`, confirmed exactly one test failed (the one guarding that
+  invariant, nothing else), then reverted.
 - `scripts/smoke-test.sh` — brings the main stack up for real (building
   images, stubbing `kasm_default_network` if it doesn't exist) and checks
   the HTTP status codes that were, until this was added, verified by hand
   after every change: Orthanc healthy, the watermarked viewer wrapper
-  loads, the auth-injecting proxy actually injects auth (307, not 401).
+  loads, the auth-injecting proxy actually injects auth (307, not 401), and
+  (issue #4's regression check) that Orthanc's DICOMweb `RetrieveURL`
+  actually includes the proxy's port, not just a 200 status code.
   **Tears the stack down with `docker compose down -v` when it's done** —
   don't run this against an environment with data you care about; it's
   meant for a disposable/CI environment.
 
-Deliberately not covered by either (needs real Kasm infrastructure a CI
-runner doesn't have, stays manual): actually launching a Kasm session,
+Deliberately not covered by any of these (needs real Kasm infrastructure a
+CI runner doesn't have, stays manual): actually launching a Kasm session,
 `custom_startup.sh`, `create-session.py` against a live instance, DLP
 settings — see this project's own commit history for how each of those was
 actually verified.
