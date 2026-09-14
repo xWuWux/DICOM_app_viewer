@@ -25,10 +25,12 @@ cp .env.example .env && set a real ORTHANC_PASSWORD
 docker compose up -d --build
 ./scripts/fetch-public-samples.sh && ./scripts/load-sample-studies.sh
 ./scripts/lint.sh
+./scripts/test-grading-api.sh
 Workflow
 Start local infrastructure: docker compose up -d --build
 Load sample DICOM data: ./scripts/fetch-public-samples.sh && ./scripts/load-sample-studies.sh
 Lint (bash syntax + compose config, no infra needed): ./scripts/lint.sh
+Unit test grading-api's state machine (no infra needed, ~0.1s): ./scripts/test-grading-api.sh
 Smoke test (brings the stack up for real, then tears it down -- don't run against data you care about): ./scripts/smoke-test.sh
 Mint a per-student Kasm link: python3 scripts/create-session.py --student-id ...
 Stop Conditions
