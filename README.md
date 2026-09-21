@@ -27,7 +27,7 @@ Mermaid diagrams (session flow + deployment topology).
 │  streamed    │      │ reverse proxy         │      │  internal   │
 │  session)    │      └───────────┬───────────┘      │  only)      │
 └──────────────┘                  │                  └─────────────┘
-                                   ▼
+                                  ▼
                        ┌───────────────────────┐
                        │  grading-api          │
                        │  (FastAPI + SQLite,   │
