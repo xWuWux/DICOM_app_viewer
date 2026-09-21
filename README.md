@@ -352,9 +352,21 @@ Four scripts, all run in CI (`.github/workflows/ci.yml`) on every push/PR:
   suite itself the same way as `test-grading-api.sh`: deliberately removed
   `requestType=STUDY` from the built URI (the exact bug found and fixed
   during issue #4), reran, confirmed exactly one test failed, then
-  reverted. Not yet covered: `docker/kasm-workspace-weasis/watchdog.sh`
-  (issue #6) — it isn't on this branch's base yet; add its own `.bats`
-  file once that PR merges.
+  reverted.
+
+  Also covers `docker/kasm-workspace-weasis/watchdog.sh` (the forensic
+  watermark overlay's supervisor, issue #6): `OVERLAY_SCRIPT`/
+  `WATCHDOG_LOG` seams point it at a stub overlay script and an isolated
+  log file instead of the real thing, so its relaunch-on-death loop can be
+  observed without any real GTK/X11 display. **Found and fixed a real bug
+  writing this test**: the logged exit code was always `0`, regardless of
+  what the overlay actually exited with — `$(date ...)` runs its own
+  command inside the same `echo`'s string and overwrites `$?` before the
+  later `$?` in that string gets expanded, clobbering the real exit status
+  before it was ever read. Fixed by capturing `$?` into a variable
+  immediately after the command it belongs to. Verified the same way:
+  confirmed the test fails against the original code, passes against the
+  fix.
 
 Deliberately not covered by any of these (needs real Kasm infrastructure a
 CI runner doesn't have, stays manual): actually launching a Kasm session,
