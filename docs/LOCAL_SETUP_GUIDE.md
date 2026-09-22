@@ -149,6 +149,28 @@ In the Kasm admin UI: **Workspaces → Add Workspace**.
   - **Cores**: `1`, **Memory**: `2048`
 - Save it. Open its edit page and copy the UUID out of the URL — that's
   the `image_id` you'll need in step 5.
+- **Enable it.** The very first field on this form is an **Enabled**
+  toggle — if it's left off, Kasm's own agent-side image pruning (Zone/
+  Agent settings, "Docker Image Prune Mode") won't treat this image as
+  "defined in the application," and its **Aggressive** mode (the default)
+  will silently delete a locally-built image within about 30-60 seconds of
+  it appearing, since there's no registry to re-pull it from. Confirmed the
+  hard way: a freshly `docker build`'t image vanished from `docker images`
+  before it could ever be launched, and the workspace's Launch button
+  failed with "image is not currently available" — re-running `docker
+  build` did nothing until **Enabled** was switched on.
+
+Want the Weasis-flow image instead of (or alongside) Chrome? Same steps,
+different image:
+```bash
+docker build -t ipcmc/dicom-viewer-weasis:mvp docker/kasm-workspace-weasis
+```
+Register it the same way (**Docker Image**: `ipcmc/dicom-viewer-weasis:mvp`,
+**Uncompressed Image Size**: `1480`) — both images can be registered and
+enabled side by side. No **Network** field needs setting for either:
+`kasm_default_network` is already the network every session container
+lands on by default (the "Restrict/Allow Network Selection" toggles are
+only for *additional* custom networks, not this default one).
 
 ### 4. Generate an API key
 **Settings → Developers → Add API Key.** Give it a name, save — this is
@@ -226,3 +248,31 @@ Check the session container's logs: find it with
 silently failing to launch Chrome at all — this exact class of bug has
 bitten this project before (see git log for
 `docker/kasm-workspace/custom_startup.sh`).
+
+**Session opens a plain XFCE desktop with a terminal — no Chrome/Weasis,
+no watermark, nothing from this project at all.** Almost always: the
+workspace was launched straight from the admin UI's own **Launch** button
+(or its Direct Install URL) instead of the link `create-session.py`
+prints. Only `create-session.py` mints a `GRADING_TOKEN` (via `grading-
+api`'s `POST /session`) and bakes it, along with `STUDENT_ID`/`SESSION_ID`,
+into the session's environment — both `custom_startup.sh` scripts hard-fail
+on a missing `GRADING_TOKEN` (`set -euo pipefail` + `${GRADING_TOKEN:?...}`)
+before ever launching the viewer, and Kasm's base image then just falls
+back to a bare desktop. Confirm with `docker logs <container>` — a
+container launched this way shows the exact line
+`custom_startup.sh: line NN: GRADING_TOKEN: set GRADING_TOKEN to the
+token minted by grading-api POST /session` near the top. This is the
+token-authorization gate working as intended, not a bug — always launch
+via the link `create-session.py` prints, never the admin UI's Launch
+button, for anything beyond confirming the image itself boots.
+
+**Weasis launches but the watermark only covers part of the screen, or
+there's no grading panel visible.** As of the first real click-through
+test of the Weasis flow: the watermark-coverage bug is fixed (see git log
+for `docker/kasm-workspace-weasis/overlay.py` — it used to measure screen
+size once before KasmVNC's client-viewport resize happened). The missing
+grading panel is a real, still-open gap, not a bug to troubleshoot: no
+browser is installed in the Weasis workspace image at all (it's built on
+Kasm's lean `core-ubuntu-noble` base specifically without one), and
+nothing launches one pointed at `grading-panel.html` — see README.md's
+"Still outstanding" list.
