@@ -31,3 +31,15 @@ session.md
 # explicitly rather than relying on remembering not to `git add` them.
 Dokumentacja/Marlena_*
 Dokumentacja/*.docx
+
+# Both of these were committed on this repo's very first commit, before
+# this project had any gitignore discipline at all, and stayed publicly
+# exposed on GitHub for ~2 weeks before being caught and purged from
+# history (git-filter-repo + a force-push, 2026-09-22). Explicit rules
+# here, not just "remember not to git add them": AI_context_Documentation_DICOM.txt
+# turned out to be contaminated with scraped, unrelated content (Reddit-
+# style comment threads, stray AI-tool UI text) mixed into otherwise
+# legitimate project documentation; DICOM_Q&A.txt contains internal cost
+# estimates and procurement/legal risk commentary not meant to be public.
+Dokumentacja/AI_context_Documentation_DICOM.txt
+Dokumentacja/DICOM_Q&A.txt
