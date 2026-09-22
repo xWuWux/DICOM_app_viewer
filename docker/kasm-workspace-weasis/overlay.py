@@ -55,9 +55,13 @@ from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 STUDENT_ID = os.environ.get("STUDENT_ID", "UNKNOWN_STUDENT")
 SESSION_ID = os.environ.get("SESSION_ID", "UNKNOWN_SESSION")
 
-FONT_SIZE = 15
+FONT_SIZE = 13
 ANGLE_DEG = -15
-TILE_GAP = 70  # sparse tiling on purpose -- a mark, not a wall of text
+# Wide gap on purpose -- a periodic mark, not a wall of text (tuned down
+# from an earlier 70px after a real click-through session showed ~11 rows
+# crossing a 1920x950 screen, denser than intended for a deterrence-only
+# mark -- see this file's own module docstring on that distinction).
+TILE_GAP = 260
 
 
 def watermark_text():
@@ -81,6 +85,18 @@ class Overlay(Gtk.Window):
         visual = screen.get_rgba_visual()
         if visual is not None:
             self.set_visual(visual)
+
+        # KasmVNC starts at a fixed default geometry (1024x768) and only
+        # resizes to the client's real browser-viewport size *after* this
+        # process is already running (watchdog.sh launches it at container
+        # boot, well before any client has connected to negotiate a size) --
+        # confirmed against a real session: xrandr reported 1920x950 while
+        # this window, sized once here at construction time, stayed at the
+        # earlier, smaller geometry, leaving the rest of the desktop
+        # unwatermarked. "size-changed" fires on every such resize
+        # (confirmed via GDK's own screen API), so re-measure and redraw
+        # instead of trusting the one-time reading above.
+        screen.connect("size-changed", self.on_screen_resized)
 
         # Tile spacing is derived from the actual rendered width of a
         # representative string, not guessed -- a fixed guess that's
@@ -112,6 +128,13 @@ class Overlay(Gtk.Window):
     def tick(self):
         self.queue_draw()
         return True
+
+    def on_screen_resized(self, screen):
+        self.width = screen.get_width()
+        self.height = screen.get_height()
+        self.resize(self.width, self.height)
+        self.move(0, 0)
+        self.queue_draw()
 
     def on_draw(self, widget, cr):
         surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, self.width, self.height)

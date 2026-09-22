@@ -371,16 +371,34 @@ What's confirmed working in this image, in the order it was built:
     against both light and dark content but isn't the same mathematical
     guarantee.
 
+**Confirmed via the first real Kasm-issued session** (registered in the
+admin UI, launched through `create-session.py`'s minted link — not just
+Xvfb/manual container testing): Weasis actually launches on the assigned
+study through a real session end to end. That same real test also caught
+one bug Xvfb testing couldn't have (fixed): the watermark overlay measured
+screen size once before KasmVNC's client-viewport resize happened, so it
+covered only part of a real browser-sized screen — see git log for
+`docker/kasm-workspace-weasis/overlay.py`.
+
+**A real gap this surfaced, not yet fixed**: the grading panel
+(`grading-panel.html`, issue #5) is never actually shown in the Weasis
+flow. No browser is installed in this workspace image at all — it's built
+on Kasm's lean `core-ubuntu-noble` base specifically *without* one (see
+this Dockerfile's own comments) — and nothing in `custom_startup.sh`
+launches one pointed at it. The page exists and works (verified locally,
+see "Quick start" above), it's just never displayed inside a real Weasis
+session yet.
+
 **Still outstanding**:
+- **Grading panel not shown in the Weasis flow** (see above) — needs a
+  lightweight browser added to the image and a launch step (backgrounded,
+  before `custom_startup.sh`'s final `exec` into Weasis) pointed at
+  `grading-panel.html`, sized/positioned beside the Weasis window.
 - **Issue #8 (Regression + Real-Data Scrubbing Test)** — re-verify DLP still
   functions on this new image type, test real-world scrubbing smoothness on
   an actual multi-hundred-slice CT study (current fixtures are too small),
   update documentation. The unit-test slice of this (see Testing below) is
   already done; the DLP/real-data piece is not.
-- Registering this image in the Kasm admin UI as a selectable workspace for
-  real sessions — everything above has only been verified in isolation
-  (Xvfb, or a manually-started container), not yet through an actual
-  Kasm-issued session link.
 
 ### Networking
 
