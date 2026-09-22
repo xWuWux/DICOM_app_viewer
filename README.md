@@ -380,20 +380,35 @@ screen size once before KasmVNC's client-viewport resize happened, so it
 covered only part of a real browser-sized screen — see git log for
 `docker/kasm-workspace-weasis/overlay.py`.
 
-**A real gap this surfaced, not yet fixed**: the grading panel
-(`grading-panel.html`, issue #5) is never actually shown in the Weasis
-flow. No browser is installed in this workspace image at all — it's built
-on Kasm's lean `core-ubuntu-noble` base specifically *without* one (see
-this Dockerfile's own comments) — and nothing in `custom_startup.sh`
-launches one pointed at it. The page exists and works (verified locally,
-see "Quick start" above), it's just never displayed inside a real Weasis
-session yet.
+**The grading panel gap that same test surfaced is now fixed**:
+`docker/kasm-workspace-weasis/grading_panel_window.py` displays
+`grading-panel.html` (issue #5) in its own window, launched (backgrounded)
+by `custom_startup.sh` before the final `exec` into Weasis, pinned to the
+right edge of the screen. Deliberately **not** a general-purpose browser
+install (no Chromium/Firefox/Epiphany) — that would reopen exactly the
+save/print/devtools attack surface issue #7 just closed, through a
+different door. Instead: a single WebKit2GTK `WebView` with no browser
+chrome at all (no address bar, no menu, nothing to build one from since
+none exists), locked down via WebKit2's own documented APIs — context
+menu suppressed, developer tools disabled, new-window/popup creation
+vetoed, navigation restricted to this session's own origin (same-origin
+`fetch`/XHR calls to `grading-api` are unaffected, only top-level page
+navigation is restricted), plus a keyboard-shortcut blocklist (F12,
+Ctrl+U/S/P, Ctrl+Shift+I/J/C) as defense in depth. See that file's own
+header comment for the full rationale and what's explicitly *not* claimed
+(same "deterrence, not prevention" framing as the watermark overlay).
+Verified against a real `grading-api` session token, not just that it
+renders: the actual Polish learning-stage form loaded correctly, complete
+with the page's own DOM watermark tiling inside the window.
+
+**Known trade-off, not yet automated**: this window is a normal,
+decorated, user-movable/resizable window, not automatically tiled against
+Weasis's own window — doing that would need `xdotool`/`wmctrl` (not
+present in this base image) to drive Weasis's window geometry from
+outside. If Weasis's window covers it, the user can move/resize either
+window manually via xfwm4, same as any two ordinary windows.
 
 **Still outstanding**:
-- **Grading panel not shown in the Weasis flow** (see above) — needs a
-  lightweight browser added to the image and a launch step (backgrounded,
-  before `custom_startup.sh`'s final `exec` into Weasis) pointed at
-  `grading-panel.html`, sized/positioned beside the Weasis window.
 - **Issue #8 (Regression + Real-Data Scrubbing Test)** — re-verify DLP still
   functions on this new image type, test real-world scrubbing smoothness on
   an actual multi-hundred-slice CT study (current fixtures are too small),
