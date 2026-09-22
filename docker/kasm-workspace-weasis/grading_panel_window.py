@@ -80,7 +80,10 @@ if not GRADING_TOKEN:
 STUDENT_ID = os.environ.get("STUDENT_ID", "UNKNOWN_STUDENT")
 SESSION_ID = os.environ.get("SESSION_ID", "UNKNOWN_SESSION")
 
-PANEL_WIDTH = 420
+# Kept in sync with arrange_windows.sh's own GRADING_PANEL_WIDTH default --
+# both need the same value, since that script resizes Weasis's window to
+# leave exactly this much room on the right, where this window sits.
+PANEL_WIDTH = int(os.environ.get("GRADING_PANEL_WIDTH", "420"))
 
 _query = urllib.parse.urlencode(
     {"token": GRADING_TOKEN, "student_id": STUDENT_ID, "session_id": SESSION_ID}
