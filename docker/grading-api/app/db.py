@@ -98,6 +98,21 @@ def init_db():
             case_order_index INTEGER NOT NULL
         );
 
+        -- UNIQUE(student_id, case_id, stage) (issue #28): /submit's own
+        -- stage check (progress["stage"] != body.stage) and its INSERT are
+        -- two separate steps with no locking between them -- a double-
+        -- click or a scripted rapid-fire request could pass the check
+        -- twice before either write lands, creating duplicate submissions
+        -- for the same case/stage and skewing /results accuracy numbers.
+        -- This constraint makes that a clean, guaranteed-consistent
+        -- IntegrityError (mapped to 409 in main.py's submit()) instead of
+        -- silently succeeding twice, without needing a manual transaction/
+        -- row-lock around the whole read-then-write span.
+        --
+        -- CREATE TABLE IF NOT EXISTS only applies to a fresh database --
+        -- an existing local /data/grading.db from before this change
+        -- won't gain the constraint retroactively; recreate the volume
+        -- (docker compose down -v && up) to pick it up.
         CREATE TABLE IF NOT EXISTS submissions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id TEXT NOT NULL,
@@ -108,7 +123,8 @@ def init_db():
             submitted_text TEXT,
             is_correct INTEGER,
             time_spent_seconds REAL,
-            submitted_at REAL NOT NULL
+            submitted_at REAL NOT NULL,
+            UNIQUE(student_id, case_id, stage)
         );
 
         -- Binds an unguessable, server-issued token to a student_id --
