@@ -4,20 +4,55 @@ Minimal, runnable proof-of-concept for the IP_CMC Lung-RADS training platform
 described in `Dokumentacja/`. See `CLAUDE.md` for the hard rules this project
 must never violate.
 
-**Scope of this MVP** (deliberately narrow — see "What's NOT in this MVP" below):
-a DICOM store with a couple of sample studies, a web-based viewer with a
-forensic watermark baked in, served through a container that's meant to sit
-behind Kasm Workspaces so each viewer session comes from its own unique,
-individually-issued link. No Moodle, no payments, no grading, no stratified
-sampling yet.
+**Scope of this MVP** (deliberately narrow — see "What's NOT in this MVP"
+below): a DICOM store with a couple of sample studies, a forensic watermark
+baked into every session, served through a container that's meant to sit
+behind Kasm Workspaces so each session comes from its own unique,
+individually-issued link. No Moodle, no payments, no stratified sampling yet.
 
 **Setting up your own copy?** See `docs/LOCAL_SETUP_GUIDE.md` for a
 complete, step-by-step walkthrough (no assumed context) — the sections
 below are more of a technical decisions log than an onboarding doc.
 **Just want the shape of it?** See `docs/ARCHITECTURE.md` for current-state
-Mermaid diagrams (session flow + deployment topology).
+Mermaid diagrams (session flow + deployment topology — those cover the
+Chrome+Orthanc flow described below; they predate the Weasis flow and
+haven't been redrawn for it yet).
 
-## What's actually running today (this machine, via Docker)
+## Two viewer flows, side by side
+
+This project didn't replace Orthanc with Weasis — **Orthanc is still the
+DICOM store and DICOMweb server behind both flows.** What changed is which
+*viewer* a student's Kasm session actually shows them, after PM feedback
+(`Dokumentacja/`) wanted something closer to the native desktop viewers
+(Horos/Weasis) radiologists already know, instead of Orthanc's own web UI.
+Both flows are real, both are registerable in Kasm at the same time, and
+both talk to the same `grading-api` for the Lung-RADS mechanics:
+
+| | **Chrome flow** (original MVP) | **Weasis flow** (in progress) |
+|---|---|---|
+| Workspace image | `docker/kasm-workspace/` | `docker/kasm-workspace-weasis/` |
+| What the student sees | Chrome, kiosk mode, one page: Orthanc's web viewer in an iframe + the grading panel as a sidebar | Weasis, a real native DICOM viewer window + the grading panel as its own small browser window beside it |
+| Frontend page(s) | `docker/viewer/watermark.html` (iframe + sidebar, one page) | `docker/viewer/grading-panel.html` (panel only — Weasis shows the images itself) |
+| Watermark | DOM-based, `mix-blend-mode:difference` for guaranteed contrast (browser-only, one page) | Native GTK overlay (`overlay.py` + `watchdog.sh`) covering the whole screen, since Weasis is a separate window a page-based watermark could never reach |
+| Status | Done, this is what's actually deployed today | Milestone "Weasis viewer migration", GitHub issues #3–#8 — see below for exactly what's shipped vs. still open |
+
+Nothing about `orthanc`, `grading-api`, or the local dev quick-start below
+changes between the two — only which workspace image you register in Kasm,
+and which frontend page that image's `custom_startup.sh` points at.
+
+## Quick start (local dev, no Kasm needed)
+
+This is the fastest way to poke at `grading-api`/the grading UI without
+installing Kasm at all — it exercises the same `orthanc` + `grading-api` +
+`viewer` stack either flow uses, just through a plain browser tab instead of
+a Kasm session.
+
+```bash
+cp .env.example .env && sed -i "s/^ORTHANC_PASSWORD=.*/ORTHANC_PASSWORD=$(openssl rand -hex 16)/" .env
+docker compose up -d --build
+./scripts/fetch-public-samples.sh   # pulls in BRAINIX (~64MB, not committed to git)
+./scripts/load-sample-studies.sh
+```
 
 ```
 ┌──────────────┐      ┌───────────────────────┐      ┌─────────────┐
@@ -27,7 +62,7 @@ Mermaid diagrams (session flow + deployment topology).
 │  streamed    │      │ reverse proxy         │      │  internal   │
 │  session)    │      └───────────┬───────────┘      │  only)      │
 └──────────────┘                  │                  └─────────────┘
-                                  ▼
+                                   ▼
                        ┌───────────────────────┐
                        │  grading-api          │
                        │  (FastAPI + SQLite,   │
@@ -35,32 +70,25 @@ Mermaid diagrams (session flow + deployment topology).
                        └───────────────────────┘
 ```
 
-Orthanc is **not** published on any host port — only the `viewer` container
-can reach it, over the internal `ipcmc-internal` Docker network. That's the
-same "nothing but pixels leaves the isolated tier" model the docs converge on
-for the real Kasm deployment.
-
-### Run it
-
-```bash
-cp .env.example .env && sed -i "s/^ORTHANC_PASSWORD=.*/ORTHANC_PASSWORD=$(openssl rand -hex 16)/" .env
-docker compose up -d --build
-./scripts/fetch-public-samples.sh   # pulls in BRAINIX (~64MB, not committed to git)
-./scripts/load-sample-studies.sh
-```
-
-Then open **http://localhost:8080/** — you should see the watermarked viewer
-wrapper with a rotating `STUDENT_ID | SESSION_ID | timestamp` overlay, loading
-Orthanc Explorer 2 (browse to a study, then open it in the Stone Web Viewer)
-inside it.
+Open **http://localhost:8080/** — you should see the watermarked viewer
+wrapper (`watermark.html`, the Chrome-flow page) with a rotating
+`STUDENT_ID | SESSION_ID | timestamp` overlay, loading Orthanc Explorer 2
+(browse to a study, then open it in the Stone Web Viewer) inside it.
 
 Change the query string to simulate different individual sessions, e.g.:
 `http://localhost:8080/?student_id=STU_12345&session_id=SESS_9921A3B`.
 This is exactly what `scripts/create-session.py` + `custom_startup.sh` do
 automatically once Kasm is wired up (see below) — it's the mechanism behind
-"one individual link per person." The same query string also carries `orthanc_url` (default
-`http://localhost:8043/` for this local setup — the auth-injecting proxy, not
-Orthanc's own port, see below) so the wrapper knows which origin to iframe.
+"one individual link per person." The same query string also carries
+`orthanc_url` (default `http://localhost:8043/` for this local setup — the
+auth-injecting proxy, not Orthanc's own port, see below) so the wrapper
+knows which origin to iframe.
+
+Want to see the Weasis-flow page (`grading-panel.html`) locally instead?
+`http://localhost:8080/grading-panel.html?student_id=STU_12345&session_id=SESS_1`
+renders it the same way, minus Weasis itself (that only runs inside a
+Kasm/XFCE session, or the Xvfb-based dev technique described further down)
+— useful for iterating on the grading UI in isolation.
 
 **Credentials**: there is no hardcoded Orthanc password anywhere in this
 repo — `ORTHANC_PASSWORD` comes from `.env` (copied from the committed
@@ -90,8 +118,10 @@ MVP.
 
 ## Lung-RADS grading
 
-A new `grading-api` service (FastAPI + SQLite, `docker/grading-api/`)
-implements the 3-stage state machine from the PM's spec, in Polish:
+A `grading-api` service (FastAPI + SQLite, `docker/grading-api/`)
+implements the 3-stage state machine from the PM's spec, in Polish. It's the
+same backend for both viewer flows — only the frontend page calling it
+differs (`watermark.html` for Chrome, `grading-panel.html` for Weasis):
 
 1. **Nauka (learning)** — free-text impression, submit, then the real
    reference report appears to cross-check against. Not graded — no NLP,
@@ -99,13 +129,13 @@ implements the 3-stage state machine from the PM's spec, in Polish:
    grading" hard rule exactly).
 2. **Ocena (assessment)** — structured Lung-RADS category (`0`–`4X`,
    dropdown) + "S" modifier (radio), submit, immediate correct/incorrect
-   feedback against ground truth.
-3. **Test (exam)** — same structured inputs, submit, **no** feedback until
-   all test-stage cases are done, then a final score summary.
+   feedback against ground truth (revealed either way, right or wrong).
+3. **Test (exam)** — same structured inputs, submit, **no** feedback at
+   all until all test-stage cases are done, then a final score summary.
 
-The grading panel lives in `watermark.html` as a sidebar next to the DICOM
-viewer iframe (same page, no separate route) — on loading a case it
-deep-links the iframe to that one assigned study
+**In the Chrome flow**, the grading panel lives in `watermark.html` as a
+sidebar next to the DICOM viewer iframe (same page, no separate route) — on
+loading a case it deep-links the iframe to that one assigned study
 (`ui/app/index.html#/filtered-studies?StudyInstanceUID=...`), not the full
 patient list, matching `Dokumentacja/`'s "Single DICOM Study Isolation"
 requirement. **Worth knowing**: Orthanc's Explorer 2 has no true per-study
@@ -115,6 +145,11 @@ needs one click from the student to open the viewer on it. The
 `stone-webviewer` plugin this project assumed earlier isn't even installed
 on this Orthanc image (confirmed via `GET /plugins`) — corrected once
 actually tested against the real instance, not left as an assumption.
+
+**In the Weasis flow**, there's no iframe at all — Weasis itself opens
+directly on the assigned study (see "The two workspace images" below, issue
+#4), and `grading-panel.html` only ever renders the form, in its own small
+window beside it.
 
 Ground truth + reference reports are **placeholder content** on the
 existing sample studies (CT_small/MR_small/BRAINIX — none of which are
@@ -134,20 +169,29 @@ stratified sampling yet either, since there's no real 500-study pool to
 stratify. Worth revisiting CLAUDE.md's wording once this direction is
 confirmed as lasting.)
 
+**A real gap, not yet fixed**: `GET /api/case` and `POST /api/submit` take
+`student_id` as a plain, unauthenticated query/body parameter — nothing
+currently binds it to the caller's actual Kasm session, so any client on
+the network can read or submit as *any* student ID. Worth fixing before
+this carries real grades.
+
 ## What's NOT in this MVP (on purpose)
 
 Per the docs' own recommendation (`Dokumentacja/AI_context_Documentation_DICOM.txt`,
-"About the two-week MVP" section), all of this is deferred:
+"About the two-week MVP" section — this file is gitignored/kept local-only,
+see below), all of this is deferred:
 
 - Moodle / LTI 1.3 launch and grade passback.
 - Payments (300 PLN), certificates, access expiry.
 - Real stratified case sampling (50/50/30 across Lung-RADS classes, drawn
-  from a real curated 500-study pool) — see "Lung-RADS grading" below for
+  from a real curated 500-study pool) — see "Lung-RADS grading" above for
   what's actually built: the 3-stage mechanics, with 1 placeholder case per
   stage rather than a real stratified pool.
 - Admin dashboard, leaderboard, expert-review queue.
 
-## Kasm Workspaces: real per-student links
+## Kasm Workspaces
+
+### Installing Kasm itself
 
 Kasm Workspaces Community Edition is installed on this machine (via
 <https://kasm.com/docs/latest/install/single-server-install/>, using
@@ -161,132 +205,202 @@ Running them on a separate Proxmox VM/LXC instead? See
 `docs/PROXMOX_DEPLOYMENT.md` and `docker-compose.remote-host.yml` — only the
 networking/firewall piece differs, everything else here still applies.
 
-What's wired up, end to end, and confirmed working:
+**Kasm Workspaces Community Edition licensing, read before planning a real
+cohort**: non-commercial/non-profit/personal use only (EULA §2.2) and capped
+at 5 concurrent sessions — see `CLAUDE.md`'s hard rules. A real paid,
+10-20+ concurrent deployment needs a paid tier and a legal/procurement
+review first.
 
-1. **Custom workspace image** (`docker/kasm-workspace/`): a Kasm Chrome
-   workspace in kiosk mode, pinned to the watermarked viewer. Build/rebuild
-   with `docker build -t ipcmc/dicom-viewer:mvp docker/kasm-workspace`, then
-   register it in the Kasm admin UI as a Workspace (type **Container**,
-   Docker Image `ipcmc/dicom-viewer:mvp`, registry blank since it's built
-   locally on the same Docker host Kasm's agent uses).
+### The two workspace images
 
-   **In progress** (Weasis viewer migration, milestone tracked in GitHub
-   Issues #3-#8): `docker/kasm-workspace-weasis/` is a second, separate
-   workspace image built on Kasm's lean `core-ubuntu-noble` base (XFCE +
-   KasmVNC only, not the bloated "desktop" bundle) with Weasis 4.7.3
-   installed from its own `.deb`. Build with `docker build -t
-   ipcmc/dicom-viewer-weasis:mvp docker/kasm-workspace-weasis`. Confirmed
-   working (issue #3): launched under a virtual X display, the JVM starts,
-   OSGi bundles load, the DICOM codec registers, and the main window renders
-   correctly (DICOM Explorer panel, menus, the standard "not a certified
-   medical device" disclaimer responds to a real click) — Weasis bundles its
-   own JRE at `/opt/weasis/lib/runtime`, so no separate Java package is
-   needed.
+**Chrome** (`docker/kasm-workspace/`) — a Kasm Chrome workspace in kiosk
+mode, pinned to `watermark.html`. Build/rebuild with:
+```bash
+docker build -t ipcmc/dicom-viewer:mvp docker/kasm-workspace
+```
+Then register it in the Kasm admin UI as a Workspace (type **Container**,
+Docker Image `ipcmc/dicom-viewer:mvp`, registry blank since it's built
+locally on the same Docker host Kasm's agent uses). This is what's actually
+deployed and confirmed working end-to-end today.
 
-   **Auto-launch against the assigned study** (issue #4) is also wired up
-   now: `docker/kasm-workspace-weasis/custom_startup.sh` fetches the
-   current case from `grading-api` (same `/api/` proxy the Chrome flow
-   uses) and launches Weasis straight into it via its `dicom:rs` command,
-   with zero manual clicks — the disclaimer dialog from issue #3 is also
-   now suppressed at build time (`weasis.show.disclaimer=false` patched
-   into Weasis's own config, since ephemeral Kasm containers get a fresh
-   `$HOME` every session and would otherwise hit it every time). Getting
-   `dicom:rs` to actually work took real debugging, worth recording:
-   - It only works sent as a `weasis://` URI, not raw CLI tokens — Weasis's
-     own main-argv command parser races the OSGi bundle that provides the
-     command and silently no-ops otherwise (confirmed against
-     `nroduit/Weasis`'s own launcher source).
-   - The query needs an explicit `requestType=STUDY` ahead of `studyUID=`
-     — without it, Weasis's request-type classification (it implements the
-     IHE "Invoke Image Display" profile) falls through with no error.
-   - **A real bug this surfaced, fixed as part of this issue, not a
-     Weasis-side problem**: the auth-injecting proxy (`:8043`) was
-     forwarding nginx's `$host` to Orthanc, which strips the port even
-     when the original request had one — Orthanc's DICOMweb plugin embeds
-     whatever Host it receives into every QIDO-RS response's
-     `RetrieveURL`, so Weasis's *queries* worked but every subsequent
-     *image download* connection-refused against the wrong port. Fixed by
-     forwarding `$http_host` instead (see
-     `docker/viewer/default.conf.template`).
+**Weasis** (`docker/kasm-workspace-weasis/`, milestone "Weasis viewer
+migration", GitHub issues #3–#8) — built on Kasm's lean `core-ubuntu-noble`
+base (XFCE + KasmVNC only, not the bloated "desktop" bundle) with Weasis
+4.7.3 installed from its own `.deb`. Build the same way:
+```bash
+docker build -t ipcmc/dicom-viewer-weasis:mvp docker/kasm-workspace-weasis
+```
+Registering it in the Kasm admin UI works the same as Chrome above (same
+**Container** type, this image's tag); both images can be registered side
+by side.
 
-   **The forensic watermark overlay** (issue #6) is also wired up:
-   `docker/kasm-workspace-weasis/overlay.py` is a transparent, always-
-   on-top, click-through native window (GTK3, not a browser page — Weasis
-   is a separate native window a page-based watermark could never cover)
-   tiled with `STUDENT_ID | SESSION_ID | timestamp` text, paired with
-   `watchdog.sh` so killing it just gets it relaunched within about a
-   second. Verified for real, not just assumed:
-   - **True transparency without a compositor**: no compositor (e.g.
-     `picom`) runs in this XFCE/KasmVNC session by default, so this uses
-     the X Shape extension instead (`Gdk.Window.shape_combine_region()`)
-     — only the actual glyph pixels are part of the window at all.
-     Confirmed with a screenshot against a solid-color test background:
-     the color showed through everywhere except the rendered text.
-   - **Genuine click-through**: `input_shape_combine_region()` set to an
-     *empty* region, independent of the bounding shape above. Confirmed
-     by placing a real clickable test button underneath and clicking
-     directly on top of rendered watermark glyphs — the click reached the
-     button every time.
-   - **Stays on top of a real window manager**, not just bare Xvfb (which
-     has no window manager at all, so nothing enforces stacking order):
-     `Gtk.WindowType.POPUP` (override-redirect, outside window manager
-     control entirely) plus `set_keep_above()`, tested under a real
-     `xfwm4` session.
-   - **The watchdog actually relaunches it**: killed the overlay process
-     directly and confirmed a new one appeared within ~1 second, watermark
-     coverage intact in a follow-up screenshot.
-   - **A limitation flagged, not hidden**: without a compositor, CSS-style
-     `mix-blend-mode:difference` (what watermark.html/grading-panel.html
-     use for guaranteed contrast) has no real cross-window equivalent here
-     — that trick only works within one browser's own rendering pipeline.
-     This uses a dark-stroke + light-fill "halo" around each glyph
-     instead (the same technique subtitle overlays use), which is legible
-     against both light and dark content but isn't the same mathematical
-     guarantee.
+**How to run/test Weasis without a full Kasm session** — this is a real
+native GUI app, so there's no plain-browser equivalent to the Chrome flow's
+"just open the page" quick start. What actually verified every piece of
+this image during development, and still works for re-verifying it:
+```bash
+# Inside a running container built from the image above (or any container
+# with GTK3 + Weasis's own JRE), with an X display available:
+Xvfb :99 -screen 0 1280x800x24 &
+export DISPLAY=:99
+xfwm4 &                      # a real window manager -- bare Xvfb has none,
+                              # so "always on top" has nothing to test against
+/opt/weasis/bin/Weasis        # or with a weasis:// URI, see custom_startup.sh
+import -window root screenshot.png   # ImageMagick, to actually look at it
+```
+A real Kasm session already provides all of this (KasmVNC's own Xvnc +
+xfwm4) — this is purely the technique for developing/debugging the image
+without one.
 
-   Registering this image in the Kasm admin UI as a selectable workspace
-   is still outstanding — both it and `docker/kasm-workspace/` (Chrome) can
-   coexist side by side while this is validated.
-2. **Networking**: `docker-compose.yml` attaches `orthanc`/`viewer` to
-   `kasm_default_network` (external, created by the Kasm installer) so Kasm's
-   session containers reach them by container name — `http://ipcmc-viewer:8080/`
-   and the auth-injecting proxy at `http://ipcmc-viewer:8043/` (see
-   `docker/viewer/default.conf.template` for why Orthanc isn't reached
-   directly: an iframe can't answer its Basic Auth challenge).
-3. **Per-student links** (`scripts/create-session.py`): calls Kasm's public
-   API (`/api/public/request_kasm`) to mint a one-off session with
-   `STUDENT_ID`/`SESSION_ID` baked into its environment — that's what
-   `custom_startup.sh` reads to launch Chrome with the right watermark
-   identity already in the URL. Needs an API key from the admin UI
-   (**Settings → Developers → Add API Key**, with the **"Users Auth Session"**
-   and **"User"** permissions enabled — `request_kasm` 403s without both) and
-   the workspace's image_id (from its edit URL in the admin UI):
-   ```bash
-   KASM_SERVER=https://your-kasm-host \
-   KASM_API_KEY=... KASM_API_KEY_SECRET=... KASM_IMAGE_ID=... \
-   python3 scripts/create-session.py --student-id STU_12345 --insecure  # drop --insecure with a real cert
-   ```
-   Prints a ready-to-share `link` — no login required, it's pre-authenticated
-   via a session token Kasm generates. The script also tries a readiness
-   check (`get_kasm_status`) but treats it as best-effort: a scoped API key
-   commonly lacks the separate "impersonate another user" permission that
-   call needs for an anonymous/other user, so it's fine if that part logs a
-   non-fatal warning and skips straight to printing the link.
+What's confirmed working in this image, in the order it was built:
 
-4. **DLP settings** (clipboard, file upload/download, printing — the
-   on-prem equivalent of AppStream's "Stack Policy"): configured on the
-   **Group** anonymous sessions land in (`Access → Groups → All Users →
-   Settings`), not per-workspace — `allow_kasm_clipboard_down/up/seamless`,
-   `allow_kasm_downloads`, `allow_kasm_uploads`, `allow_kasm_printing`,
-   `allow_kasm_sharing`, `allow_kasm_webcam`, `allow_kasm_microphone`,
-   `allow_kasm_gamepad`, `allow_kasm_audio` all set to `False`. Verified two
-   ways, not just trusted: queried `group_settings` directly in Kasm's own
-   Postgres DB to confirm the stored values, then launched a real test
-   session and confirmed inside the container that
-   `KASM_SVC_DOWNLOADS`/`KASM_SVC_UPLOADS`/`KASM_SVC_PRINTER` are `0` — those
-   services aren't just hidden in the UI, they never start. Clipboard
-   restriction is enforced separately, per-session, by Kasm's proxy checking
-   the group permission — not a container env flag.
+- **Issue #3 (New Kasm Image)**: launched under a virtual X display, the
+  JVM starts, OSGi bundles load, the DICOM codec registers, and the main
+  window renders correctly (DICOM Explorer panel, menus, the standard "not
+  a certified medical device" disclaimer responds to a real click) — Weasis
+  bundles its own JRE at `/opt/weasis/lib/runtime`, so no separate Java
+  package is needed.
+- **Issue #4 (Automatic Launch Without Extra Clicks)**:
+  `docker/kasm-workspace-weasis/custom_startup.sh` fetches the current case
+  from `grading-api` (same `/api/` proxy the Chrome flow uses) and launches
+  Weasis straight into it via its `dicom:rs` command, with zero manual
+  clicks — the disclaimer dialog is also suppressed at build time
+  (`weasis.show.disclaimer=false` patched into Weasis's own config, since
+  ephemeral Kasm containers get a fresh `$HOME` every session and would
+  otherwise hit it every time). Getting `dicom:rs` to actually work took
+  real debugging, worth recording:
+  - It only works sent as a `weasis://` URI, not raw CLI tokens — Weasis's
+    own main-argv command parser races the OSGi bundle that provides the
+    command and silently no-ops otherwise (confirmed against
+    `nroduit/Weasis`'s own launcher source).
+  - The query needs an explicit `requestType=STUDY` ahead of `studyUID=`
+    — without it, Weasis's request-type classification (it implements the
+    IHE "Invoke Image Display" profile) falls through with no error.
+  - **A real bug this surfaced, fixed as part of this issue, not a
+    Weasis-side problem**: the auth-injecting proxy (`:8043`) was
+    forwarding nginx's `$host` to Orthanc, which strips the port even
+    when the original request had one — Orthanc's DICOMweb plugin embeds
+    whatever Host it receives into every QIDO-RS response's
+    `RetrieveURL`, so Weasis's *queries* worked but every subsequent
+    *image download* connection-refused against the wrong port. Fixed by
+    forwarding `$http_host` instead (see
+    `docker/viewer/default.conf.template`).
+- **Issue #5 (Grading Panel)**: `docker/viewer/grading-panel.html` — a
+  trimmed-down `watermark.html` with the DICOM iframe removed, everything
+  else (the 3-stage JS/API logic, the watermark tiling, the anti-tamper
+  deterrents) reused unchanged. A new, separate file rather than an
+  in-place edit — `watermark.html` is still the live page for the Chrome
+  flow, gutting it would have broken that working flow mid-migration.
+- **Issue #6 (Watermark Overlay)**: `docker/kasm-workspace-weasis/overlay.py`
+  is a transparent, always-on-top, click-through native window (GTK3, not a
+  browser page — Weasis is a separate native window a page-based watermark
+  could never cover) tiled with `STUDENT_ID | SESSION_ID | timestamp` text,
+  paired with `watchdog.sh` so killing it just gets it relaunched within
+  about a second. Verified for real, not just assumed:
+  - **True transparency without a compositor**: no compositor (e.g.
+    `picom`) runs in this XFCE/KasmVNC session by default, so this uses
+    the X Shape extension instead (`Gdk.Window.shape_combine_region()`)
+    — only the actual glyph pixels are part of the window at all.
+    Confirmed with a screenshot against a solid-color test background:
+    the color showed through everywhere except the rendered text.
+  - **Genuine click-through**: `input_shape_combine_region()` set to an
+    *empty* region, independent of the bounding shape above. Confirmed
+    by placing a real clickable test button underneath and clicking
+    directly on top of rendered watermark glyphs — the click reached the
+    button every time.
+  - **Stays on top of a real window manager**, not just bare Xvfb (which
+    has no window manager at all, so nothing enforces stacking order):
+    `Gtk.WindowType.POPUP` (override-redirect, outside window manager
+    control entirely) plus `set_keep_above()`, tested under a real
+    `xfwm4` session.
+  - **The watchdog actually relaunches it**: killed the overlay process
+    directly and confirmed a new one appeared within ~1 second, watermark
+    coverage intact in a follow-up screenshot.
+  - **A limitation flagged, not hidden**: without a compositor, CSS-style
+    `mix-blend-mode:difference` (what `watermark.html`/`grading-panel.html`
+    use for guaranteed contrast) has no real cross-window equivalent here
+    — that trick only works within one browser's own rendering pipeline.
+    This uses a dark-stroke + light-fill "halo" around each glyph
+    instead (the same technique subtitle overlays use), which is legible
+    against both light and dark content but isn't the same mathematical
+    guarantee.
+
+**Still outstanding**:
+- **Issue #7 (Lock Down Weasis Native Save/Copy/Export)** — a direct answer
+  to the context-menu/export concern raised on a reference screenshot: File
+  > Export offers both a screenshot/clipboard export and raw DICOM export;
+  the plan is to disable both via Weasis's own config (`weasis.export.dicom`
+  etc.) and remove the DICOM Send/Q-R/ISO-writer bundles entirely. This was
+  built and verified once already, but its PR had to be closed and its
+  branch deleted as part of an unrelated incident response (a git-history
+  rewrite to remove two files that had been committed publicly by
+  mistake — see `.gitignore`'s comments on
+  `Dokumentacja/AI_context_Documentation_DICOM.txt` /
+  `Dokumentacja/DICOM_Q&A.txt`) — needs to be recreated against current
+  `master`.
+- **Issue #8 (Regression + Real-Data Scrubbing Test)** — re-verify DLP still
+  functions on this new image type, test real-world scrubbing smoothness on
+  an actual multi-hundred-slice CT study (current fixtures are too small),
+  update documentation. The unit-test slice of this (see Testing below) is
+  already done; the DLP/real-data piece is not.
+- Registering this image in the Kasm admin UI as a selectable workspace for
+  real sessions — everything above has only been verified in isolation
+  (Xvfb, or a manually-started container), not yet through an actual
+  Kasm-issued session link.
+
+### Networking
+
+`docker-compose.yml` attaches `orthanc`/`viewer` to `kasm_default_network`
+(external, created by the Kasm installer) so Kasm's session containers
+reach them by container name — `http://ipcmc-viewer:8080/` and the
+auth-injecting proxy at `http://ipcmc-viewer:8043/` (see
+`docker/viewer/default.conf.template` for why Orthanc isn't reached
+directly: an iframe/Weasis can't answer its Basic Auth challenge).
+`grading-api` stays off this network entirely — nothing outside `viewer`'s
+nginx needs to reach it.
+
+### Per-student links
+
+`scripts/create-session.py` calls Kasm's public API
+(`/api/public/request_kasm`) to mint a one-off session with
+`STUDENT_ID`/`SESSION_ID` baked into its environment — that's what each
+image's `custom_startup.sh` reads to launch its viewer (Chrome or Weasis)
+with the right identity already baked in. Needs an API key from the admin
+UI (**Settings → Developers → Add API Key**, with the **"Users Auth
+Session"** and **"User"** permissions enabled — `request_kasm` 403s without
+both) and the target workspace's image_id (from its edit URL in the admin
+UI):
+```bash
+KASM_SERVER=https://your-kasm-host \
+KASM_API_KEY=... KASM_API_KEY_SECRET=... KASM_IMAGE_ID=... \
+python3 scripts/create-session.py --student-id STU_12345 --insecure  # drop --insecure with a real cert
+```
+Prints a ready-to-share `link` — no login required, it's pre-authenticated
+via a session token Kasm generates. The script also tries a readiness
+check (`get_kasm_status`) but treats it as best-effort: a scoped API key
+commonly lacks the separate "impersonate another user" permission that
+call needs for an anonymous/other user, so it's fine if that part logs a
+non-fatal warning and skips straight to printing the link.
+
+### DLP settings
+
+Clipboard, file upload/download, printing — the on-prem equivalent of
+AppStream's "Stack Policy" — configured on the **Group** anonymous sessions
+land in (`Access → Groups → All Users → Settings`), not per-workspace:
+`allow_kasm_clipboard_down/up/seamless`, `allow_kasm_downloads`,
+`allow_kasm_uploads`, `allow_kasm_printing`, `allow_kasm_sharing`,
+`allow_kasm_webcam`, `allow_kasm_microphone`, `allow_kasm_gamepad`,
+`allow_kasm_audio` all set to `False`. Verified two ways, not just trusted:
+queried `group_settings` directly in Kasm's own Postgres DB to confirm the
+stored values, then launched a real test session and confirmed inside the
+container that
+`KASM_SVC_DOWNLOADS`/`KASM_SVC_UPLOADS`/`KASM_SVC_PRINTER` are `0` — those
+services aren't just hidden in the UI, they never start. Clipboard
+restriction is enforced separately, per-session, by Kasm's proxy checking
+the group permission — not a container env flag.
+
+**Not yet re-verified against the Weasis image** (that's issue #8's
+remaining scope) — the checks above were all done against the Chrome image.
 
 ## Security note (read this before assuming more than it does)
 
@@ -298,97 +412,120 @@ agreement participants sign, not just in this code. What this MVP *does*
 enforce:
 
 - Raw DICOM pixels never reach a browser outside the internal Docker network
-  (Orthanc has no published port).
-- Every session's viewer page carries a sparse, tiled, timestamped identity
+  (Orthanc has no published port beyond `127.0.0.1`).
+- Every session's viewer carries a sparse, tiled, timestamped identity
   watermark (student/session ID baked in server-side via the Kasm API, not
-  user-controllable JS state), rendered with `mix-blend-mode:difference` so
-  it stays visible against light or dark content and re-rendered every
-  second.
-- A DOM-tamper check reloads the page if the watermark is hidden or
-  removed — a deterrent, not a guarantee (disabling JS entirely defeats it,
-  same as noted in the docs).
+  user-controllable JS state) — DOM-based with
+  `mix-blend-mode:difference` for the Chrome flow, a native GTK overlay
+  using the X Shape extension for the Weasis flow — re-rendered every
+  second either way.
+- A DOM-tamper check (Chrome flow) reloads the page if the watermark is
+  hidden or removed, and a watchdog process (Weasis flow) relaunches the
+  overlay within ~1 second if it's killed — deterrents, not guarantees
+  (disabling JS entirely, or having root in the container, defeats them
+  respectively — same as noted in the docs).
 
 ## Testing
 
-Four scripts, all run in CI (`.github/workflows/ci.yml`) on every push/PR:
+Four scripts, all run in CI (`.github/workflows/ci.yml`) on every push/PR
+as four parallel jobs (`lint`, `unit-test`, `shell-test`, `smoke-test`, all
+depending only on `lint` so they run concurrently, not serialized):
 
 - `scripts/lint.sh` — bash syntax check on every script, `docker compose
   config` validation on both compose files. No infrastructure needed, safe
   to run anytime.
 - `scripts/test-grading-api.sh` (issue #8) — unit tests for `grading-api`'s
-  3-stage state machine (`docker/grading-api/tests/test_state_machine.py`),
-  driven through FastAPI's own `TestClient` against a fresh, isolated
-  SQLite file per test — no Docker, no real stack, runs in well under a
-  second. These exist specifically to protect the invariants this project
-  keeps stating in prose but never had automated coverage for: ground
-  truth/reference reports never leak before the stage that reveals them,
-  the test stage reveals nothing at all, progress advances correctly
+  3-stage state machine (`docker/grading-api/tests/test_state_machine.py`,
+  16 tests), driven through FastAPI's own `TestClient` against a fresh,
+  isolated SQLite file per test — no Docker, no real stack, runs in well
+  under a second. These exist specifically to protect the invariants this
+  project keeps stating in prose but never had automated coverage for:
+  ground truth/reference reports never leak before the stage that reveals
+  them, the test stage reveals nothing at all, progress advances correctly
   case→case→stage→"complete", two students' state never crosses, and the
   existing input validation (stage mismatches, `time_spent_seconds` range)
   actually behaves as documented. Verified the suite itself, not just that
   it's green: deliberately broke the test-stage no-reveal invariant in
   `main.py`, confirmed exactly one test failed (the one guarding that
   invariant, nothing else), then reverted.
+- `scripts/test-shell-scripts.sh` (issue #16) — BATS tests (17 tests total)
+  for the Kasm workspace launcher scripts. No Docker, no real
+  Kasm/Weasis/grading-api needed: the scripts under test gained small,
+  production-inert seams (`CHROME_BIN`/`WEASIS_BIN`/`OVERLAY_SCRIPT`/
+  `WATCHDOG_LOG`, all unset in production) so a test can stub the actual
+  binary — a fake executable that just captures its own argv to a file —
+  instead of launching a real browser, Weasis, or GTK overlay.
+  - `docker/kasm-workspace/custom_startup.bats` (6 tests) and
+    `docker/kasm-workspace-weasis/custom_startup.bats` (7 tests): the
+    Weasis suite also stubs `curl` (via `PATH`) to stand in for
+    `grading-api`'s response, while the real `python3` still runs the
+    actual `dicom:rs` URI-building logic being tested — that's the whole
+    point, verifying the real percent-encoding behavior that took real
+    debugging to get right (issue #4), not mocking it away. Verified the
+    suite itself the same way as `test-grading-api.sh`: deliberately
+    removed `requestType=STUDY` from the built URI, reran, confirmed
+    exactly one test failed, then reverted. Also fixed a small real
+    inconsistency found while writing these: `docker/kasm-workspace/
+    custom_startup.sh`'s `VIEWER_URL` had no `:?` guard (unlike
+    `ORTHANC_URL` right next to it), so a genuinely missing value failed
+    with bash's own generic `VIEWER_URL: unbound variable` instead of a
+    message actually pointing at the problem — now guarded the same way.
+  - `docker/kasm-workspace-weasis/watchdog.bats` (4 tests): since the
+    script under test is a deliberate infinite loop, every test bounds it
+    with `timeout` rather than waiting for it to exit on its own. **Found
+    and fixed a real bug writing this test**: the logged exit code was
+    always `0`, regardless of what the overlay actually exited with —
+    `$(date ...)` runs its own command inside the same `echo`'s string
+    and overwrites `$?` before the later `$?` in that string gets
+    expanded, clobbering the real exit status before it was ever read.
+    Fixed by capturing `$?` into a variable immediately after the command
+    it belongs to. Verified the same way: confirmed the test fails
+    against the original code, passes against the fix.
 - `scripts/smoke-test.sh` — brings the main stack up for real (building
   images, stubbing `kasm_default_network` if it doesn't exist) and checks
   the HTTP status codes that were, until this was added, verified by hand
   after every change: Orthanc healthy, the watermarked viewer wrapper
   loads, the auth-injecting proxy actually injects auth (307, not 401), and
   (issue #4's regression check) that Orthanc's DICOMweb `RetrieveURL`
-  actually includes the proxy's port, not just a 200 status code.
+  actually includes the proxy's port, not just a 200 status code — that
+  last one is a regression test for a real bug (see issue #4 above), and a
+  status-code-only check would never have caught it, since the QIDO query
+  itself always returned 200 regardless.
   **Tears the stack down with `docker compose down -v` when it's done** —
   don't run this against an environment with data you care about; it's
   meant for a disposable/CI environment.
-- `scripts/test-shell-scripts.sh` (issue #16) — BATS tests for
-  `docker/kasm-workspace/custom_startup.sh` and
-  `docker/kasm-workspace-weasis/custom_startup.sh`: no Docker, no real
-  Kasm/Weasis/grading-api needed. Both scripts gained a small,
-  production-inert seam (`CHROME_BIN`/`WEASIS_BIN`, unset defaults to the
-  real path) so a test can stub the actual binary — a fake executable that
-  just captures its own argv to a file — instead of launching a real
-  browser or Weasis. The Weasis suite also stubs `curl` (via `PATH`) to
-  stand in for `grading-api`'s response, while the real `python3` still
-  runs the actual `dicom:rs` URI-building logic being tested. Verified the
-  suite itself the same way as `test-grading-api.sh`: deliberately removed
-  `requestType=STUDY` from the built URI (the exact bug found and fixed
-  during issue #4), reran, confirmed exactly one test failed, then
-  reverted.
-
-  Also covers `docker/kasm-workspace-weasis/watchdog.sh` (the forensic
-  watermark overlay's supervisor, issue #6): `OVERLAY_SCRIPT`/
-  `WATCHDOG_LOG` seams point it at a stub overlay script and an isolated
-  log file instead of the real thing, so its relaunch-on-death loop can be
-  observed without any real GTK/X11 display. **Found and fixed a real bug
-  writing this test**: the logged exit code was always `0`, regardless of
-  what the overlay actually exited with — `$(date ...)` runs its own
-  command inside the same `echo`'s string and overwrites `$?` before the
-  later `$?` in that string gets expanded, clobbering the real exit status
-  before it was ever read. Fixed by capturing `$?` into a variable
-  immediately after the command it belongs to. Verified the same way:
-  confirmed the test fails against the original code, passes against the
-  fix.
 
 Deliberately not covered by any of these (needs real Kasm infrastructure a
 CI runner doesn't have, stays manual): actually launching a Kasm session,
 `create-session.py` against a live instance, DLP settings — see this
 project's own commit history for how each of those was actually verified.
-(`custom_startup.sh`'s own logic — the command it builds, not an actual
-Kasm session launching it — *is* now covered, by the BATS suite above.)
+(Each `custom_startup.sh`'s own logic — the command it builds, not an
+actual Kasm session launching it — *is* now covered, by the BATS suite
+above.)
 
 ## Repo layout
 
 ```
-CLAUDE.md                     hard rules for this project (do not violate)
-Dokumentacja/                 source design discussion + radiology requirements
-.env.example                  copy to .env and fill in a real ORTHANC_PASSWORD (gitignored)
-docker-compose.yml            Orthanc + watermarked viewer, for local testing
-docker/orthanc/               Orthanc config (no credentials in here -- see .env.example)
-docker/viewer/                nginx (config templated + auth token computed from env, not hardcoded) + the watermark wrapper page + grading panel
-docker/grading-api/           Lung-RADS 3-stage grading mechanics (FastAPI + SQLite)
-docker/kasm-workspace/        custom Kasm workspace image (build after Kasm is installed)
-docker/kasm-workspace-weasis/ Weasis-based workspace image, in progress (issues #3-#8)
-sample-data/                  public-domain sample DICOM files
-scripts/fetch-public-samples.sh  pulls larger public teaching studies (BRAINIX) into sample-data/
-scripts/load-sample-studies.sh   uploads sample-data/ (recursively) into Orthanc
-scripts/create-session.py     mints a per-student Kasm session link (tested against a live instance)
+CLAUDE.md                             hard rules for this project (do not violate)
+Dokumentacja/                         source design discussion + radiology requirements
+                                       (two files here are gitignored/local-only: see .gitignore)
+.env.example                          copy to .env and fill in a real ORTHANC_PASSWORD (gitignored)
+docker-compose.yml                    orthanc + grading-api + viewer, for local testing
+docker-compose.remote-host.yml        variant for running orthanc/viewer on a separate Proxmox VM/LXC
+docker/orthanc/                       Orthanc config (no credentials in here -- see .env.example)
+docker/viewer/                        nginx (config templated, auth token computed from env) +
+                                       watermark.html (Chrome flow) + grading-panel.html (Weasis flow)
+docker/grading-api/                   Lung-RADS 3-stage grading mechanics (FastAPI + SQLite)
+docker/grading-api/tests/             unit tests (scripts/test-grading-api.sh)
+docker/kasm-workspace/                Chrome-based Kasm workspace image -- the one actually deployed
+docker/kasm-workspace-weasis/         Weasis-based workspace image -- milestone in progress, issues #3-#8
+sample-data/                          public-domain sample DICOM files
+scripts/fetch-public-samples.sh       pulls larger public teaching studies (BRAINIX) into sample-data/
+scripts/load-sample-studies.sh        uploads sample-data/ (recursively) into Orthanc
+scripts/create-session.py             mints a per-student Kasm session link (tested against a live instance)
+scripts/lint.sh                       bash syntax + compose config validation (CI)
+scripts/test-grading-api.sh           grading-api unit tests via pytest (CI)
+scripts/test-shell-scripts.sh         Kasm launcher script tests via BATS (CI)
+scripts/smoke-test.sh                 full-stack integration check (CI)
+.github/workflows/ci.yml              the four CI jobs above, run on every push/PR
 ```
