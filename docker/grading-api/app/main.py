@@ -266,10 +266,22 @@ def reset(body: ResetBody):
     this single-page kiosk app (viewer + grading panel) -- once a student
     reaches 'complete', this is the way back to a fresh learning-stage case.
     Clears past submissions too (not just progress), so a repeat run
-    doesn't leave stale rows alongside the new ones and skew /results."""
+    doesn't leave stale rows alongside the new ones and skew /results.
+
+    Blocked entirely during the test stage (issue #27): with no guard here,
+    a student partway through the graded exam who doesn't like how it's
+    going could just reset and retry with a case sequence they now
+    remember -- a real cheating vector, not a hypothetical one, since
+    /submit never reveals anything during "test" but the student still
+    sees which case comes next. learning/assessment/complete are
+    unaffected -- neither stage is graded, and 'complete' is the
+    documented, legitimate way to start a fresh run."""
     conn = db.get_connection()
     try:
         student_id = _resolve_token(conn, body.token)
+        progress = _get_or_create_progress(conn, student_id)
+        if progress["stage"] == "test":
+            raise HTTPException(403, "Cannot reset during the test stage")
         conn.execute("DELETE FROM progress WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM submissions WHERE student_id = ?", (student_id,))
         conn.commit()
