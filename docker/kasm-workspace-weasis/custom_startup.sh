@@ -99,6 +99,14 @@ PYEOF
 # Weasis, not this, is the process Kasm's own service monitor tracks.
 STUDENT_ID="$STUDENT_ID" SESSION_ID="$SESSION_ID" /opt/watermark/watchdog.sh &
 
+# The grading panel (issue #5's page, never actually displayed in this
+# flow until now -- a real gap the first click-through test surfaced):
+# same backgrounding reasoning as the watermark above. Not wrapped in its
+# own watchdog -- unlike the watermark, this isn't a forensic control that
+# must survive tampering, so a simple one-shot launch is enough for now.
+VIEWER_URL="$VIEWER_URL" GRADING_TOKEN="$GRADING_TOKEN" STUDENT_ID="$STUDENT_ID" SESSION_ID="$SESSION_ID" \
+    python3 /opt/grading-panel/grading_panel_window.py &
+
 # exec (not background + exit): same reasoning as
 # docker/kasm-workspace/custom_startup.sh -- the base image's service
 # monitor tracks this script's own PID as the "custom_startup" service and

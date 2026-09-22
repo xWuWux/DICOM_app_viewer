@@ -49,12 +49,25 @@ ENV ORTHANC_URL="http://${REMOTE_HOST}:8043/"
 # signal handler ships in a separate package -- confirmed the hard way
 # ("Couldn't find foreign struct converter for 'cairo.Context'") before
 # adding this.
+#
+# gir1.2-webkit2-4.1 is for grading_panel_window.py (the grading-panel
+# display, a real gap found by the first real click-through test -- see
+# that file's own header comment for why this is a locked-down WebKit2GTK
+# embed, not a general-purpose browser install). libwebkit2gtk-4.1-0
+# itself is already present in this base image as a transitive dependency
+# of something else (confirmed via `apt-cache policy` before assuming an
+# extra package was needed) -- only the GObject-Introspection bindings
+# package is actually missing.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3-gi-cairo && \
+    apt-get install -y --no-install-recommends \
+      python3-gi-cairo \
+      gir1.2-webkit2-4.1 && \
     rm -rf /var/lib/apt/lists/*
 
 COPY overlay.py watchdog.sh /opt/watermark/
 RUN chmod +x /opt/watermark/watchdog.sh
+
+COPY grading_panel_window.py /opt/grading-panel/grading_panel_window.py
 
 COPY custom_startup.sh /dockerstartup/custom_startup.sh
 RUN chmod +x /dockerstartup/custom_startup.sh
