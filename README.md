@@ -403,19 +403,33 @@ with the page's own DOM watermark tiling inside the window.
 
 **Auto-tiled against Weasis, not left to manual resizing**:
 `docker/kasm-workspace-weasis/arrange_windows.sh` (launched the same way,
-backgrounded before the `exec`) resizes Weasis's window to leave exactly
-enough room for the panel — `wmctrl` turned out to already be present in
-this base image (confirmed via `apt-cache policy` before assuming
-otherwise). One real gotcha found via a live test, not assumed: Weasis's
-main window opens already maximized
-(`_NET_WM_STATE_MAXIMIZED_HORZ`/`_VERT`, confirmed via `xprop`), and
-xfwm4 silently ignores a plain geometry resize request against a
-maximized window — a "successful" (exit-0) `wmctrl -r ... -e ...` call
-had zero visible effect until the maximized state was explicitly removed
-first (`wmctrl -r ... -b remove,maximized_vert,maximized_horz`). Known
-trade-off, not handled: this runs once at startup, so a later client-
-viewport resize (the same KasmVNC behavior that caused the watermark bug
-above) can throw the split off until the next session.
+backgrounded before the `exec`) resizes both Weasis's and the grading
+panel's windows to split the screen cleanly — `wmctrl` turned out to
+already be present in this base image (confirmed via `apt-cache policy`
+before assuming otherwise). Two real gotchas found via live tests, not
+assumed:
+  - Weasis's main window opens already maximized
+    (`_NET_WM_STATE_MAXIMIZED_HORZ`/`_VERT`, confirmed via `xprop`), and
+    xfwm4 silently ignores a plain geometry resize request against a
+    maximized window — a "successful" (exit-0) `wmctrl -r ... -e ...`
+    call had zero visible effect until the maximized state was explicitly
+    removed first.
+  - An *earlier, one-shot* version of this script measured the screen
+    size once at startup — but KasmVNC starts at a fixed default geometry
+    and only resizes to the client's real browser-viewport size *after* a
+    real client connects (confirmed via a live session's own VNC log:
+    "Got request for framebuffer resize to 1920x950", logged well after
+    this script's first pass had already run and tiled both windows
+    against the smaller, stale geometry — the exact same root cause as
+    the watermark overlay bug fixed earlier). Fixed the same way as that
+    bug: this now re-reads the screen size and re-applies both windows'
+    geometry every 2 seconds for the life of the session, not once —
+    `wmctrl` calls are cheap and idempotent, so this is a harmless no-op
+    once the geometry is already correct, and self-corrects within one
+    cycle of any later resize. Verified against a scripted, stubbed
+    resize (not just reasoned about): a fake `xrandr` reporting a
+    different resolution on successive calls confirmed the script
+    re-tiles both windows to the new size on its very next cycle.
 
 **Still outstanding**:
 - **Issue #8 (Regression + Real-Data Scrubbing Test)** — re-verify DLP still
