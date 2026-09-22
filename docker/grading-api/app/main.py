@@ -21,6 +21,7 @@ grading actions was.
 """
 import os
 import secrets
+import sqlite3
 from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException
@@ -227,18 +228,28 @@ def submit(body: SubmitBody):
         if body.stage in ("assessment", "test"):
             is_correct = 1 if body.category == case["ground_truth_category"] else 0
 
-        conn.execute(
-            """INSERT INTO submissions
-               (student_id, case_id, stage, submitted_category, submitted_modifier_s,
-                submitted_text, is_correct, time_spent_seconds, submitted_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                student_id, body.case_id, body.stage, body.category,
-                None if body.modifier_s is None else int(body.modifier_s),
-                body.text, is_correct, body.time_spent_seconds, db.now(),
-            ),
-        )
-        conn.commit()
+        # issue #28: the stage check above and this INSERT are two separate
+        # steps with no locking between them -- a double-click or a
+        # scripted rapid-fire request could pass the check twice before
+        # either write lands. UNIQUE(student_id, case_id, stage) (see
+        # db.py) turns that race into a clean, guaranteed-consistent
+        # IntegrityError here rather than silently creating duplicate
+        # submissions that would skew /results accuracy numbers.
+        try:
+            conn.execute(
+                """INSERT INTO submissions
+                   (student_id, case_id, stage, submitted_category, submitted_modifier_s,
+                    submitted_text, is_correct, time_spent_seconds, submitted_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    student_id, body.case_id, body.stage, body.category,
+                    None if body.modifier_s is None else int(body.modifier_s),
+                    body.text, is_correct, body.time_spent_seconds, db.now(),
+                ),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, "This case/stage was already submitted")
 
         _advance_progress(conn, student_id, progress["stage"], progress["case_order_index"])
 

@@ -380,6 +380,38 @@ def test_reset_clears_progress_and_submissions(client, mint_token):
     assert data["position"] == 1
 
 
+def test_submit_duplicate_for_same_case_stage_returns_409(client, mint_token):
+    """Exercises the UNIQUE(student_id, case_id, stage) constraint issue
+    #28 added, by directly reproducing the end state of the race it
+    protects against -- two requests both passing the stage check before
+    either commits -- without needing real thread concurrency: insert a
+    submission row directly, then attempt a normal /submit call for that
+    same student/case/stage while progress hasn't advanced past it yet."""
+    token = mint_token("stu_16")
+    case_id = _case_id(client, token)
+
+    conn = db_module.get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO submissions
+               (student_id, case_id, stage, submitted_category, submitted_modifier_s,
+                submitted_text, is_correct, time_spent_seconds, submitted_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ("stu_16", case_id, "learning", None, None, "already submitted",
+             None, 1, db_module.now()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    resp = client.post(
+        "/submit",
+        json={"token": token, "case_id": case_id, "stage": "learning",
+              "text": "x", "time_spent_seconds": 1},
+    )
+    assert resp.status_code == 409
+
+
 def test_reset_is_blocked_during_test_stage(client, mint_token):
     """The actual cheating vector issue #27 exists to close: without this
     guard, a student partway through the graded exam who doesn't like how
