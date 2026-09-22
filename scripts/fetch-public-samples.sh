@@ -33,4 +33,20 @@ fetch_patient() {
 # Public teaching dataset (classic OsiriX/Orthanc sample), already anonymized.
 fetch_patient "16738bc3-e47ed42a-43ce044c-a3414a45-cb069bd0" "brainix" "BRAINIX (5Yp0E)"
 
+# sample-data/dicomlibrary_ct/ -- a real, multi-hundred-slice CT study (970
+# instances / 5 series / ~494MB) from dicomlibrary.com's own public "DICOM
+# Samples" gallery. Confirmed anonymized directly via pydicom tags before
+# use (PatientName "Anonymized^^", PatientID "0", no institution/physician/
+# accession) -- exactly the kind of real, large study issue #8's real-data
+# scrubbing test needed (current fixtures were all too small for that).
+#
+# NOT automated here like BRAINIX above: dicomlibrary.com's download link
+# is a per-visit, 5-minute-expiring token tied to a "manage" session
+# (https://www.dicomlibrary.com/?manage=<id>), not a stable public URL --
+# there's no fixed endpoint this script could curl on a schedule. To
+# re-fetch if this copy is ever lost: open that manage page fresh, copy
+# the "Download Anonymized DICOM Study" link it generates (valid 5
+# minutes), and extract the resulting ZIP into sample-data/dicomlibrary_ct/
+# the same way fetch_patient() does above.
+
 echo "Done. Run scripts/load-sample-studies.sh to upload into Orthanc."

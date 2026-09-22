@@ -111,6 +111,19 @@ It's a long-standing public/anonymized teaching dataset, not real patient
 data — but at ~64MB it's **not committed to git** (see `.gitignore`); re-run
 the fetch script to get it back after a fresh clone.
 
+`sample-data/dicomlibrary_ct/` is a real, multi-hundred-slice **CT study**
+(970 instances / 5 series / ~494MB) from
+[dicomlibrary.com](https://www.dicomlibrary.com)'s own public "DICOM
+Samples" gallery — the kind of large, realistic study the smaller fixtures
+above can't stand in for (e.g. issue #8's real-data scrubbing/DLP test).
+Confirmed anonymized directly via `pydicom` tag inspection before use
+(`PatientName` = `"Anonymized^^"`, `PatientID` = `"0"`, no institution/
+physician/accession), not just trusted from the site's own claim. **Not
+committed to git** and **not fully automatable** like `brainix/` above —
+`fetch-public-samples.sh`'s own comment explains why (dicomlibrary.com's
+download link is a per-visit, 5-minute-expiring token, not a stable public
+URL) and how to re-fetch it manually if this copy is ever lost.
+
 Real studies still need the anonymization pipeline described in `CLAUDE.md`
 (hard rule: *"All DICOM files must be anonymized and stripped of PHI before
 ingestion"*) — that pipeline doesn't exist yet and is out of scope for this
