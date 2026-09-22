@@ -310,6 +310,33 @@ What's confirmed working in this image, in the order it was built:
   deterrents) reused unchanged. A new, separate file rather than an
   in-place edit — `watermark.html` is still the live page for the Chrome
   flow, gutting it would have broken that working flow mid-migration.
+- **Issue #7 (Lock Down Weasis Native Save/Copy/Export)** — a direct answer
+  to the context-menu/export concern raised on a reference screenshot: File
+  > Export offered two items, confirmed via a real running session before
+  disabling anything (not guessed from menu labels alone) —
+  "Exporting view" (screenshot/clipboard copy of the current view, no
+  matching preference exists anywhere in Weasis's own config, see below)
+  and "DICOM" (raw export to local disk/CD/ISO). `docker/kasm-workspace-weasis/patch-weasis-config.py`
+  patches `weasis.export.dicom`, `weasis.export.dicom.send`,
+  `weasis.import.dicom`, `weasis.import.images`, and
+  `weasis.import.dicom.qr` to `false`, and blanks the `felix.auto.start.110`
+  bundle group entirely (not just hides it) — Felix never loads the DICOM
+  Send/Q-R/ISO-writer bundles at all, so the underlying code doesn't exist
+  at runtime. Consolidated with issue #4's own disclaimer patch in the same
+  script, since both edit the same `base.json` file. Verified in the built
+  image: all six preference values confirmed `false`/blanked via
+  `docker cp`'d config inspection (not by running the full Kasm entrypoint,
+  which starts a real desktop session rather than exiting).
+  **Residual gap, not silently accepted**: "Exporting view" has no
+  matching preference in Weasis's own config at all — confirmed against
+  its actual source (`ActionW.java`'s `EXPORT_VIEW` is an unconditional,
+  always-registered core action, not gated by any property). Accepted
+  because any file it saves stays trapped inside the ephemeral container
+  (destroyed on logout, zero persistence) and can't leave the session
+  regardless, since Kasm's own DLP settings already disable downloads,
+  clipboard-out, uploads, sharing, and printing at the session level (see
+  the DLP section below) — the same reasoning that already covers Weasis's
+  own unconditional Print menu.
 - **Issue #6 (Watermark Overlay)**: `docker/kasm-workspace-weasis/overlay.py`
   is a transparent, always-on-top, click-through native window (GTK3, not a
   browser page — Weasis is a separate native window a page-based watermark
@@ -345,18 +372,6 @@ What's confirmed working in this image, in the order it was built:
     guarantee.
 
 **Still outstanding**:
-- **Issue #7 (Lock Down Weasis Native Save/Copy/Export)** — a direct answer
-  to the context-menu/export concern raised on a reference screenshot: File
-  > Export offers both a screenshot/clipboard export and raw DICOM export;
-  the plan is to disable both via Weasis's own config (`weasis.export.dicom`
-  etc.) and remove the DICOM Send/Q-R/ISO-writer bundles entirely. This was
-  built and verified once already, but its PR had to be closed and its
-  branch deleted as part of an unrelated incident response (a git-history
-  rewrite to remove two files that had been committed publicly by
-  mistake — see `.gitignore`'s comments on
-  `Dokumentacja/AI_context_Documentation_DICOM.txt` /
-  `Dokumentacja/DICOM_Q&A.txt`) — needs to be recreated against current
-  `master`.
 - **Issue #8 (Regression + Real-Data Scrubbing Test)** — re-verify DLP still
   functions on this new image type, test real-world scrubbing smoothness on
   an actual multi-hundred-slice CT study (current fixtures are too small),
