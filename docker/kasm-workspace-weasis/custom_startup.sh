@@ -104,8 +104,17 @@ STUDENT_ID="$STUDENT_ID" SESSION_ID="$SESSION_ID" /opt/watermark/watchdog.sh &
 # same backgrounding reasoning as the watermark above. Not wrapped in its
 # own watchdog -- unlike the watermark, this isn't a forensic control that
 # must survive tampering, so a simple one-shot launch is enough for now.
+GRADING_PANEL_WIDTH="${GRADING_PANEL_WIDTH:-420}"
 VIEWER_URL="$VIEWER_URL" GRADING_TOKEN="$GRADING_TOKEN" STUDENT_ID="$STUDENT_ID" SESSION_ID="$SESSION_ID" \
+    GRADING_PANEL_WIDTH="$GRADING_PANEL_WIDTH" \
     python3 /opt/grading-panel/grading_panel_window.py &
+
+# Weasis's own window otherwise opens wide enough to sit on top of the
+# grading panel above, forcing a manual resize every session before the
+# panel is even visible -- confirmed via a real click-through test. See
+# arrange_windows.sh's own header comment for why this is a one-shot
+# script, not a persistent watchdog.
+GRADING_PANEL_WIDTH="$GRADING_PANEL_WIDTH" /opt/grading-panel/arrange_windows.sh &
 
 # exec (not background + exit): same reasoning as
 # docker/kasm-workspace/custom_startup.sh -- the base image's service

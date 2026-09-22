@@ -67,7 +67,8 @@ RUN apt-get update && \
 COPY overlay.py watchdog.sh /opt/watermark/
 RUN chmod +x /opt/watermark/watchdog.sh
 
-COPY grading_panel_window.py /opt/grading-panel/grading_panel_window.py
+COPY grading_panel_window.py arrange_windows.sh /opt/grading-panel/
+RUN chmod +x /opt/grading-panel/arrange_windows.sh
 
 COPY custom_startup.sh /dockerstartup/custom_startup.sh
 RUN chmod +x /dockerstartup/custom_startup.sh
