@@ -380,6 +380,62 @@ def test_reset_clears_progress_and_submissions(client, mint_token):
     assert data["position"] == 1
 
 
+def test_reset_is_blocked_during_test_stage(client, mint_token):
+    """The actual cheating vector issue #27 exists to close: without this
+    guard, a student partway through the graded exam who doesn't like how
+    it's going could reset and retry with a case sequence they now
+    remember. Drive stu_14 all the way to the test stage, then confirm
+    reset is refused and progress is left completely untouched."""
+    token = mint_token("stu_14")
+    for stage in ("learning", "assessment"):
+        case_id = _case_id(client, token)
+        body = {"token": token, "case_id": case_id, "stage": stage,
+                 "time_spent_seconds": 1}
+        if stage == "learning":
+            body["text"] = "x"
+        else:
+            body["category"] = "3"
+            body["modifier_s"] = False
+        client.post("/submit", json=body)
+
+    assert client.get(f"/case?token={token}").json()["stage"] == "test"
+
+    resp = client.post("/reset", json={"token": token})
+    assert resp.status_code == 403
+
+    # Still exactly where it was -- the blocked attempt didn't partially
+    # apply (e.g. clearing submissions but not progress, or vice versa).
+    data = client.get(f"/case?token={token}").json()
+    assert data["stage"] == "test"
+    assert data["position"] == 1
+
+
+def test_reset_still_allowed_after_completion(client, mint_token):
+    """The one existing, legitimate use of reset (per main.py's own
+    docstring: "once a student reaches 'complete', this is the way back
+    to a fresh learning-stage case") must keep working -- the test-stage
+    guard should be specific to "test", not accidentally block
+    "complete" too."""
+    token = mint_token("stu_15")
+    for stage in ("learning", "assessment", "test"):
+        case_id = _case_id(client, token)
+        body = {"token": token, "case_id": case_id, "stage": stage,
+                 "time_spent_seconds": 1}
+        if stage == "learning":
+            body["text"] = "x"
+        else:
+            body["category"] = "3"
+            body["modifier_s"] = False
+        client.post("/submit", json=body)
+
+    assert client.get(f"/case?token={token}").json() == {"complete": True}
+
+    resp = client.post("/reset", json={"token": token})
+    assert resp.status_code == 200
+    assert resp.json() == {"reset": True}
+    assert client.get(f"/case?token={token}").json()["stage"] == "learning"
+
+
 def test_healthz_ok(client):
     resp = client.get("/healthz")
     assert resp.status_code == 200
