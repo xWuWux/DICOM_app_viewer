@@ -13,9 +13,20 @@ with the "Users Auth Session" and "User" permissions enabled on the key):
 And the image_id of the registered "IP_CMC DICOM Viewer (MVP)" workspace
 (visible in its URL in the admin UI, or via /api/public/get_images).
 
+Also mints a grading-api session token (see docker/grading-api/app/main.py's
+POST /session) bound to this student_id -- this script is the only thing
+that should ever be able to do that, hence GRADING_COORDINATOR_KEY: without
+it, any client could mint its own token for any student_id and defeat the
+whole point (README.md flagged this as a real, previously-unfixed gap
+before this script closed it). Needs network access to `viewer`'s /api/
+proxy -- GRADING_API_URL, default assumes this script runs on the same
+Docker host as the stack (see README.md's own "everything on one host"
+assumption); point it elsewhere for the separate-Proxmox-host deployment.
+
 Usage:
   KASM_SERVER=https://localhost \
   KASM_API_KEY=... KASM_API_KEY_SECRET=... KASM_IMAGE_ID=... \
+  GRADING_COORDINATOR_KEY=... \
   python3 scripts/create-session.py --student-id STU_12345
 """
 import argparse
@@ -28,18 +39,21 @@ import urllib.request
 import urllib.error
 
 
-def api_call(server: str, path: str, payload: dict, insecure: bool = False, fatal: bool = True) -> dict:
+def api_call(server: str, path: str, payload: dict, insecure: bool = False, fatal: bool = True,
+             headers: dict = None, label: str = "Kasm API") -> dict:
     url = f"{server.rstrip('/')}{path}"
     data = json.dumps(payload).encode()
     req = urllib.request.Request(
-        url, data=data, headers={"Content-Type": "application/json"}, method="POST"
+        url, data=data,
+        headers={"Content-Type": "application/json", **(headers or {})},
+        method="POST",
     )
     ctx = ssl._create_unverified_context() if insecure else None
     try:
         with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        message = f"Kasm API error calling {path}: {e.code} {e.read().decode()}"
+        message = f"{label} error calling {path}: {e.code} {e.read().decode()}"
         if fatal:
             sys.exit(message)
         print(f"  (non-fatal) {message}", file=sys.stderr)
@@ -60,16 +74,33 @@ def main():
     api_key = os.environ["KASM_API_KEY"]
     api_key_secret = os.environ["KASM_API_KEY_SECRET"]
     image_id = os.environ["KASM_IMAGE_ID"]
+    coordinator_key = os.environ["GRADING_COORDINATOR_KEY"]
+    grading_api_url = os.environ.get("GRADING_API_URL", "http://localhost:8080/")
 
     session_id = args.session_id or str(int(time.time()))
+
+    # The only place a grading-api token gets minted (see that service's
+    # POST /session) -- fatal on failure, not best-effort like the Kasm
+    # readiness poll below: a session without a token can't do anything
+    # useful once it's open, so there's no point handing out a link for one.
+    session_created = api_call(
+        grading_api_url, "/api/session",
+        {"student_id": args.student_id, "session_id": session_id},
+        args.insecure,
+        headers={"X-Coordinator-Key": coordinator_key},
+        label="grading-api",
+    )
+    grading_token = session_created["token"]
 
     # user_id is intentionally omitted: per Kasm's docs, request_kasm creates
     # a throwaway/anonymous user when it's left out -- exactly what we want
     # for a one-off per-student link, no pre-provisioned Kasm user needed.
-    # STUDENT_ID/SESSION_ID land in the container's environment and are what
-    # custom_startup.sh bakes into the watermark; ORTHANC_URL/VIEWER_URL
-    # already have correct defaults baked into the image itself (see
-    # docker/kasm-workspace/Dockerfile) so they're not overridden here.
+    # STUDENT_ID/SESSION_ID land in the container's environment purely for
+    # display (the watermark text) -- GRADING_TOKEN is what custom_startup.sh
+    # actually uses to talk to grading-api now, never the raw student_id.
+    # ORTHANC_URL/VIEWER_URL already have correct defaults baked into the
+    # image itself (see docker/kasm-workspace/Dockerfile) so they're not
+    # overridden here.
     request_payload = {
         "api_key": api_key,
         "api_key_secret": api_key_secret,
@@ -77,6 +108,7 @@ def main():
         "environment": {
             "STUDENT_ID": args.student_id,
             "SESSION_ID": session_id,
+            "GRADING_TOKEN": grading_token,
         },
     }
 

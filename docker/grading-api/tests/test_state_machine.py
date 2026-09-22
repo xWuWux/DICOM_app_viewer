@@ -1,9 +1,19 @@
 """
-Unit tests for grading-api's 3-stage Lung-RADS state machine (issue #8).
+Unit tests for grading-api's 3-stage Lung-RADS state machine (issue #8)
+and its session-token authorization (README.md flagged the lack of it as
+a real, serious gap: student_id used to be a bare, client-supplied
+parameter nothing checked against the caller -- any request could act as
+any student).
 
 These exist to protect the pedagogically/security-critical invariants this
 project keeps stating in prose (README.md, CLAUDE.md, main.py's own
 docstring) but had never had automated, isolated coverage for:
+  - a token is required everywhere, and only POST /session can mint one,
+    itself gated by a coordinator-only secret;
+  - an invalid, unknown, or expired token is rejected, not silently
+    treated as some default identity;
+  - minting a new token for a student_id revokes whatever token existed
+    before it for that same student_id;
   - ground truth and reference reports are NEVER returned before the stage
     that's supposed to reveal them;
   - the test stage reveals nothing at all, unlike learning/assessment;
@@ -24,14 +34,88 @@ assessment's is "3", test's is "4A" with modifier_s=1) -- if that seed
 data ever changes, the specific values asserted here need updating too,
 not just the mechanics being tested.
 """
+import os
+
+from app import db as db_module
 
 
-def _case_id(client, student_id):
-    return client.get(f"/case?student_id={student_id}").json()["case_id"]
+def _case_id(client, token):
+    return client.get(f"/case?token={token}").json()["case_id"]
 
 
-def test_fresh_student_starts_at_learning_stage(client):
-    resp = client.get("/case?student_id=stu_1")
+# ---- Session tokens: the actual authorization mechanism ----
+
+
+def test_session_requires_the_coordinator_key(client):
+    resp = client.post(
+        "/session",
+        json={"student_id": "stu_1", "session_id": "sess_1"},
+        headers={"X-Coordinator-Key": "definitely-not-the-real-key"},
+    )
+    assert resp.status_code == 401
+
+
+def test_session_with_no_coordinator_key_header_is_rejected(client):
+    resp = client.post("/session", json={"student_id": "stu_1", "session_id": "sess_1"})
+    # FastAPI's own required-header validation (422) fires before main.py's
+    # code ever runs -- still a hard rejection either way, which is what
+    # actually matters here.
+    assert resp.status_code in (401, 422)
+
+
+def test_case_rejects_an_unknown_token(client):
+    resp = client.get("/case?token=this-token-was-never-minted")
+    assert resp.status_code == 401
+
+
+def test_case_rejects_an_expired_token(client, mint_token):
+    token = mint_token("stu_2")
+    conn = db_module.get_connection()
+    try:
+        # Simulate time passing rather than waiting out the real TTL --
+        # directly age the row past its own expiry.
+        conn.execute("UPDATE sessions SET expires_at = 0 WHERE token = ?", (token,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    resp = client.get(f"/case?token={token}")
+    assert resp.status_code == 401
+
+
+def test_minting_a_new_token_revokes_the_previous_one_for_that_student(client, mint_token):
+    old_token = mint_token("stu_3")
+    assert client.get(f"/case?token={old_token}").status_code == 200
+
+    new_token = mint_token("stu_3")
+    assert new_token != old_token
+    assert client.get(f"/case?token={old_token}").status_code == 401
+    assert client.get(f"/case?token={new_token}").status_code == 200
+
+
+def test_two_students_get_independent_tokens_and_state(client, mint_token):
+    """The actual point of the whole token system: two different callers
+    can never act as each other, even by guessing at student IDs -- there's
+    no student_id parameter left anywhere for one to guess."""
+    token_a = mint_token("stu_a")
+    token_b = mint_token("stu_b")
+
+    client.post(
+        "/submit",
+        json={"token": token_a, "case_id": _case_id(client, token_a), "stage": "learning",
+              "text": "x", "time_spent_seconds": 1},
+    )
+
+    assert client.get(f"/case?token={token_a}").json()["stage"] == "assessment"
+    assert client.get(f"/case?token={token_b}").json()["stage"] == "learning"
+
+
+# ---- The 3-stage state machine itself (all via a minted token) ----
+
+
+def test_fresh_student_starts_at_learning_stage(client, mint_token):
+    token = mint_token("stu_fresh")
+    resp = client.get(f"/case?token={token}")
     assert resp.status_code == 200
     data = resp.json()
     assert data["complete"] is False
@@ -43,15 +127,15 @@ def test_fresh_student_starts_at_learning_stage(client):
     assert "category_options" not in data
 
 
-def test_case_response_never_leaks_ground_truth_or_reference_report(client):
+def test_case_response_never_leaks_ground_truth_or_reference_report(client, mint_token):
     """The single most important invariant this whole feature exists to
     enforce, checked across all three stages generically (not just
     "learning doesn't leak") so a future field added to the /case response
     can't quietly reintroduce this."""
-    student = "stu_leak_check"
+    token = mint_token("stu_leak_check")
     seen_stages = []
     while True:
-        data = client.get(f"/case?student_id={student}").json()
+        data = client.get(f"/case?token={token}").json()
         if data.get("complete"):
             break
         seen_stages.append(data["stage"])
@@ -60,7 +144,7 @@ def test_case_response_never_leaks_ground_truth_or_reference_report(client):
         assert "reference_report" not in data
 
         body = {
-            "student_id": student,
+            "token": token,
             "case_id": data["case_id"],
             "stage": data["stage"],
             "time_spent_seconds": 5,
@@ -75,12 +159,13 @@ def test_case_response_never_leaks_ground_truth_or_reference_report(client):
     assert seen_stages == ["learning", "assessment", "test"]
 
 
-def test_learning_submit_reveals_reference_report_only(client):
-    case_id = _case_id(client, "stu_2")
+def test_learning_submit_reveals_reference_report_only(client, mint_token):
+    token = mint_token("stu_2")
+    case_id = _case_id(client, token)
     resp = client.post(
         "/submit",
         json={
-            "student_id": "stu_2",
+            "token": token,
             "case_id": case_id,
             "stage": "learning",
             "text": "moja ocena",
@@ -93,39 +178,40 @@ def test_learning_submit_reveals_reference_report_only(client):
     assert "Lung-RADS 2" in data["reference_report"]
 
 
-def test_learning_submit_advances_to_assessment_stage(client):
-    case_id = _case_id(client, "stu_3")
+def test_learning_submit_advances_to_assessment_stage(client, mint_token):
+    token = mint_token("stu_3")
+    case_id = _case_id(client, token)
     client.post(
         "/submit",
         json={
-            "student_id": "stu_3",
+            "token": token,
             "case_id": case_id,
             "stage": "learning",
             "text": "x",
             "time_spent_seconds": 1,
         },
     )
-    data = client.get("/case?student_id=stu_3").json()
+    data = client.get(f"/case?token={token}").json()
     assert data["stage"] == "assessment"
     assert data["position"] == 1
     assert data["category_options"]  # dropdown options present now
 
 
-def test_assessment_submit_correct_category_reveals_ground_truth(client):
+def test_assessment_submit_correct_category_reveals_ground_truth(client, mint_token):
     # Drive stu_4 through learning first (mechanics already covered above;
     # here we're only checking assessment's own reveal behavior).
-    student = "stu_4"
-    case_id = _case_id(client, student)
+    token = mint_token("stu_4")
+    case_id = _case_id(client, token)
     client.post(
         "/submit",
-        json={"student_id": student, "case_id": case_id, "stage": "learning",
+        json={"token": token, "case_id": case_id, "stage": "learning",
               "text": "x", "time_spent_seconds": 1},
     )
-    case_id = _case_id(client, student)
+    case_id = _case_id(client, token)
     resp = client.post(
         "/submit",
         json={
-            "student_id": student, "case_id": case_id, "stage": "assessment",
+            "token": token, "case_id": case_id, "stage": "assessment",
             "category": "3", "modifier_s": False, "time_spent_seconds": 10,
         },
     )
@@ -135,23 +221,23 @@ def test_assessment_submit_correct_category_reveals_ground_truth(client):
     assert data["ground_truth_modifier_s"] is False
 
 
-def test_assessment_submit_incorrect_category_still_reveals_ground_truth(client):
+def test_assessment_submit_incorrect_category_still_reveals_ground_truth(client, mint_token):
     """Assessment always reveals ground truth, correct or not -- only the
     test stage withholds it entirely. Getting this backwards (e.g. hiding
     ground truth on a wrong answer) would break the stage's whole
     cross-check purpose."""
-    student = "stu_5"
-    case_id = _case_id(client, student)
+    token = mint_token("stu_5")
+    case_id = _case_id(client, token)
     client.post(
         "/submit",
-        json={"student_id": student, "case_id": case_id, "stage": "learning",
+        json={"token": token, "case_id": case_id, "stage": "learning",
               "text": "x", "time_spent_seconds": 1},
     )
-    case_id = _case_id(client, student)
+    case_id = _case_id(client, token)
     resp = client.post(
         "/submit",
         json={
-            "student_id": student, "case_id": case_id, "stage": "assessment",
+            "token": token, "case_id": case_id, "stage": "assessment",
             "category": "1", "modifier_s": False, "time_spent_seconds": 10,
         },
     )
@@ -160,13 +246,13 @@ def test_assessment_submit_incorrect_category_still_reveals_ground_truth(client)
     assert data["ground_truth_category"] == "3"
 
 
-def test_test_stage_submit_reveals_nothing(client):
+def test_test_stage_submit_reveals_nothing(client, mint_token):
     """The other core invariant: no correct/incorrect feedback, no ground
     truth, nothing -- an empty object, not just a missing key or two."""
-    student = "stu_6"
+    token = mint_token("stu_6")
     for stage in ("learning", "assessment"):
-        case_id = _case_id(client, student)
-        body = {"student_id": student, "case_id": case_id, "stage": stage,
+        case_id = _case_id(client, token)
+        body = {"token": token, "case_id": case_id, "stage": stage,
                  "time_spent_seconds": 1}
         if stage == "learning":
             body["text"] = "x"
@@ -175,11 +261,11 @@ def test_test_stage_submit_reveals_nothing(client):
             body["modifier_s"] = False
         client.post("/submit", json=body)
 
-    case_id = _case_id(client, student)
+    case_id = _case_id(client, token)
     resp = client.post(
         "/submit",
         json={
-            "student_id": student, "case_id": case_id, "stage": "test",
+            "token": token, "case_id": case_id, "stage": "test",
             "category": "4A", "modifier_s": True, "time_spent_seconds": 10,
         },
     )
@@ -187,11 +273,11 @@ def test_test_stage_submit_reveals_nothing(client):
     assert resp.json() == {}
 
 
-def test_completing_all_stages_marks_complete(client):
-    student = "stu_7"
+def test_completing_all_stages_marks_complete(client, mint_token):
+    token = mint_token("stu_7")
     for stage in ("learning", "assessment", "test"):
-        case_id = _case_id(client, student)
-        body = {"student_id": student, "case_id": case_id, "stage": stage,
+        case_id = _case_id(client, token)
+        body = {"token": token, "case_id": case_id, "stage": stage,
                  "time_spent_seconds": 1}
         if stage == "learning":
             body["text"] = "x"
@@ -200,20 +286,21 @@ def test_completing_all_stages_marks_complete(client):
             body["modifier_s"] = False
         client.post("/submit", json=body)
 
-    data = client.get(f"/case?student_id={student}").json()
+    data = client.get(f"/case?token={token}").json()
     assert data == {"complete": True}
 
 
-def test_results_before_completion(client):
-    resp = client.get("/results?student_id=stu_8")
+def test_results_before_completion(client, mint_token):
+    token = mint_token("stu_8")
+    resp = client.get(f"/results?token={token}")
     assert resp.json() == {"complete": False}
 
 
-def test_results_after_completion_reports_accuracy(client):
-    student = "stu_9"
+def test_results_after_completion_reports_accuracy(client, mint_token):
+    token = mint_token("stu_9")
     for stage, category in (("learning", None), ("assessment", "3"), ("test", "4A")):
-        case_id = _case_id(client, student)
-        body = {"student_id": student, "case_id": case_id, "stage": stage,
+        case_id = _case_id(client, token)
+        body = {"token": token, "case_id": case_id, "stage": stage,
                  "time_spent_seconds": 1}
         if stage == "learning":
             body["text"] = "x"
@@ -222,7 +309,7 @@ def test_results_after_completion_reports_accuracy(client):
             body["modifier_s"] = stage == "test"
         client.post("/submit", json=body)
 
-    data = client.get(f"/results?student_id={student}").json()
+    data = client.get(f"/results?token={token}").json()
     assert data["complete"] is True
     assert data["test_total"] == 1
     assert data["test_correct"] == 1
@@ -232,63 +319,63 @@ def test_results_after_completion_reports_accuracy(client):
     ]
 
 
-def test_submit_stage_mismatch_returns_409(client):
-    student = "stu_10"
-    case_id = _case_id(client, student)  # student is actually at "learning"
+def test_submit_stage_mismatch_returns_409(client, mint_token):
+    token = mint_token("stu_10")
+    case_id = _case_id(client, token)  # student is actually at "learning"
     resp = client.post(
         "/submit",
         json={
-            "student_id": student, "case_id": case_id, "stage": "assessment",
+            "token": token, "case_id": case_id, "stage": "assessment",
             "category": "3", "modifier_s": False, "time_spent_seconds": 1,
         },
     )
     assert resp.status_code == 409
 
 
-def test_submit_case_id_stage_mismatch_returns_400(client):
-    student = "stu_11"
+def test_submit_case_id_stage_mismatch_returns_400(client, mint_token):
+    token = mint_token("stu_11")
     # case_id 2 is the seeded assessment-stage case, not learning's.
     resp = client.post(
         "/submit",
         json={
-            "student_id": student, "case_id": 2, "stage": "learning",
+            "token": token, "case_id": 2, "stage": "learning",
             "text": "x", "time_spent_seconds": 1,
         },
     )
     assert resp.status_code == 400
 
 
-def test_submit_time_spent_out_of_range_returns_400(client):
-    student = "stu_12"
-    case_id = _case_id(client, student)
+def test_submit_time_spent_out_of_range_returns_400(client, mint_token):
+    token = mint_token("stu_12")
+    case_id = _case_id(client, token)
     for bad_value in (-1, 7201):
         resp = client.post(
             "/submit",
             json={
-                "student_id": student, "case_id": case_id, "stage": "learning",
+                "token": token, "case_id": case_id, "stage": "learning",
                 "text": "x", "time_spent_seconds": bad_value,
             },
         )
         assert resp.status_code == 400, f"expected 400 for time_spent_seconds={bad_value}"
 
 
-def test_reset_clears_progress_and_submissions(client):
-    student = "stu_13"
-    case_id = _case_id(client, student)
+def test_reset_clears_progress_and_submissions(client, mint_token):
+    token = mint_token("stu_13")
+    case_id = _case_id(client, token)
     client.post(
         "/submit",
-        json={"student_id": student, "case_id": case_id, "stage": "learning",
+        json={"token": token, "case_id": case_id, "stage": "learning",
               "text": "x", "time_spent_seconds": 1},
     )
-    assert client.get(f"/case?student_id={student}").json()["stage"] == "assessment"
+    assert client.get(f"/case?token={token}").json()["stage"] == "assessment"
 
-    resp = client.post("/reset", json={"student_id": student})
+    resp = client.post("/reset", json={"token": token})
     assert resp.status_code == 200
     assert resp.json() == {"reset": True}
 
     # Back to a fresh learning-stage case, as if this student had never
     # submitted anything.
-    data = client.get(f"/case?student_id={student}").json()
+    data = client.get(f"/case?token={token}").json()
     assert data["stage"] == "learning"
     assert data["position"] == 1
 
@@ -297,20 +384,3 @@ def test_healthz_ok(client):
     resp = client.get("/healthz")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
-
-
-def test_students_are_isolated_from_each_other(client):
-    """Progressing one student must never affect another's state --
-    the state machine is keyed entirely on student_id."""
-    case_id = _case_id(client, "stu_a")
-    client.post(
-        "/submit",
-        json={"student_id": "stu_a", "case_id": case_id, "stage": "learning",
-              "text": "x", "time_spent_seconds": 1},
-    )
-
-    stu_a_data = client.get("/case?student_id=stu_a").json()
-    stu_b_data = client.get("/case?student_id=stu_b").json()
-
-    assert stu_a_data["stage"] == "assessment"
-    assert stu_b_data["stage"] == "learning"  # untouched by stu_a's submission

@@ -6,15 +6,38 @@ for the overall design. Key rule this file enforces: ground_truth_category
 and reference_report are NEVER returned by GET /case (only after POST
 /submit, for the stage that's supposed to reveal them) -- the whole point of
 the 3 stages is what gets revealed and when.
+
+Authorization (README.md flagged this as a real, unfixed gap; this closes
+it): every endpoint below used to take student_id as a bare, client-
+supplied parameter with nothing checking it actually belonged to the
+caller -- any request could read or submit as any student_id. Now every
+endpoint takes an unguessable `token` instead, minted once by POST /session
+(coordinator-only, see GRADING_COORDINATOR_KEY below) and resolved
+server-side to the real student_id via the `sessions` table. student_id/
+session_id are never trusted as credentials again from here on -- they're
+only ever used for display (the watermark text), which is fine since
+displaying the wrong ID isn't a security problem, only trusting it for
+grading actions was.
 """
+import os
+import secrets
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from . import db
 
 app = FastAPI(title="IP_CMC Grading API")
+
+# Shared secret only the coordinator (scripts/create-session.py, run by
+# whoever mints links) knows -- required so POST /session can't just be
+# called directly by a student's own browser to mint a token for anyone
+# else's student_id, which would recreate the exact hole this closes.
+# Fails loudly at import time if unset, same philosophy as
+# docker-compose.yml's ORTHANC_PASSWORD -- never silently run with no
+# secret configured.
+COORDINATOR_KEY = os.environ["GRADING_COORDINATOR_KEY"]
 
 
 @app.on_event("startup")
@@ -32,6 +55,57 @@ def healthz():
         return {"status": "ok"}
     except Exception as e:
         raise HTTPException(503, f"Database error: {str(e)}")
+
+
+class SessionBody(BaseModel):
+    student_id: str
+    session_id: str
+
+
+@app.post("/session")
+def create_session(body: SessionBody, x_coordinator_key: str = Header(...)):
+    """Mint a fresh token bound to student_id, the only path that creates
+    that binding. Called by scripts/create-session.py right after minting
+    the Kasm session itself, not by anything running inside a session."""
+    if not secrets.compare_digest(x_coordinator_key, COORDINATOR_KEY):
+        raise HTTPException(401, "Invalid coordinator key")
+
+    conn = db.get_connection()
+    try:
+        now = db.now()
+        # Opportunistic cleanup, not a separate cron job -- cheap, and
+        # keeps this table from growing unbounded across many sessions.
+        conn.execute("DELETE FROM sessions WHERE expires_at < ?", (now,))
+        # A student_id has at most one live token: minting a new one
+        # revokes whatever token existed before it for that same
+        # student_id (e.g. a coordinator re-minting a link they suspect
+        # leaked).
+        conn.execute("DELETE FROM sessions WHERE student_id = ?", (body.student_id,))
+
+        token = secrets.token_urlsafe(32)
+        expires_at = now + db.TOKEN_TTL_SECONDS
+        conn.execute(
+            "INSERT INTO sessions (token, student_id, session_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+            (token, body.student_id, body.session_id, now, expires_at),
+        )
+        conn.commit()
+        return {"token": token, "expires_at": expires_at}
+    finally:
+        conn.close()
+
+
+def _resolve_token(conn, token: str) -> str:
+    """Every other endpoint's only path to a student_id -- never trust one
+    handed in directly by the caller. Returns the student_id a valid,
+    unexpired token was minted for; raises 401 otherwise."""
+    row = conn.execute(
+        "SELECT student_id, expires_at FROM sessions WHERE token = ?", (token,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(401, "Invalid or unknown token")
+    if row["expires_at"] < db.now():
+        raise HTTPException(401, "Token expired")
+    return row["student_id"]
 
 
 def _get_or_create_progress(conn, student_id: str):
@@ -81,9 +155,10 @@ def _advance_progress(conn, student_id: str, stage: str, order_index: int):
 
 
 @app.get("/case")
-def get_case(student_id: str):
+def get_case(token: str):
     conn = db.get_connection()
     try:
+        student_id = _resolve_token(conn, token)
         progress = _get_or_create_progress(conn, student_id)
         if progress["stage"] == "complete":
             return {"complete": True}
@@ -113,7 +188,7 @@ def get_case(student_id: str):
 
 
 class SubmitBody(BaseModel):
-    student_id: str
+    token: str
     case_id: int
     stage: str
     text: Optional[str] = None
@@ -131,7 +206,8 @@ class SubmitBody(BaseModel):
 def submit(body: SubmitBody):
     conn = db.get_connection()
     try:
-        progress = _get_or_create_progress(conn, body.student_id)
+        student_id = _resolve_token(conn, body.token)
+        progress = _get_or_create_progress(conn, student_id)
         if progress["stage"] != body.stage:
             raise HTTPException(409, f"Submission stage '{body.stage}' doesn't match current progress stage '{progress['stage']}'")
 
@@ -157,14 +233,14 @@ def submit(body: SubmitBody):
                 submitted_text, is_correct, time_spent_seconds, submitted_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                body.student_id, body.case_id, body.stage, body.category,
+                student_id, body.case_id, body.stage, body.category,
                 None if body.modifier_s is None else int(body.modifier_s),
                 body.text, is_correct, body.time_spent_seconds, db.now(),
             ),
         )
         conn.commit()
 
-        _advance_progress(conn, body.student_id, progress["stage"], progress["case_order_index"])
+        _advance_progress(conn, student_id, progress["stage"], progress["case_order_index"])
 
         if body.stage == "learning":
             return {"reference_report": case["reference_report"]}
@@ -181,7 +257,7 @@ def submit(body: SubmitBody):
 
 
 class ResetBody(BaseModel):
-    student_id: str
+    token: str
 
 
 @app.post("/reset")
@@ -193,8 +269,9 @@ def reset(body: ResetBody):
     doesn't leave stale rows alongside the new ones and skew /results."""
     conn = db.get_connection()
     try:
-        conn.execute("DELETE FROM progress WHERE student_id = ?", (body.student_id,))
-        conn.execute("DELETE FROM submissions WHERE student_id = ?", (body.student_id,))
+        student_id = _resolve_token(conn, body.token)
+        conn.execute("DELETE FROM progress WHERE student_id = ?", (student_id,))
+        conn.execute("DELETE FROM submissions WHERE student_id = ?", (student_id,))
         conn.commit()
         return {"reset": True}
     finally:
@@ -202,9 +279,10 @@ def reset(body: ResetBody):
 
 
 @app.get("/results")
-def results(student_id: str):
+def results(token: str):
     conn = db.get_connection()
     try:
+        student_id = _resolve_token(conn, token)
         progress = _get_or_create_progress(conn, student_id)
         if progress["stage"] != "complete":
             return {"complete": False}

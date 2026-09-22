@@ -169,11 +169,30 @@ stratified sampling yet either, since there's no real 500-study pool to
 stratify. Worth revisiting CLAUDE.md's wording once this direction is
 confirmed as lasting.)
 
-**A real gap, not yet fixed**: `GET /api/case` and `POST /api/submit` take
-`student_id` as a plain, unauthenticated query/body parameter — nothing
-currently binds it to the caller's actual Kasm session, so any client on
-the network can read or submit as *any* student ID. Worth fixing before
-this carries real grades.
+**A real gap, now fixed**: every `grading-api` endpoint used to take
+`student_id` as a plain, unauthenticated parameter — nothing bound it to
+the caller's actual Kasm session, so any client on the network could read
+or submit as *any* student ID. This mattered more than it might look: at
+real cohort sizes (300-500 students), one compromised or malicious session
+could manipulate many other students' Lung-RADS exam results, undermining
+the whole assessment's validity.
+
+Fixed with a server-issued session token: `POST /session` mints an
+unguessable token bound to a `student_id`, but only for a caller that
+supplies `GRADING_COORDINATOR_KEY` (a shared secret only
+`scripts/create-session.py` knows — otherwise a student could just mint
+their own token for anyone's ID and recreate the exact hole this closes).
+Every other endpoint (`/case`, `/submit`, `/reset`, `/results`) now takes
+that `token` instead, resolving the real `student_id` server-side; a
+missing, unknown, or expired token (default TTL 8h, `GRADING_TOKEN_TTL_SECONDS`)
+is rejected outright. `student_id`/`session_id` are still shown in the
+watermark text — display was never the problem, trusting them for grading
+actions was. `custom_startup.sh` (both images) bakes the token in the same
+way it already baked in `STUDENT_ID`/`SESSION_ID`; `watermark.html`/
+`grading-panel.html` read it from the query string. Minting a new token
+for a `student_id` also revokes whatever token existed before it — a
+coordinator re-minting a link they suspect leaked gets real revocation,
+not just a second valid link.
 
 ## What's NOT in this MVP (on purpose)
 
@@ -376,20 +395,29 @@ nginx needs to reach it.
 
 ### Per-student links
 
-`scripts/create-session.py` calls Kasm's public API
-(`/api/public/request_kasm`) to mint a one-off session with
-`STUDENT_ID`/`SESSION_ID` baked into its environment — that's what each
-image's `custom_startup.sh` reads to launch its viewer (Chrome or Weasis)
-with the right identity already baked in. Needs an API key from the admin
-UI (**Settings → Developers → Add API Key**, with the **"Users Auth
-Session"** and **"User"** permissions enabled — `request_kasm` 403s without
-both) and the target workspace's image_id (from its edit URL in the admin
-UI):
+`scripts/create-session.py` first mints a `grading-api` session token
+(`POST /session`, see "Lung-RADS grading" above — this is the only place
+that ever happens, gated by `GRADING_COORDINATOR_KEY`), then calls Kasm's
+public API (`/api/public/request_kasm`) to mint a one-off session with
+`STUDENT_ID`/`SESSION_ID`/`GRADING_TOKEN` all baked into its environment —
+that's what each image's `custom_startup.sh` reads to launch its viewer
+(Chrome or Weasis) with the right identity and credential already in
+place. Needs an API key from the admin UI (**Settings → Developers → Add
+API Key**, with the **"Users Auth Session"** and **"User"** permissions
+enabled — `request_kasm` 403s without both), the target workspace's
+image_id (from its edit URL in the admin UI), and the same
+`GRADING_COORDINATOR_KEY` value the running stack's `.env` has:
 ```bash
 KASM_SERVER=https://your-kasm-host \
 KASM_API_KEY=... KASM_API_KEY_SECRET=... KASM_IMAGE_ID=... \
+GRADING_COORDINATOR_KEY=... \
 python3 scripts/create-session.py --student-id STU_12345 --insecure  # drop --insecure with a real cert
 ```
+`GRADING_API_URL` (default `http://localhost:8080/`) points at wherever
+`viewer`'s `/api/` proxy is reachable from — override it if this script
+runs somewhere other than the Docker host itself (e.g. the separate-Proxmox
+setup, `docs/PROXMOX_DEPLOYMENT.md`).
+
 Prints a ready-to-share `link` — no login required, it's pre-authenticated
 via a session token Kasm generates. The script also tries a readiness
 check (`get_kasm_status`) but treats it as best-effort: a scoped API key
@@ -449,29 +477,33 @@ depending only on `lint` so they run concurrently, not serialized):
 - `scripts/lint.sh` — bash syntax check on every script, `docker compose
   config` validation on both compose files. No infrastructure needed, safe
   to run anytime.
-- `scripts/test-grading-api.sh` (issue #8) — unit tests for `grading-api`'s
-  3-stage state machine (`docker/grading-api/tests/test_state_machine.py`,
-  16 tests), driven through FastAPI's own `TestClient` against a fresh,
+- `scripts/test-grading-api.sh` (issues #8, and the session-token fix) —
+  unit tests for `grading-api`'s 3-stage state machine and its session-
+  token authorization (`docker/grading-api/tests/test_state_machine.py`,
+  21 tests), driven through FastAPI's own `TestClient` against a fresh,
   isolated SQLite file per test — no Docker, no real stack, runs in well
   under a second. These exist specifically to protect the invariants this
   project keeps stating in prose but never had automated coverage for:
+  a token is required everywhere and only `POST /session` (coordinator-key
+  gated) can mint one; an invalid, unknown, or expired token is rejected;
+  minting a new token for a `student_id` revokes whatever came before it;
   ground truth/reference reports never leak before the stage that reveals
-  them, the test stage reveals nothing at all, progress advances correctly
-  case→case→stage→"complete", two students' state never crosses, and the
+  them; the test stage reveals nothing at all; progress advances correctly
+  case→case→stage→"complete"; two students' state never crosses; and the
   existing input validation (stage mismatches, `time_spent_seconds` range)
   actually behaves as documented. Verified the suite itself, not just that
-  it's green: deliberately broke the test-stage no-reveal invariant in
-  `main.py`, confirmed exactly one test failed (the one guarding that
-  invariant, nothing else), then reverted.
-- `scripts/test-shell-scripts.sh` (issue #16) — BATS tests (17 tests total)
+  it's green: deliberately broke the token-expiry check in `main.py`,
+  confirmed exactly one test failed (the one guarding that invariant,
+  nothing else), then reverted.
+- `scripts/test-shell-scripts.sh` (issue #16) — BATS tests (20 tests total)
   for the Kasm workspace launcher scripts. No Docker, no real
   Kasm/Weasis/grading-api needed: the scripts under test gained small,
   production-inert seams (`CHROME_BIN`/`WEASIS_BIN`/`OVERLAY_SCRIPT`/
   `WATCHDOG_LOG`, all unset in production) so a test can stub the actual
   binary — a fake executable that just captures its own argv to a file —
   instead of launching a real browser, Weasis, or GTK overlay.
-  - `docker/kasm-workspace/custom_startup.bats` (6 tests) and
-    `docker/kasm-workspace-weasis/custom_startup.bats` (7 tests): the
+  - `docker/kasm-workspace/custom_startup.bats` (7 tests) and
+    `docker/kasm-workspace-weasis/custom_startup.bats` (9 tests): the
     Weasis suite also stubs `curl` (via `PATH`) to stand in for
     `grading-api`'s response, while the real `python3` still runs the
     actual `dicom:rs` URI-building logic being tested — that's the whole
@@ -485,6 +517,9 @@ depending only on `lint` so they run concurrently, not serialized):
     `ORTHANC_URL` right next to it), so a genuinely missing value failed
     with bash's own generic `VIEWER_URL: unbound variable` instead of a
     message actually pointing at the problem — now guarded the same way.
+    Both suites also gained a `GRADING_TOKEN` seam and an assertion the
+    Weasis suite's `curl` call authenticates with `?token=`, never the old
+    `?student_id=` (the session-token fix's own regression coverage here).
   - `docker/kasm-workspace-weasis/watchdog.bats` (4 tests): since the
     script under test is a deliberate infinite loop, every test bounds it
     with `timeout` rather than waiting for it to exit on its own. **Found
@@ -500,12 +535,14 @@ depending only on `lint` so they run concurrently, not serialized):
   images, stubbing `kasm_default_network` if it doesn't exist) and checks
   the HTTP status codes that were, until this was added, verified by hand
   after every change: Orthanc healthy, the watermarked viewer wrapper
-  loads, the auth-injecting proxy actually injects auth (307, not 401), and
-  (issue #4's regression check) that Orthanc's DICOMweb `RetrieveURL`
-  actually includes the proxy's port, not just a 200 status code — that
-  last one is a regression test for a real bug (see issue #4 above), and a
-  status-code-only check would never have caught it, since the QIDO query
-  itself always returned 200 regardless.
+  loads, the auth-injecting proxy actually injects auth (307, not 401),
+  that Orthanc's DICOMweb `RetrieveURL` actually includes the proxy's port
+  (issue #4's regression check — a status-code-only check would never have
+  caught this, since the QIDO query itself always returned 200 regardless
+  of the bug), and (the session-token fix's own regression check) that
+  `POST /api/session` actually mints a usable token, that an invalid token
+  is rejected with 401, and that `POST /api/session` itself is rejected
+  without the coordinator key.
   **Tears the stack down with `docker compose down -v` when it's done** —
   don't run this against an environment with data you care about; it's
   meant for a disposable/CI environment.

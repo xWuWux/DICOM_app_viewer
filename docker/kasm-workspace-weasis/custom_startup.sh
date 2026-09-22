@@ -45,12 +45,20 @@ VIEWER_URL="${VIEWER_URL:?set VIEWER_URL to the internal viewer address}"
 # Port 8043, NOT Orthanc's own 8042 -- the auth-injecting proxy. Weasis is
 # never taught Orthanc's real credentials, same as the Chrome flow.
 ORTHANC_URL="${ORTHANC_URL:?set ORTHANC_URL to the internal auth-proxy address}"
+# Minted once, per-session, by scripts/create-session.py's call to
+# grading-api's POST /session -- the actual credential the curl call below
+# authenticates with. STUDENT_ID/SESSION_ID above are display-only now (the
+# watermark text): a bare student_id was never checked against anything
+# server-side, so any request could act as any student -- this token is
+# what closes that gap. Required, not defaulted: a session with no token
+# can't do anything useful against grading-api.
+GRADING_TOKEN="${GRADING_TOKEN:?set GRADING_TOKEN to the token minted by grading-api POST /session}"
 
 # Best-effort: an unreachable grading-api shouldn't crash the whole
 # session start (matches create-session.py's own non-fatal-readiness-check
 # philosophy) -- falls through to "no case" below, which still launches a
 # usable (just study-less) Weasis session instead of nothing at all.
-CASE_JSON=$(curl -fsS "${VIEWER_URL}api/case?student_id=${STUDENT_ID}") || CASE_JSON='{"complete": true}'
+CASE_JSON=$(curl -fsS "${VIEWER_URL}api/case?token=${GRADING_TOKEN}") || CASE_JSON='{"complete": true}'
 
 # One python3 script (not a shell one-liner) since this needs real JSON
 # parsing plus per-token percent-encoding -- same reasoning as the Chrome

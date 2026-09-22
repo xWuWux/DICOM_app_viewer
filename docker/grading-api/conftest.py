@@ -5,6 +5,15 @@ makes `from app import db` / `from app.main import app` importable below
 without any manual sys.path hacking (this file lives next to app/, which
 is a real package -- see app/__init__.py).
 """
+import os
+
+# main.py reads GRADING_COORDINATOR_KEY at *module import time* (fails
+# loudly if unset, same philosophy as ORTHANC_PASSWORD elsewhere in this
+# project) -- has to be set before `from app.main import app` below runs,
+# not inside a fixture (fixtures only apply once a test is already
+# executing, well after this module's own top-level import has happened).
+os.environ.setdefault("GRADING_COORDINATOR_KEY", "test-only-coordinator-key")
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -31,3 +40,20 @@ def client(tmp_path, monkeypatch):
     # not a hand-rolled substitute for it.
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture()
+def mint_token(client):
+    """Every endpoint except POST /session itself takes a token, never a
+    bare student_id (see main.py's module docstring for why) -- this is
+    the one path that creates one, so tests don't each hand-roll the same
+    POST /session call."""
+    def _mint(student_id: str, session_id: str = "sess_test") -> str:
+        resp = client.post(
+            "/session",
+            json={"student_id": student_id, "session_id": session_id},
+            headers={"X-Coordinator-Key": os.environ["GRADING_COORDINATOR_KEY"]},
+        )
+        assert resp.status_code == 200, resp.text
+        return resp.json()["token"]
+    return _mint

@@ -14,6 +14,12 @@ import time
 
 DB_PATH = os.environ.get("GRADING_DB_PATH", "/data/grading.db")
 
+# How long a minted session token stays valid. A single training/exam
+# session is expected to last at most a few hours; 8h gives real headroom
+# without tokens living forever. Configurable since real cohorts may need
+# a different window.
+TOKEN_TTL_SECONDS = int(os.environ.get("GRADING_TOKEN_TTL_SECONDS", 8 * 60 * 60))
+
 STAGES = ["learning", "assessment", "test"]
 
 # Single source of truth for category labels -- both the API responses and
@@ -105,11 +111,29 @@ def init_db():
             submitted_at REAL NOT NULL
         );
 
+        -- Binds an unguessable, server-issued token to a student_id --
+        -- the actual authorization mechanism (see main.py's /session and
+        -- _resolve_token()). student_id/session_id themselves are never
+        -- trusted as credentials from here on; they're only ever used for
+        -- display (the watermark text), because ANY caller could set them
+        -- to anything. A student_id can have at most one live token at a
+        -- time (see POST /session's DELETE-then-INSERT) -- minting a new
+        -- one revokes whatever came before it for that same student.
+        CREATE TABLE IF NOT EXISTS sessions (
+            token TEXT PRIMARY KEY,
+            student_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            expires_at REAL NOT NULL
+        );
+
         -- Indexes for performance (issue #1: missing indexes)
         CREATE INDEX IF NOT EXISTS idx_submissions_student ON submissions(student_id);
         CREATE INDEX IF NOT EXISTS idx_submissions_stage ON submissions(stage);
         CREATE INDEX IF NOT EXISTS idx_submissions_submitted ON submissions(submitted_at);
         CREATE INDEX IF NOT EXISTS idx_cases_stage ON cases(stage);
+        CREATE INDEX IF NOT EXISTS idx_sessions_student ON sessions(student_id);
+        CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
         """
     )
     conn.commit()

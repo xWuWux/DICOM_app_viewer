@@ -28,8 +28,13 @@ EOF
 
   # A stub curl, not the real one -- this is what lets these tests run
   # against grading-api's response *shape* without grading-api existing.
+  # Also records its own argv, so a test can confirm the script actually
+  # authenticates with ?token=, not the bare ?student_id= it used to send
+  # (a real gap README.md flagged: nothing checked student_id belonged to
+  # the caller).
   cat > "$STUB_DIR/curl" <<'EOF'
 #!/usr/bin/env bash
+printf '%s\n' "$@" > "$CURL_ARGS_FILE"
 if [ -n "${CURL_EXIT_CODE:-}" ] && [ "$CURL_EXIT_CODE" != "0" ]; then
   exit "$CURL_EXIT_CODE"
 fi
@@ -40,8 +45,10 @@ EOF
   export PATH="$STUB_DIR:$PATH"
   export WEASIS_BIN="$STUB_DIR/weasis"
   export WEASIS_ARGS_FILE="$BATS_TEST_TMPDIR/weasis-args.txt"
+  export CURL_ARGS_FILE="$BATS_TEST_TMPDIR/curl-args.txt"
   export VIEWER_URL="http://ipcmc-viewer:8080/"
   export ORTHANC_URL="http://ipcmc-viewer:8043/"
+  export GRADING_TOKEN="test-token-abc"
   unset STUDENT_ID SESSION_ID CURL_EXIT_CODE CURL_RESPONSE_JSON
 }
 
@@ -57,6 +64,21 @@ EOF
   run bash "$SCRIPT"
   [ "$status" -ne 0 ]
   [[ "$output" == *"ORTHANC_URL"* ]]
+}
+
+@test "fails fast with a clear message when GRADING_TOKEN is unset" {
+  unset GRADING_TOKEN
+  run bash "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"GRADING_TOKEN"* ]]
+}
+
+@test "authenticates the case lookup with the grading token, not a bare student_id" {
+  export CURL_RESPONSE_JSON='{"complete": true}'
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  grep -qF -- "api/case?token=test-token-abc" "$CURL_ARGS_FILE"
+  ! grep -q -- "student_id=" "$CURL_ARGS_FILE"
 }
 
 @test "launches the assigned study with a correctly built dicom:rs URI" {

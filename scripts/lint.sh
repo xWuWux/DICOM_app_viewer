@@ -20,6 +20,7 @@ echo "--- docker compose config validation ---"
 # Confirmed separately that `config` does NOT require kasm_default_network
 # (docker-compose.yml's external network) to actually exist.
 export ORTHANC_PASSWORD="lint-only-placeholder-not-a-real-secret"
+export GRADING_COORDINATOR_KEY="lint-only-placeholder-not-a-real-secret"
 docker compose -f docker-compose.yml config >/dev/null || status=1
 docker compose -f docker-compose.remote-host.yml config >/dev/null || status=1
 

@@ -49,6 +49,12 @@ services:
     build: ./docker/grading-api
     container_name: ipcmc-grading-api
     restart: unless-stopped
+    environment:
+      # Shared secret with scripts/create-session.py -- the only client
+      # allowed to mint a session token (POST /session). No default here
+      # on purpose, same reasoning as ORTHANC_PASSWORD above: fail loudly
+      # if it isn't set, not silently run with no secret configured.
+      - GRADING_COORDINATOR_KEY=${GRADING_COORDINATOR_KEY:?Set GRADING_COORDINATOR_KEY in .env -- see .env.example}
     volumes:
       - grading-db:/data
     networks:
