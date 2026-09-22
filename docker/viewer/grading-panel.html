@@ -99,6 +99,14 @@
   const params = new URLSearchParams(window.location.search);
   const studentId = params.get("student_id") || "UNKNOWN_STUDENT";
   const sessionId = params.get("session_id") || "UNKNOWN_SESSION";
+  // studentId/sessionId above are display-only (the watermark text) --
+  // grading-api no longer trusts a bare student_id as a credential (a real
+  // gap README.md flagged: nothing checked it belonged to the caller, so
+  // any request could act as any student). `token` is what every /api/
+  // call below actually authenticates with; custom_startup.sh bakes it in
+  // the same way, from the value grading-api's own POST /session minted
+  // for this specific session.
+  const token = params.get("token") || "";
 
   const rotator = document.getElementById("watermark-rotator");
   const grid = document.getElementById("watermark-grid");
@@ -167,7 +175,7 @@
   async function loadCase() {
     panel.innerHTML = "<p>Ładowanie danych...</p>";
     try {
-      const res = await fetch(`/api/case?student_id=${encodeURIComponent(studentId)}`);
+      const res = await fetch(`/api/case?token=${encodeURIComponent(token)}`);
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
@@ -215,7 +223,7 @@
   async function onSubmit() {
     const timeSpentSeconds = (Date.now() - caseStartMs) / 1000;
     const body = {
-      student_id: studentId,
+      token,
       case_id: currentCase.case_id,
       stage: currentCase.stage,
       time_spent_seconds: timeSpentSeconds,
@@ -266,7 +274,7 @@
 
   async function showResults() {
     try {
-      const res = await fetch(`/api/results?student_id=${encodeURIComponent(studentId)}`);
+      const res = await fetch(`/api/results?token=${encodeURIComponent(token)}`);
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
@@ -281,7 +289,7 @@
           await fetch("/api/reset", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ student_id: studentId }),
+            body: JSON.stringify({ token }),
           });
           loadCase();
         } catch (err) {

@@ -169,11 +169,16 @@ turn off (not required, but there's nothing in this app that needs them):
 `allow_kasm_gamepad`, `allow_kasm_audio`.
 
 ### 6. Mint your first real link
+`create-session.py` also mints a grading-api session token as part of this
+(see README.md's "Lung-RADS grading" — every API call needs one now, never
+a bare student_id) — `GRADING_COORDINATOR_KEY` below must match whatever
+you put in `.env` for the running stack:
 ```bash
 KASM_SERVER=https://localhost \
 KASM_API_KEY=<from step 4> \
 KASM_API_KEY_SECRET=<from step 4> \
 KASM_IMAGE_ID=<from step 3> \
+GRADING_COORDINATOR_KEY=<same value as .env's GRADING_COORDINATOR_KEY> \
 python3 scripts/create-session.py --student-id TEST_001 --insecure
 # drop --insecure once this has a real (non-self-signed) certificate
 ```

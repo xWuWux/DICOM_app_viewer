@@ -20,6 +20,7 @@ EOF
   export CHROME_ARGS_FILE="$BATS_TEST_TMPDIR/chrome-args.txt"
   export VIEWER_URL="http://ipcmc-viewer:8080/"
   export ORTHANC_URL="http://ipcmc-viewer:8043/"
+  export GRADING_TOKEN="test-token-abc"
   unset STUDENT_ID SESSION_ID
 }
 
@@ -37,6 +38,13 @@ EOF
   [[ "$output" == *"ORTHANC_URL"* ]]
 }
 
+@test "fails fast with a clear message when GRADING_TOKEN is unset" {
+  unset GRADING_TOKEN
+  run bash "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"GRADING_TOKEN"* ]]
+}
+
 @test "defaults STUDENT_ID to UNKNOWN_STUDENT when unset" {
   run bash "$SCRIPT"
   [ "$status" -eq 0 ]
@@ -51,12 +59,12 @@ EOF
   [[ "$session_id" =~ ^[0-9]+$ ]]
 }
 
-@test "builds the kiosk URL with student_id, session_id, and a percent-encoded orthanc_url" {
+@test "builds the kiosk URL with student_id, session_id, a percent-encoded orthanc_url, and the grading token" {
   export STUDENT_ID="stu_1"
   export SESSION_ID="sess_1"
   run bash "$SCRIPT"
   [ "$status" -eq 0 ]
-  grep -qF -- "--app=http://ipcmc-viewer:8080/?student_id=stu_1&session_id=sess_1&orthanc_url=http%3A%2F%2Fipcmc-viewer%3A8043%2F" "$CHROME_ARGS_FILE"
+  grep -qF -- "--app=http://ipcmc-viewer:8080/?student_id=stu_1&session_id=sess_1&orthanc_url=http%3A%2F%2Fipcmc-viewer%3A8043%2F&token=test-token-abc" "$CHROME_ARGS_FILE"
 }
 
 @test "always launches kiosk/incognito with translate disabled" {

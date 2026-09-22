@@ -20,13 +20,21 @@ VIEWER_URL="${VIEWER_URL:?set VIEWER_URL to the internal viewer address}"
 # Internal-network address of Orthanc as reachable from wherever Kasm's
 # containers run (e.g. "http://orthanc.internal:8042/") — never a public URL.
 ORTHANC_URL="${ORTHANC_URL:?set ORTHANC_URL to the internal Orthanc address}"
+# Minted once, per-session, by scripts/create-session.py's call to
+# grading-api's POST /session -- the actual credential watermark.html's own
+# /api/ calls authenticate with from here on. STUDENT_ID/SESSION_ID above
+# are display-only now (the watermark text): a bare student_id was never
+# checked against anything server-side, so any request could act as any
+# student -- this token is what closes that gap. Required, not defaulted:
+# a session with no token can't do anything useful against grading-api.
+GRADING_TOKEN="${GRADING_TOKEN:?set GRADING_TOKEN to the token minted by grading-api POST /session}"
 
 # Split out from the FULL_URL assignment below on purpose: nesting this
 # python3 one-liner's own quoting inside an already-double-quoted bash string
 # parses fine in isolation but silently breaks bash's quote-matching once
 # combined with the surrounding line (confirmed the hard way — see git log).
 ENCODED_ORTHANC_URL=$(python3 -c 'import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "${ORTHANC_URL}")
-FULL_URL="${VIEWER_URL}?student_id=${STUDENT_ID}&session_id=${SESSION_ID}&orthanc_url=${ENCODED_ORTHANC_URL}"
+FULL_URL="${VIEWER_URL}?student_id=${STUDENT_ID}&session_id=${SESSION_ID}&orthanc_url=${ENCODED_ORTHANC_URL}&token=${GRADING_TOKEN}"
 
 # exec (not background + exit): the base image's service monitor tracks
 # this script's own PID as the "custom_startup" service and expects it to

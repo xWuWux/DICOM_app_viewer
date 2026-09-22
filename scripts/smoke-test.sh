@@ -26,6 +26,9 @@ if [ ! -f .env ]; then
   echo "ORTHANC_PASSWORD=$(openssl rand -hex 16)" > .env
   CREATED_ENV=1
 fi
+# A pre-existing .env from before session tokens existed won't have this
+# key yet -- append one rather than fail compose's own :? guard on it.
+grep -q '^GRADING_COORDINATOR_KEY=' .env || echo "GRADING_COORDINATOR_KEY=$(openssl rand -hex 32)" >> .env
 # shellcheck disable=SC1091
 source .env
 
@@ -69,7 +72,44 @@ check "orthanc" "200" "http://localhost:8042/system" "orthanc:${ORTHANC_PASSWORD
 check "watermarked viewer wrapper" "200" "http://localhost:8080/?student_id=CI_TEST&session_id=CI_TEST"
 check "auth-injecting Orthanc proxy (401 would mean auth injection is broken)" "307" "http://localhost:8043/"
 check "grading-api, direct" "200" "http://localhost:8080/api/healthz"
-check "grading-api, first case for a fresh student" "200" "http://localhost:8080/api/case?student_id=CI_TEST_$$"
+
+# grading-api's /case, /submit, /reset, /results all take a server-minted
+# token now, never a bare student_id (a real gap this closed -- see
+# README.md's "Lung-RADS grading" section and main.py's own module
+# docstring). POST /session is the only way to get one, and it requires
+# the coordinator key -- exactly the scripts/create-session.py flow.
+echo "--- minting a real session token via POST /api/session ---"
+SESSION_RESP=$(curl -s -X POST "http://localhost:8080/api/session" \
+  -H "Content-Type: application/json" -H "X-Coordinator-Key: ${GRADING_COORDINATOR_KEY}" \
+  -d "{\"student_id\": \"CI_TEST_$$\", \"session_id\": \"CI_SESSION_$$\"}")
+TOKEN=$(echo "$SESSION_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null)
+if [ -n "$TOKEN" ]; then
+  echo "--- POST /api/session: OK (minted a token) ---"
+else
+  echo "--- POST /api/session: FAIL, response was: $SESSION_RESP ---"
+  status=1
+fi
+
+check "grading-api, first case using the minted token" "200" "http://localhost:8080/api/case?token=${TOKEN}"
+
+# Regression checks for the token fix itself: an invalid token, or a
+# missing coordinator key, must never be treated as a valid credential.
+BAD_TOKEN_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/api/case?token=not-a-real-token")
+if [ "$BAD_TOKEN_CODE" = "401" ]; then
+  echo "--- grading-api rejects an invalid token: OK (401) ---"
+else
+  echo "--- grading-api rejects an invalid token: FAIL, got HTTP $BAD_TOKEN_CODE (expected 401) ---"
+  status=1
+fi
+
+NO_KEY_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://localhost:8080/api/session" \
+  -H "Content-Type: application/json" -d '{"student_id": "attacker", "session_id": "x"}')
+if [ "$NO_KEY_CODE" = "401" ] || [ "$NO_KEY_CODE" = "422" ]; then
+  echo "--- POST /api/session without a coordinator key is rejected: OK (HTTP $NO_KEY_CODE) ---"
+else
+  echo "--- POST /api/session without a coordinator key is rejected: FAIL, got HTTP $NO_KEY_CODE ---"
+  status=1
+fi
 
 # Regression check for a real bug (issue #4): the auth-injecting proxy used
 # to forward nginx's $host to Orthanc, which strips the port even when the
