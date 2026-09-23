@@ -241,7 +241,11 @@ def submit(body: SubmitBody):
         # actually became active (case_assigned_at, stamped by
         # _get_or_create_progress()/_advance_progress()), never from a
         # client-supplied value -- see SubmitBody's own comment for why.
-        time_spent_seconds = db.now() - progress["case_assigned_at"]
+        # issue #44: clamped to zero in case the server clock is ever
+        # adjusted backwards (e.g. an NTP correction) between assignment
+        # and submission, which would otherwise land a negative value in
+        # submissions and skew time-on-task data for that row.
+        time_spent_seconds = max(0, db.now() - progress["case_assigned_at"])
 
         # Correctness is category-only: the modifier is recorded for later
         # analysis but doesn't affect scoring -- matches Dokumentacja/'s
