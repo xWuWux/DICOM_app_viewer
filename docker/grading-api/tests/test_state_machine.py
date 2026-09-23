@@ -42,6 +42,7 @@ import sqlite3
 import pytest
 
 from app import db as db_module
+from app import main as main_module
 
 
 def _case_id(client, token):
@@ -696,5 +697,72 @@ def test_migration_adds_unique_constraint_to_existing_submissions_table(tmp_path
                 "INSERT INTO submissions (student_id, case_id, stage, submitted_text, submitted_at) "
                 "VALUES ('stu_dup', 1, 'learning', 'third', 3.0)"
             )
+    finally:
+        conn.close()
+
+
+class _ForceNoRowOnFirstSelect:
+    """Wraps a real sqlite3 connection so its first SELECT returns no
+    row, even if one already exists in the database -- deterministically
+    simulates the exact race window issue #41's fix protects against:
+    this "request" already ran its own SELECT (seeing nothing) before
+    another concurrent request's INSERT landed for the same student_id.
+    Every other call (commit, later executes) passes through to the real
+    connection unchanged."""
+
+    def __init__(self, real_conn):
+        self._real = real_conn
+        self._forced = False
+
+    def execute(self, sql, params=()):
+        if not self._forced and sql.strip().upper().startswith("SELECT"):
+            self._forced = True
+
+            class _EmptyCursor:
+                def fetchone(self_inner):
+                    return None
+
+            return _EmptyCursor()
+        return self._real.execute(sql, params)
+
+    def commit(self):
+        self._real.commit()
+
+
+def test_get_or_create_progress_survives_a_concurrent_insert_race(client, mint_token):
+    """issue #41: two concurrent requests for the same brand-new
+    student_id can both see "no row exists" before either INSERT
+    commits -- student_id is the PRIMARY KEY, so the second INSERT then
+    raises sqlite3.IntegrityError. Deterministically reproduces the exact
+    interleaving (not a real, timing-dependent thread race) by wrapping
+    the connection so its own SELECT is forced to see nothing, while a
+    row for the same student_id already exists -- exactly what the
+    "other" concurrent request would have already committed. Confirms
+    _get_or_create_progress() catches it and returns the existing row
+    cleanly, not an unhandled 500."""
+    mint_token("stu_race")  # creates the sessions row; progress does not exist yet
+
+    conn = db_module.get_connection()
+    try:
+        # The "other" concurrent request's INSERT, already committed.
+        conn.execute(
+            "INSERT INTO progress (student_id, stage, case_order_index, case_assigned_at) VALUES (?, 'learning', 0, ?)",
+            ("stu_race", db_module.now()),
+        )
+        conn.commit()
+
+        wrapped = _ForceNoRowOnFirstSelect(conn)
+        row = main_module._get_or_create_progress(wrapped, "stu_race")
+
+        assert row is not None
+        assert row["stage"] == "learning"
+        assert row["case_order_index"] == 0
+
+        # Exactly one row exists -- the fix didn't create a duplicate or
+        # leave the table in an inconsistent state.
+        count = conn.execute(
+            "SELECT COUNT(*) FROM progress WHERE student_id = ?", ("stu_race",)
+        ).fetchone()[0]
+        assert count == 1
     finally:
         conn.close()
