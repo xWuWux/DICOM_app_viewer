@@ -37,6 +37,9 @@ data ever changes, the specific values asserted here need updating too,
 not just the mechanics being tested.
 """
 import os
+import sqlite3
+
+import pytest
 
 from app import db as db_module
 
@@ -542,3 +545,103 @@ def test_healthz_ok(client):
     resp = client.get("/healthz")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
+
+
+def test_database_uses_wal_mode(client):
+    """Scaling concern raised while discussing a real multi-VM cohort
+    deployment: confirms the connection actually ends up in WAL mode
+    (allows concurrent reads during a write, reducing lock contention
+    under many students submitting around the same moment), not just
+    that the PRAGMA call is present in the source."""
+    conn = db_module.get_connection()
+    try:
+        mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+        assert mode.lower() == "wal"
+    finally:
+        conn.close()
+
+
+def test_migration_adds_case_assigned_at_to_existing_progress_table(tmp_path, monkeypatch):
+    """Reproduces a real bug found the hard way: rebuilding grading-api
+    against a real, previously-running database (predating issue #29)
+    broke every /case and /submit call outright with "no such column:
+    case_assigned_at" -- CREATE TABLE IF NOT EXISTS never retroactively
+    adds a column to a table that already exists. Builds an old-schema
+    (3-column) progress table by hand, then confirms db.init_db()
+    migrates it in place rather than crashing."""
+    db_path = str(tmp_path / "old-schema-progress.db")
+    monkeypatch.setattr(db_module, "DB_PATH", db_path)
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE progress (student_id TEXT PRIMARY KEY, stage TEXT NOT NULL, case_order_index INTEGER NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO progress (student_id, stage, case_order_index) VALUES ('stu_old', 'learning', 0)"
+    )
+    conn.commit()
+    conn.close()
+
+    db_module.init_db()  # must not raise
+
+    conn = db_module.get_connection()
+    try:
+        row = conn.execute(
+            "SELECT case_assigned_at FROM progress WHERE student_id = 'stu_old'"
+        ).fetchone()
+        assert row["case_assigned_at"] is not None
+    finally:
+        conn.close()
+
+
+def test_migration_adds_unique_constraint_to_existing_submissions_table(tmp_path, monkeypatch):
+    """Same bug, the other schema change (issue #28): builds an
+    old-schema submissions table with a pre-existing duplicate row (the
+    exact situation the UNIQUE constraint didn't exist yet to prevent),
+    confirms db.init_db() migrates it without crashing, keeps only the
+    latest duplicate, and the constraint is genuinely active afterward."""
+    db_path = str(tmp_path / "old-schema-submissions.db")
+    monkeypatch.setattr(db_module, "DB_PATH", db_path)
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """CREATE TABLE submissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, student_id TEXT NOT NULL,
+            case_id INTEGER NOT NULL, stage TEXT NOT NULL,
+            submitted_category TEXT, submitted_modifier_s INTEGER,
+            submitted_text TEXT, is_correct INTEGER,
+            time_spent_seconds REAL, submitted_at REAL NOT NULL
+        )"""
+    )
+    # A pre-constraint duplicate -- exactly what the constraint exists to
+    # prevent going forward, but might already exist in real data.
+    conn.execute(
+        "INSERT INTO submissions (student_id, case_id, stage, submitted_text, submitted_at) "
+        "VALUES ('stu_dup', 1, 'learning', 'first', 1.0)"
+    )
+    conn.execute(
+        "INSERT INTO submissions (student_id, case_id, stage, submitted_text, submitted_at) "
+        "VALUES ('stu_dup', 1, 'learning', 'second (latest)', 2.0)"
+    )
+    conn.commit()
+    conn.close()
+
+    db_module.init_db()  # must not raise
+
+    conn = db_module.get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT submitted_text FROM submissions WHERE student_id = 'stu_dup'"
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["submitted_text"] == "second (latest)"
+
+        # Confirm the constraint is genuinely active now, not just that
+        # the pre-existing duplicate got cleaned up once.
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO submissions (student_id, case_id, stage, submitted_text, submitted_at) "
+                "VALUES ('stu_dup', 1, 'learning', 'third', 3.0)"
+            )
+    finally:
+        conn.close()

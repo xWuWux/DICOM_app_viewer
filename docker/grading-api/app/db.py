@@ -73,11 +73,107 @@ def get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # WAL mode (scaling concern raised when discussing a real multi-VM
+    # cohort deployment): SQLite's default rollback-journal mode blocks
+    # ALL readers for the duration of a write -- under concurrent
+    # submissions (many students finishing a case around the same
+    # moment), that serializes requests that don't need to touch each
+    # other's data at all. WAL allows readers to proceed concurrently
+    # with a single in-progress writer, which is the actual contention
+    # pattern here (many /case reads, occasional /submit writes) -- a
+    # meaningfully higher concurrency ceiling for a 50-user pilot without
+    # the bigger step of migrating off SQLite entirely (still the right
+    # move before a real 300-user cohort, per CLAUDE.md/README).
+    # `journal_mode=WAL` is a database-file-level setting, not per-
+    # connection -- calling it here is idempotent (a no-op once already
+    # set) and self-migrating: it takes effect on an existing pre-WAL
+    # database file the same way, no separate migration step needed.
+    # `synchronous=NORMAL` is WAL's own documented pairing -- WAL's
+    # write-ahead log already provides the durability guarantee that
+    # makes the stricter (and slower) FULL setting unnecessary.
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
     return conn
+
+
+def _migrate_existing_schema(conn):
+    """Handles a database file that already existed before a later schema
+    change -- CREATE TABLE IF NOT EXISTS is a genuine no-op once a table
+    already exists in ANY form, not a schema-reconciliation step. Found
+    the hard way: rebuilding grading-api against a real, previously-
+    running /data/grading.db (predating issues #28/#29) broke every
+    /case and /submit call outright with "no such column:
+    case_assigned_at" -- the column/constraint additions below had never
+    actually been verified against an existing database, only fresh ones
+    (every test uses an empty tmp_path file via conftest.py's `client`
+    fixture, which never exercises this path at all).
+    """
+    tables = {
+        row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+
+    if "progress" in tables:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(progress)").fetchall()}
+        if "case_assigned_at" not in cols:
+            # Existing in-progress students' real assignment moment is
+            # unknowable in hindsight -- backfilling "now" understates
+            # their actual time-on-task for whatever case they're
+            # currently on, but that's a one-time, one-case measurement
+            # gap for students who were mid-session during this upgrade,
+            # not an ongoing correctness issue.
+            conn.execute("ALTER TABLE progress ADD COLUMN case_assigned_at REAL")
+            conn.execute(
+                "UPDATE progress SET case_assigned_at = ? WHERE case_assigned_at IS NULL",
+                (time.time(),),
+            )
+            conn.commit()
+
+    if "submissions" in tables:
+        has_unique = any(
+            row[2] for row in conn.execute("PRAGMA index_list(submissions)").fetchall()
+        )
+        if not has_unique:
+            # SQLite can't ALTER TABLE to add a constraint -- rebuild the
+            # table under the new schema instead (SQLite's own documented
+            # pattern for this). Keeps only the latest row per
+            # (student_id, case_id, stage) if any pre-constraint
+            # duplicates exist, rather than failing the migration outright
+            # on a UNIQUE violation partway through.
+            conn.execute("PRAGMA foreign_keys=OFF")
+            conn.executescript(
+                """
+                ALTER TABLE submissions RENAME TO submissions_old;
+                CREATE TABLE submissions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    student_id TEXT NOT NULL,
+                    case_id INTEGER NOT NULL REFERENCES cases(id),
+                    stage TEXT NOT NULL,
+                    submitted_category TEXT,
+                    submitted_modifier_s INTEGER,
+                    submitted_text TEXT,
+                    is_correct INTEGER,
+                    time_spent_seconds REAL,
+                    submitted_at REAL NOT NULL,
+                    UNIQUE(student_id, case_id, stage)
+                );
+                INSERT INTO submissions
+                    SELECT * FROM submissions_old
+                    WHERE id IN (
+                        SELECT MAX(id) FROM submissions_old
+                        GROUP BY student_id, case_id, stage
+                    );
+                DROP TABLE submissions_old;
+                """
+            )
+            conn.commit()
+            conn.execute("PRAGMA foreign_keys=ON")
 
 
 def init_db():
     conn = get_connection()
+    _migrate_existing_schema(conn)
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS cases (
@@ -99,7 +195,9 @@ def init_db():
         -- Date.now()-based elapsed time is trivially editable (devtools,
         -- or a scripted request) and this data feeds a scientific
         -- publication, so it's no longer trusted for that value at all;
-        -- see main.py's submit().
+        -- see main.py's submit(). Only takes effect here for a genuinely
+        -- fresh database -- _migrate_existing_schema() above handles an
+        -- existing one.
         CREATE TABLE IF NOT EXISTS progress (
             student_id TEXT PRIMARY KEY,
             stage TEXT NOT NULL,
@@ -118,10 +216,10 @@ def init_db():
         -- silently succeeding twice, without needing a manual transaction/
         -- row-lock around the whole read-then-write span.
         --
-        -- CREATE TABLE IF NOT EXISTS only applies to a fresh database --
-        -- an existing local /data/grading.db from before this change
-        -- won't gain the constraint retroactively; recreate the volume
-        -- (docker compose down -v && up) to pick it up.
+        -- Only takes effect here for a genuinely fresh database --
+        -- _migrate_existing_schema() above rebuilds an existing
+        -- submissions table under this same schema instead (SQLite can't
+        -- ALTER TABLE to add a constraint to an existing table).
         CREATE TABLE IF NOT EXISTS submissions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id TEXT NOT NULL,
