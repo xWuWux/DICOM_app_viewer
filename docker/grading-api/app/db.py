@@ -92,10 +92,19 @@ def init_db():
             UNIQUE(stage, order_index)
         );
 
+        -- case_assigned_at (issue #29): stamped server-side the moment a
+        -- case becomes the student's active one (fresh progress, or
+        -- _advance_progress landing on the next case/stage) -- the only
+        -- honest way to measure time-on-task. The client's own
+        -- Date.now()-based elapsed time is trivially editable (devtools,
+        -- or a scripted request) and this data feeds a scientific
+        -- publication, so it's no longer trusted for that value at all;
+        -- see main.py's submit().
         CREATE TABLE IF NOT EXISTS progress (
             student_id TEXT PRIMARY KEY,
             stage TEXT NOT NULL,
-            case_order_index INTEGER NOT NULL
+            case_order_index INTEGER NOT NULL,
+            case_assigned_at REAL NOT NULL
         );
 
         -- UNIQUE(student_id, case_id, stage) (issue #28): /submit's own
