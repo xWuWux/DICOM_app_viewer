@@ -48,11 +48,18 @@ installing Kasm at all — it exercises the same `orthanc` + `grading-api` +
 a Kasm session.
 
 ```bash
-cp .env.example .env && sed -i "s/^ORTHANC_PASSWORD=.*/ORTHANC_PASSWORD=$(openssl rand -hex 16)/" .env
+cp .env.example .env
+sed -i "s/^ORTHANC_PASSWORD=.*/ORTHANC_PASSWORD=$(openssl rand -hex 16)/" .env
+sed -i "s/^GRADING_COORDINATOR_KEY=.*/GRADING_COORDINATOR_KEY=$(openssl rand -hex 32)/" .env
 docker compose up -d --build
 ./scripts/fetch-public-samples.sh   # pulls in BRAINIX (~64MB, not committed to git)
 ./scripts/load-sample-studies.sh
 ```
+Both `sed` lines are required — a real tester following an earlier version
+of this section that only set `ORTHANC_PASSWORD` hit
+`docker-compose.yml`'s own `GRADING_COORDINATOR_KEY:?...` guard failing
+`docker compose up`, which cascaded into `load-sample-studies.sh` failing
+too (nothing was actually running yet).
 
 ```
 ┌──────────────┐      ┌───────────────────────┐      ┌─────────────┐
@@ -70,22 +77,37 @@ docker compose up -d --build
                        └───────────────────────┘
 ```
 
-Open **http://localhost:8080/** — you should see the watermarked viewer
-wrapper (`watermark.html`, the Chrome-flow page) with a rotating
+**Opening bare `http://localhost:8080/` no longer works** — since the
+session-token system shipped (see "Lung-RADS grading" below),
+`watermark.html`'s own `/api/case` fetch has nothing to authenticate with
+and unconditionally 401s, showing "Błąd ładowania: HTTP 401: Unauthorized"
+in the panel instead of a case. This bit a real tester cold; the fix is to
+mint a token first:
+
+```bash
+./scripts/mint-local-link.sh
+```
+
+This mints a `grading-api` session token (gated by `GRADING_COORDINATOR_KEY`
+from `.env`, the same mechanism `scripts/create-session.py` uses for real
+Kasm sessions) and prints a ready-to-open link, e.g.
+`http://localhost:8080/?student_id=STU_LOCAL_TEST&session_id=sess_.../&token=...`.
+Open that link — you should see the watermarked viewer wrapper
+(`watermark.html`, the Chrome-flow page) with a rotating
 `STUDENT_ID | SESSION_ID | timestamp` overlay, loading Orthanc Explorer 2
 (browse to a study, then open it in the Stone Web Viewer) inside it.
 
-Change the query string to simulate different individual sessions, e.g.:
-`http://localhost:8080/?student_id=STU_12345&session_id=SESS_9921A3B`.
-This is exactly what `scripts/create-session.py` + `custom_startup.sh` do
-automatically once Kasm is wired up (see below) — it's the mechanism behind
-"one individual link per person." The same query string also carries
+Optional student/session IDs: `./scripts/mint-local-link.sh STU_12345
+SESS_9921A3B`. The link's `token` is what actually authenticates every
+`grading-api` call now — `student_id`/`session_id` in the URL are display-only
+(the watermark text), same as in a real Kasm session. The link also carries
 `orthanc_url` (default `http://localhost:8043/` for this local setup — the
 auth-injecting proxy, not Orthanc's own port, see below) so the wrapper
 knows which origin to iframe.
 
 Want to see the Weasis-flow page (`grading-panel.html`) locally instead?
-`http://localhost:8080/grading-panel.html?student_id=STU_12345&session_id=SESS_1`
+Take the same link `mint-local-link.sh` printed and swap the path:
+`http://localhost:8080/grading-panel.html?student_id=...&session_id=...&token=...`
 renders it the same way, minus Weasis itself (that only runs inside a
 Kasm/XFCE session, or the Xvfb-based dev technique described further down)
 — useful for iterating on the grading UI in isolation.
@@ -668,6 +690,7 @@ sample-data/                          public-domain sample DICOM files
 scripts/fetch-public-samples.sh       pulls larger public teaching studies (BRAINIX) into sample-data/
 scripts/load-sample-studies.sh        uploads sample-data/ (recursively) into Orthanc
 scripts/create-session.py             mints a per-student Kasm session link (tested against a live instance)
+scripts/mint-local-link.sh             mints a grading-api token for the no-Kasm Quick Start (localhost:8080/... needs a token now, not just student_id)
 scripts/lint.sh                       bash syntax + compose config validation (CI)
 scripts/test-grading-api.sh           grading-api unit tests via pytest (CI)
 scripts/test-shell-scripts.sh         Kasm launcher script tests via BATS (CI)

@@ -42,16 +42,20 @@ git clone https://github.com/xWuWux/DICOM_app_viewer.git
 cd DICOM_app_viewer
 ```
 
-### 2. Set a real Orthanc password
+### 2. Set the required secrets
 ```bash
 cp .env.example .env
 sed -i "s/^ORTHANC_PASSWORD=.*/ORTHANC_PASSWORD=$(openssl rand -hex 16)/" .env
+sed -i "s/^GRADING_COORDINATOR_KEY=.*/GRADING_COORDINATOR_KEY=$(openssl rand -hex 32)/" .env
 ```
 (On macOS, `sed -i` needs a backup-suffix argument: `sed -i '' "s/.../.../"` —
-or just open `.env` in an editor and paste a random string after `=`.)
+or just open `.env` in an editor and paste a random string after each `=`.)
 **Never commit `.env`** — it's already gitignored, and `docker-compose.yml`
-refuses to start without a real value here rather than falling back to a
-known default.
+refuses to start without real values here rather than falling back to known
+defaults. **Both lines are required** — a real tester who ran only the first
+one hit `docker-compose.yml`'s own `GRADING_COORDINATOR_KEY:?...` guard
+failing `docker compose up` entirely, which then cascaded into every later
+step failing too (nothing was actually running).
 
 ### 3. Build and start
 ```bash
@@ -74,8 +78,15 @@ Expect to see `Success` printed for each uploaded file — 234 total across
 three studies (two tiny pydicom test fixtures + BRAINIX).
 
 ### 5. Verify it worked
-Open **http://localhost:8080/?student_id=YOUR_NAME&session_id=test1** in a
-browser. You should see:
+Opening a bare `http://localhost:8080/?student_id=...` URL **no longer
+works** — since the session-token system shipped, every `grading-api` call
+needs an actual token, not just a `student_id`. Mint one first:
+```bash
+./scripts/mint-local-link.sh YOUR_NAME test1
+```
+This mints a real `grading-api` session token (gated by
+`GRADING_COORDINATOR_KEY` from `.env`) and prints a ready-to-open link.
+Open it in a browser — you should see:
 - A dark sidebar on the right with **"Nauka"** (learning stage), a text
   box, and a "Wyślij ocenę" button.
 - A DICOM study browser on the left (Orthanc Explorer 2).
@@ -211,10 +222,32 @@ splash screen first).
 
 ## Troubleshooting (developer setup)
 
-**`docker compose up` fails with "port is already allocated".**
-Something else on your machine is using 8080, 8042, 8043, or 443. Find and
-stop it, or (for the app's own ports, not Kasm's 443) edit the `ports:`
-section of `docker-compose.yml` to use different host ports.
+**`docker compose up` fails with "port is already allocated", or opening
+localhost:8080 asks for an unfamiliar login/password.** Something else on
+your machine is already using 8080, 8042, 8043, or 443 — confirmed with a
+real tester: `viewer` silently failed to start over a port conflict, so
+`localhost:8080` was actually hitting a *different* local app, whose own
+login page looked like ours was asking for credentials. Find and stop
+whatever's using the port (`lsof -i :8080` on Linux/macOS), or (for the
+app's own ports, not Kasm's 443) edit the `ports:` section of
+`docker-compose.yml` to use different host ports. Check `docker compose ps`
+shows all three containers `Up` before assuming the app itself is broken.
+
+**`docker compose up` fails with "GRADING_COORDINATOR_KEY is missing a
+value", or everything after it cascades into unrelated-looking errors
+(`curl: Failed to connect to localhost port 8042`, JSON decode errors from
+`load-sample-studies.sh`).** Re-check step 2 — both `sed` lines are
+required; running only the `ORTHANC_PASSWORD` one leaves
+`GRADING_COORDINATOR_KEY` unset, which fails `docker compose up` outright,
+so nothing in the stack is actually running when the later scripts try to
+reach it.
+
+**Opening `http://localhost:8080/?student_id=...` shows "Błąd ładowania:
+HTTP 401: Unauthorized" instead of a case.** Confirmed with a real tester
+who followed an earlier version of this guide: a bare `student_id` in the
+URL hasn't been enough since the session-token system shipped — every
+`grading-api` call now needs an actual token. Use
+`./scripts/mint-local-link.sh` (step 5) instead of hand-building the URL.
 
 **`./scripts/lint.sh` fails on "docker compose config".**
 Almost always a missing `.env` — re-check step 2 of Part 1. The error
