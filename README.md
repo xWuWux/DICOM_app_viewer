@@ -343,13 +343,14 @@ What's confirmed working in this image, in the order it was built:
   **Residual gap, not silently accepted**: "Exporting view" has no
   matching preference in Weasis's own config at all — confirmed against
   its actual source (`ActionW.java`'s `EXPORT_VIEW` is an unconditional,
-  always-registered core action, not gated by any property). Accepted
-  because any file it saves stays trapped inside the ephemeral container
-  (destroyed on logout, zero persistence) and can't leave the session
-  regardless, since Kasm's own DLP settings already disable downloads,
-  clipboard-out, uploads, sharing, and printing at the session level (see
-  the DLP section below) — the same reasoning that already covers Weasis's
-  own unconditional Print menu.
+  always-registered core action, not gated by any property). Saving a
+  file this way stays trapped inside the ephemeral container regardless,
+  since Kasm's own `allow_kasm_downloads` setting blocks that path — but
+  the **"Clipboard" option was a real, confirmed exfiltration path, not
+  hypothetical**: a live test showed an image copied this way landed on
+  the real local clipboard, pasteable into an application outside the
+  session entirely, disproving the assumption that Kasm's DLP already
+  covered this. Root cause and fix are in the DLP section below.
 - **Issue #6 (Watermark Overlay)**: `docker/kasm-workspace-weasis/overlay.py`
   is a transparent, always-on-top, click-through native window (GTK3, not a
   browser page — Weasis is a separate native window a page-based watermark
@@ -507,12 +508,31 @@ queried `group_settings` directly in Kasm's own Postgres DB to confirm the
 stored values, then launched a real test session and confirmed inside the
 container that
 `KASM_SVC_DOWNLOADS`/`KASM_SVC_UPLOADS`/`KASM_SVC_PRINTER` are `0` — those
-services aren't just hidden in the UI, they never start. Clipboard
-restriction is enforced separately, per-session, by Kasm's proxy checking
-the group permission — not a container env flag.
+services aren't just hidden in the UI, they never start.
 
-**Not yet re-verified against the Weasis image** (that's issue #8's
-remaining scope) — the checks above were all done against the Chrome image.
+**A real gap this same testing found, now fixed**: the admin-UI clipboard
+toggles above only govern *plain-text* clipboard sync — confirmed correctly
+blocking a real attempt to copy text out of a session. But KasmVNC has a
+second, independent clipboard-DLP layer for *rich/binary* MIME types
+(`data_loss_prevention.clipboard.allow_mimetypes` in `kasmvnc.yaml`), whose
+documented default already includes `image/png` — and in practice, an image
+copied to the clipboard from inside a session (confirmed via Weasis's own
+"Export → Clipboard" feature, which has no config of its own to disable —
+see issue #7 above) landed on the real local clipboard, pasteable into an
+application outside the session entirely. Kasm's own docs don't explain how
+this setting relates to the simpler admin-UI toggles. Fixed by baking a
+`kasmvnc.yaml` with `allow_mimetypes: []` directly into **both** workspace
+images (`docker/kasm-workspace/kasmvnc.yaml`,
+`docker/kasm-workspace-weasis/kasmvnc.yaml`) — confirmed at the mechanism
+level (the real `Xvnc` process's own `-DLP_ClipTypes` flag now shows empty
+instead of the previous default), full end-to-end re-verification via a
+real session pending.
+
+**Verified against the Weasis image via a real click-through test**
+(issue #8): the checks above (downloads/uploads/printing services not
+starting, text clipboard blocked) all held. The image-clipboard gap above
+is the one thing that real testing caught that assuming coverage from the
+Chrome-image checks wouldn't have.
 
 ## Security note (read this before assuming more than it does)
 

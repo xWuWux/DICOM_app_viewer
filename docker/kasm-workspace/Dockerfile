@@ -39,4 +39,14 @@ ENV ORTHANC_URL="http://${REMOTE_HOST}:8043/"
 COPY custom_startup.sh /dockerstartup/custom_startup.sh
 RUN chmod +x /dockerstartup/custom_startup.sh
 
+# Baked-in kasmvnc.yaml override -- see that file's own comment for the
+# real clipboard-DLP gap this closes (found via a live test against the
+# Weasis image, but the underlying gap is in KasmVNC itself, so it
+# applies here too: any way to place rich/binary clipboard content, e.g.
+# a browser's own "copy image" on a rendered DICOM frame, could bypass
+# the admin-UI's text-only clipboard DLP the same way). Placed at the
+# exact path vnc_startup.sh only creates a default for if nothing exists
+# there yet, so this is used as-is rather than overwritten.
+COPY --chown=kasm-user:kasm-user kasmvnc.yaml /home/kasm-user/.vnc/kasmvnc.yaml
+
 USER kasm-user

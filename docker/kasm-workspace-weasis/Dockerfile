@@ -73,4 +73,11 @@ RUN chmod +x /opt/grading-panel/arrange_windows.sh
 COPY custom_startup.sh /dockerstartup/custom_startup.sh
 RUN chmod +x /dockerstartup/custom_startup.sh
 
+# Baked-in kasmvnc.yaml override (see that file's own comment for the real
+# clipboard-DLP gap this closes) -- placed at the exact path
+# vnc_startup.sh only creates a default for if nothing exists there yet,
+# so this is used as-is rather than overwritten. --chown matches how this
+# file is normally owned when vnc_startup.sh creates it itself.
+COPY --chown=kasm-user:kasm-user kasmvnc.yaml /home/kasm-user/.vnc/kasmvnc.yaml
+
 USER kasm-user
