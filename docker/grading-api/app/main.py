@@ -117,11 +117,22 @@ def _get_or_create_progress(conn, student_id: str):
         "SELECT * FROM progress WHERE student_id = ?", (student_id,)
     ).fetchone()
     if row is None:
-        conn.execute(
-            "INSERT INTO progress (student_id, stage, case_order_index, case_assigned_at) VALUES (?, 'learning', 0, ?)",
-            (student_id, db.now()),
-        )
-        conn.commit()
+        # issue #41: two concurrent requests for the same brand-new
+        # student_id (e.g. two rapid GET /case calls right after minting
+        # a token) can both see "no row exists" before either INSERT
+        # commits -- student_id is the PRIMARY KEY, so the second INSERT
+        # then raises sqlite3.IntegrityError. Catch it and fall through to
+        # re-SELECTing the row the other request just created, the
+        # standard concurrency-safe "insert-or-get" pattern, instead of
+        # letting it propagate as an unhandled 500.
+        try:
+            conn.execute(
+                "INSERT INTO progress (student_id, stage, case_order_index, case_assigned_at) VALUES (?, 'learning', 0, ?)",
+                (student_id, db.now()),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            pass
         row = conn.execute(
             "SELECT * FROM progress WHERE student_id = ?", (student_id,)
         ).fetchone()
@@ -230,7 +241,11 @@ def submit(body: SubmitBody):
         # actually became active (case_assigned_at, stamped by
         # _get_or_create_progress()/_advance_progress()), never from a
         # client-supplied value -- see SubmitBody's own comment for why.
-        time_spent_seconds = db.now() - progress["case_assigned_at"]
+        # issue #44: clamped to zero in case the server clock is ever
+        # adjusted backwards (e.g. an NTP correction) between assignment
+        # and submission, which would otherwise land a negative value in
+        # submissions and skew time-on-task data for that row.
+        time_spent_seconds = max(0, db.now() - progress["case_assigned_at"])
 
         # Correctness is category-only: the modifier is recorded for later
         # analysis but doesn't affect scoring -- matches Dokumentacja/'s

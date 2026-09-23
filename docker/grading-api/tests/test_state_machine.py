@@ -42,6 +42,7 @@ import sqlite3
 import pytest
 
 from app import db as db_module
+from app import main as main_module
 
 
 def _case_id(client, token):
@@ -130,6 +131,52 @@ def test_fresh_student_starts_at_learning_stage(client, mint_token):
     # Learning stage has no structured category picker -- category_options
     # is only added for assessment/test (see main.py's get_case()).
     assert "category_options" not in data
+
+
+# ---- _get_or_create_progress() directly (issue #43) ----
+# Only ever exercised indirectly above, through higher-level state-machine
+# tests -- these two target its own two behaviors directly.
+
+
+def test_new_student_gets_case_assigned_at_stamped_at_creation(client, mint_token, monkeypatch):
+    """A brand-new student_id gets a fresh progress row with case_assigned_at
+    stamped at that exact moment (issue #29)."""
+    monkeypatch.setattr(db_module, "now", lambda: 1_700_000_000.0)
+    token = mint_token("stu_new")
+
+    _case_id(client, token)  # triggers _get_or_create_progress
+
+    conn = db_module.get_connection()
+    try:
+        row = conn.execute(
+            "SELECT case_assigned_at FROM progress WHERE student_id = ?", ("stu_new",),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert row["case_assigned_at"] == 1_700_000_000.0
+
+
+def test_existing_students_progress_row_is_returned_as_is_not_recreated(client, mint_token, monkeypatch):
+    """A second /case call for the same student must return the existing
+    progress row untouched, not silently recreate/re-stamp it -- advance the
+    clock between two calls and confirm case_assigned_at doesn't move."""
+    monkeypatch.setattr(db_module, "now", lambda: 1_700_000_000.0)
+    token = mint_token("stu_existing")
+    _case_id(client, token)  # first call creates the row
+
+    monkeypatch.setattr(db_module, "now", lambda: 1_700_000_999.0)
+    _case_id(client, token)  # second call must not recreate/re-stamp it
+
+    conn = db_module.get_connection()
+    try:
+        row = conn.execute(
+            "SELECT case_assigned_at FROM progress WHERE student_id = ?", ("stu_existing",),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert row["case_assigned_at"] == 1_700_000_000.0
 
 
 def test_case_response_never_leaks_ground_truth_or_reference_report(client, mint_token):
@@ -350,12 +397,20 @@ def test_submit_case_id_stage_mismatch_returns_400(client, mint_token):
     assert resp.status_code == 400
 
 
-def test_submit_computes_time_spent_seconds_server_side(client, mint_token):
+def test_submit_computes_time_spent_seconds_server_side(client, mint_token, monkeypatch):
     """issue #29: time-on-task must come from progress.case_assigned_at
     (stamped server-side when the case became active), never from
     whatever the client sends -- directly manipulate case_assigned_at to
     simulate real elapsed time, then confirm the recorded submission
-    matches that, not any client-supplied value."""
+    matches that, not any client-supplied value.
+
+    issue #42: db.now() is pinned to a fixed value for the whole test
+    (rather than letting real wall-clock time pass between setting up
+    case_assigned_at and the /submit call), so the expected
+    time_spent_seconds can be asserted exactly instead of within a
+    tolerance window."""
+    monkeypatch.setattr(db_module, "now", lambda: 1_700_000_000.0)
+
     token = mint_token("stu_17")
     case_id = _case_id(client, token)
 
@@ -386,9 +441,47 @@ def test_submit_computes_time_spent_seconds_server_side(client, mint_token):
     finally:
         conn.close()
 
-    assert row["time_spent_seconds"] is not None
-    assert 40 <= row["time_spent_seconds"] <= 44  # ~42s, small tolerance for test runtime
+    assert row["time_spent_seconds"] == 42
     assert row["time_spent_seconds"] != 99999
+
+
+def test_submit_clamps_time_spent_seconds_to_zero_if_the_clock_moves_backwards(client, mint_token):
+    """issue #44: a server clock adjustment (e.g. an NTP correction) between
+    case assignment and submission could otherwise make
+    db.now() - case_assigned_at negative -- confirm it's clamped to 0
+    instead of landing a negative value in submissions."""
+    token = mint_token("stu_clock_skew")
+    case_id = _case_id(client, token)
+
+    conn = db_module.get_connection()
+    try:
+        conn.execute(
+            "UPDATE progress SET case_assigned_at = ? WHERE student_id = ?",
+            (db_module.now() + 3600, "stu_clock_skew"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    resp = client.post(
+        "/submit",
+        json={
+            "token": token, "case_id": case_id, "stage": "learning",
+            "text": "x",
+        },
+    )
+    assert resp.status_code == 200
+
+    conn = db_module.get_connection()
+    try:
+        row = conn.execute(
+            "SELECT time_spent_seconds FROM submissions WHERE student_id = ?",
+            ("stu_clock_skew",),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert row["time_spent_seconds"] == 0
 
 
 def test_submit_resets_the_clock_for_the_next_case(client, mint_token):
@@ -643,5 +736,72 @@ def test_migration_adds_unique_constraint_to_existing_submissions_table(tmp_path
                 "INSERT INTO submissions (student_id, case_id, stage, submitted_text, submitted_at) "
                 "VALUES ('stu_dup', 1, 'learning', 'third', 3.0)"
             )
+    finally:
+        conn.close()
+
+
+class _ForceNoRowOnFirstSelect:
+    """Wraps a real sqlite3 connection so its first SELECT returns no
+    row, even if one already exists in the database -- deterministically
+    simulates the exact race window issue #41's fix protects against:
+    this "request" already ran its own SELECT (seeing nothing) before
+    another concurrent request's INSERT landed for the same student_id.
+    Every other call (commit, later executes) passes through to the real
+    connection unchanged."""
+
+    def __init__(self, real_conn):
+        self._real = real_conn
+        self._forced = False
+
+    def execute(self, sql, params=()):
+        if not self._forced and sql.strip().upper().startswith("SELECT"):
+            self._forced = True
+
+            class _EmptyCursor:
+                def fetchone(self_inner):
+                    return None
+
+            return _EmptyCursor()
+        return self._real.execute(sql, params)
+
+    def commit(self):
+        self._real.commit()
+
+
+def test_get_or_create_progress_survives_a_concurrent_insert_race(client, mint_token):
+    """issue #41: two concurrent requests for the same brand-new
+    student_id can both see "no row exists" before either INSERT
+    commits -- student_id is the PRIMARY KEY, so the second INSERT then
+    raises sqlite3.IntegrityError. Deterministically reproduces the exact
+    interleaving (not a real, timing-dependent thread race) by wrapping
+    the connection so its own SELECT is forced to see nothing, while a
+    row for the same student_id already exists -- exactly what the
+    "other" concurrent request would have already committed. Confirms
+    _get_or_create_progress() catches it and returns the existing row
+    cleanly, not an unhandled 500."""
+    mint_token("stu_race")  # creates the sessions row; progress does not exist yet
+
+    conn = db_module.get_connection()
+    try:
+        # The "other" concurrent request's INSERT, already committed.
+        conn.execute(
+            "INSERT INTO progress (student_id, stage, case_order_index, case_assigned_at) VALUES (?, 'learning', 0, ?)",
+            ("stu_race", db_module.now()),
+        )
+        conn.commit()
+
+        wrapped = _ForceNoRowOnFirstSelect(conn)
+        row = main_module._get_or_create_progress(wrapped, "stu_race")
+
+        assert row is not None
+        assert row["stage"] == "learning"
+        assert row["case_order_index"] == 0
+
+        # Exactly one row exists -- the fix didn't create a duplicate or
+        # leave the table in an inconsistent state.
+        count = conn.execute(
+            "SELECT COUNT(*) FROM progress WHERE student_id = ?", ("stu_race",)
+        ).fetchone()[0]
+        assert count == 1
     finally:
         conn.close()
