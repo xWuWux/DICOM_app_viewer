@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# TigerVNC's own xstartup convention ($HOME/.vnc/xstartup, must be
+# executable) -- no Kasm base image here, so no vnc_startup.sh/
+# custom_startup.sh sourcing convention either. openbox (a minimal window
+# manager, not a full desktop -- this is a kiosk for one native app plus
+# one browser tab, not a general-purpose desktop) runs backgrounded;
+# launch-session.sh execs last so it's the process TigerVNC's own session
+# lifecycle actually tracks.
+set -euo pipefail
+unset SESSION_MANAGER
+unset DBUS_SESSION_BUS_ADDRESS
+# XDG_CURRENT_DESKTOP: openbox alone doesn't set this the way a full
+# desktop session manager would, and Java's AWT Desktop integration
+# (java.awt.Desktop.isDesktopSupported(), which Weasis calls at startup)
+# checks it as part of deciding whether ANY desktop integration is
+# available at all -- confirmed the hard way, Weasis crashed outright
+# with "Desktop API is not supported on the current platform" without
+# this set, even with the GTK/GIO packages themselves installed.
+export XDG_CURRENT_DESKTOP=GNOME
+eval "$(dbus-launch --sh-syntax --exit-with-session)"
+openbox &
+exec /opt/startup/launch-session.sh
