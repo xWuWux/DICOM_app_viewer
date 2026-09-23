@@ -523,10 +523,14 @@ application outside the session entirely. Kasm's own docs don't explain how
 this setting relates to the simpler admin-UI toggles. Fixed by baking a
 `kasmvnc.yaml` with `allow_mimetypes: []` directly into **both** workspace
 images (`docker/kasm-workspace/kasmvnc.yaml`,
-`docker/kasm-workspace-weasis/kasmvnc.yaml`) — confirmed at the mechanism
-level (the real `Xvnc` process's own `-DLP_ClipTypes` flag now shows empty
-instead of the previous default), full end-to-end re-verification via a
-real session pending.
+`docker/kasm-workspace-weasis/kasmvnc.yaml`) — confirmed both at the
+mechanism level (the real `Xvnc` process's own `-DLP_ClipTypes` flag now
+shows empty instead of the previous default) and end to end, via a real
+session: the exact same "Export → Clipboard" → paste-into-a-local-app
+attempt that previously escaped the session is now blocked. Also flagged
+upstream, since the underlying gap is in Kasm/KasmVNC itself, not this
+project's code:
+[kasmtech/workspaces-issues#912](https://github.com/kasmtech/workspaces-issues/issues/912).
 
 **Verified against the Weasis image via a real click-through test**
 (issue #8): the checks above (downloads/uploads/printing services not
