@@ -22,6 +22,7 @@ grading actions was.
 import os
 import secrets
 import sqlite3
+from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException
@@ -29,7 +30,14 @@ from pydantic import BaseModel
 
 from . import db
 
-app = FastAPI(title="IP_CMC Grading API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db.init_db()
+    yield
+
+
+app = FastAPI(title="IP_CMC Grading API", lifespan=lifespan)
 
 # Shared secret only the coordinator (scripts/create-session.py, run by
 # whoever mints links) knows -- required so POST /session can't just be
@@ -39,11 +47,6 @@ app = FastAPI(title="IP_CMC Grading API")
 # docker-compose.yml's ORTHANC_PASSWORD -- never silently run with no
 # secret configured.
 COORDINATOR_KEY = os.environ["GRADING_COORDINATOR_KEY"]
-
-
-@app.on_event("startup")
-def _startup():
-    db.init_db()
 
 
 @app.get("/healthz")
