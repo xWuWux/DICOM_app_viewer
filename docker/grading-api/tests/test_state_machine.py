@@ -132,6 +132,52 @@ def test_fresh_student_starts_at_learning_stage(client, mint_token):
     assert "category_options" not in data
 
 
+# ---- _get_or_create_progress() directly (issue #43) ----
+# Only ever exercised indirectly above, through higher-level state-machine
+# tests -- these two target its own two behaviors directly.
+
+
+def test_new_student_gets_case_assigned_at_stamped_at_creation(client, mint_token, monkeypatch):
+    """A brand-new student_id gets a fresh progress row with case_assigned_at
+    stamped at that exact moment (issue #29)."""
+    monkeypatch.setattr(db_module, "now", lambda: 1_700_000_000.0)
+    token = mint_token("stu_new")
+
+    _case_id(client, token)  # triggers _get_or_create_progress
+
+    conn = db_module.get_connection()
+    try:
+        row = conn.execute(
+            "SELECT case_assigned_at FROM progress WHERE student_id = ?", ("stu_new",),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert row["case_assigned_at"] == 1_700_000_000.0
+
+
+def test_existing_students_progress_row_is_returned_as_is_not_recreated(client, mint_token, monkeypatch):
+    """A second /case call for the same student must return the existing
+    progress row untouched, not silently recreate/re-stamp it -- advance the
+    clock between two calls and confirm case_assigned_at doesn't move."""
+    monkeypatch.setattr(db_module, "now", lambda: 1_700_000_000.0)
+    token = mint_token("stu_existing")
+    _case_id(client, token)  # first call creates the row
+
+    monkeypatch.setattr(db_module, "now", lambda: 1_700_000_999.0)
+    _case_id(client, token)  # second call must not recreate/re-stamp it
+
+    conn = db_module.get_connection()
+    try:
+        row = conn.execute(
+            "SELECT case_assigned_at FROM progress WHERE student_id = ?", ("stu_existing",),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert row["case_assigned_at"] == 1_700_000_000.0
+
+
 def test_case_response_never_leaks_ground_truth_or_reference_report(client, mint_token):
     """The single most important invariant this whole feature exists to
     enforce, checked across all three stages generically (not just
