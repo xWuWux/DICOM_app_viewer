@@ -350,12 +350,20 @@ def test_submit_case_id_stage_mismatch_returns_400(client, mint_token):
     assert resp.status_code == 400
 
 
-def test_submit_computes_time_spent_seconds_server_side(client, mint_token):
+def test_submit_computes_time_spent_seconds_server_side(client, mint_token, monkeypatch):
     """issue #29: time-on-task must come from progress.case_assigned_at
     (stamped server-side when the case became active), never from
     whatever the client sends -- directly manipulate case_assigned_at to
     simulate real elapsed time, then confirm the recorded submission
-    matches that, not any client-supplied value."""
+    matches that, not any client-supplied value.
+
+    issue #42: db.now() is pinned to a fixed value for the whole test
+    (rather than letting real wall-clock time pass between setting up
+    case_assigned_at and the /submit call), so the expected
+    time_spent_seconds can be asserted exactly instead of within a
+    tolerance window."""
+    monkeypatch.setattr(db_module, "now", lambda: 1_700_000_000.0)
+
     token = mint_token("stu_17")
     case_id = _case_id(client, token)
 
@@ -386,8 +394,7 @@ def test_submit_computes_time_spent_seconds_server_side(client, mint_token):
     finally:
         conn.close()
 
-    assert row["time_spent_seconds"] is not None
-    assert 40 <= row["time_spent_seconds"] <= 44  # ~42s, small tolerance for test runtime
+    assert row["time_spent_seconds"] == 42
     assert row["time_spent_seconds"] != 99999
 
 
