@@ -1,0 +1,27 @@
+logging:
+  log_writer_name: all
+  log_dest: logfile
+  level: 100
+
+# Closes a real gap found via a live click-through test (not assumed):
+# Kasm's own admin-UI DLP toggles (allow_kasm_clipboard_down/up/seamless)
+# correctly block plain-TEXT clipboard sync between the session and the
+# local host -- confirmed working. But KasmVNC has a second, independent
+# clipboard-DLP layer for RICH/binary MIME types (this same
+# data_loss_prevention.clipboard.allow_mimetypes key), whose documented
+# default already includes image/png -- and in practice, an image copied
+# to the clipboard from inside the session (e.g. Weasis's own "Export ->
+# Clipboard" feature, which has no config of its own to disable -- see
+# patch-weasis-config.py) landed on the real local clipboard, pasteable
+# into a local application outside the session entirely. Kasm's own docs
+# don't explain how this setting relates to the simpler admin-UI toggles,
+# so this is set directly here rather than relying on the admin UI.
+#
+# Empty list = no rich/binary MIME type is ever allowed through the
+# clipboard bridge, regardless of what generated it inside the session.
+# Plain-text clipboard blocking is unaffected -- that's governed by the
+# separate server_to_client/client_to_server "enabled" flags the admin-UI
+# toggles already set correctly.
+data_loss_prevention:
+  clipboard:
+    allow_mimetypes: []
