@@ -118,8 +118,8 @@ def _get_or_create_progress(conn, student_id: str):
     ).fetchone()
     if row is None:
         conn.execute(
-            "INSERT INTO progress (student_id, stage, case_order_index) VALUES (?, 'learning', 0)",
-            (student_id,),
+            "INSERT INTO progress (student_id, stage, case_order_index, case_assigned_at) VALUES (?, 'learning', 0, ?)",
+            (student_id, db.now()),
         )
         conn.commit()
         row = conn.execute(
@@ -135,25 +135,30 @@ def _get_case(conn, stage: str, order_index: int):
 
 
 def _advance_progress(conn, student_id: str, stage: str, order_index: int):
-    """Move to the next case in this stage, or the next stage, or 'complete'."""
+    """Move to the next case in this stage, or the next stage, or 'complete'.
+
+    case_assigned_at is re-stamped on every transition (issue #29) -- the
+    moment this runs is exactly the moment the next case (if any) becomes
+    the student's active one, so this is the only correct place to reset
+    the clock."""
     next_case = _get_case(conn, stage, order_index + 1)
     if next_case is not None:
         conn.execute(
-            "UPDATE progress SET case_order_index = ? WHERE student_id = ?",
-            (order_index + 1, student_id),
+            "UPDATE progress SET case_order_index = ?, case_assigned_at = ? WHERE student_id = ?",
+            (order_index + 1, db.now(), student_id),
         )
     else:
         stage_idx = db.STAGES.index(stage)
         if stage_idx + 1 < len(db.STAGES):
             next_stage = db.STAGES[stage_idx + 1]
             conn.execute(
-                "UPDATE progress SET stage = ?, case_order_index = 0 WHERE student_id = ?",
-                (next_stage, student_id),
+                "UPDATE progress SET stage = ?, case_order_index = 0, case_assigned_at = ? WHERE student_id = ?",
+                (next_stage, db.now(), student_id),
             )
         else:
             conn.execute(
-                "UPDATE progress SET stage = 'complete', case_order_index = 0 WHERE student_id = ?",
-                (student_id,),
+                "UPDATE progress SET stage = 'complete', case_order_index = 0, case_assigned_at = ? WHERE student_id = ?",
+                (db.now(), student_id),
             )
     conn.commit()
 
@@ -198,12 +203,14 @@ class SubmitBody(BaseModel):
     text: Optional[str] = None
     category: Optional[str] = None
     modifier_s: Optional[bool] = None
-    time_spent_seconds: Optional[float] = None
-    # (validation lives in the /submit handler below, not here -- a
-    # same-named @staticmethod without a @validator/@field_validator
-    # decorator was added alongside it in an earlier revision, but Pydantic
-    # never calls a validation method that isn't actually registered as one;
-    # it was dead code, removed rather than left as misleading no-op "validation")
+    # No time_spent_seconds field (issue #29): this data feeds a scientific
+    # publication, so time-on-task is computed server-side in submit()
+    # from progress.case_assigned_at instead of ever trusting a
+    # client-supplied elapsed time -- Date.now() arithmetic in the browser
+    # is trivially editable (devtools, or a scripted request bypassing the
+    # UI entirely). The frontend currently still sends this field (left
+    # over from before this fix) -- harmless, Pydantic drops unrecognized
+    # fields by default.
 
 
 @app.post("/submit")
@@ -219,10 +226,11 @@ def submit(body: SubmitBody):
         if case is None or case["stage"] != body.stage:
             raise HTTPException(400, "case_id doesn't match the submitted stage")
 
-        # Validate time_spent_seconds (issue #2: missing validation)
-        if body.time_spent_seconds is not None:
-            if body.time_spent_seconds < 0 or body.time_spent_seconds > 7200:
-                raise HTTPException(400, "time_spent_seconds must be between 0 and 7200 seconds")
+        # issue #29: time-on-task computed server-side from when this case
+        # actually became active (case_assigned_at, stamped by
+        # _get_or_create_progress()/_advance_progress()), never from a
+        # client-supplied value -- see SubmitBody's own comment for why.
+        time_spent_seconds = db.now() - progress["case_assigned_at"]
 
         # Correctness is category-only: the modifier is recorded for later
         # analysis but doesn't affect scoring -- matches Dokumentacja/'s
@@ -247,7 +255,7 @@ def submit(body: SubmitBody):
                 (
                     student_id, body.case_id, body.stage, body.category,
                     None if body.modifier_s is None else int(body.modifier_s),
-                    body.text, is_correct, body.time_spent_seconds, db.now(),
+                    body.text, is_correct, time_spent_seconds, db.now(),
                 ),
             )
             conn.commit()

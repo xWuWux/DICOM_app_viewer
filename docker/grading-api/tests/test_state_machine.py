@@ -20,8 +20,10 @@ docstring) but had never had automated, isolated coverage for:
   - progress correctly advances case -> case, then stage -> stage, then
     to "complete";
   - two students' progress and submissions never leak into each other;
-  - the input validation main.py already has (stage mismatches,
-    time_spent_seconds range) actually behaves as documented.
+  - the input validation main.py already has (stage mismatches) actually
+    behaves as documented;
+  - time-on-task is computed server-side from when a case actually became
+    active, never trusted from whatever the client sends (issue #29).
 
 Every test gets its own empty, isolated SQLite file via the `client`
 fixture in conftest.py -- no shared state between tests, no dependency on
@@ -345,18 +347,86 @@ def test_submit_case_id_stage_mismatch_returns_400(client, mint_token):
     assert resp.status_code == 400
 
 
-def test_submit_time_spent_out_of_range_returns_400(client, mint_token):
-    token = mint_token("stu_12")
+def test_submit_computes_time_spent_seconds_server_side(client, mint_token):
+    """issue #29: time-on-task must come from progress.case_assigned_at
+    (stamped server-side when the case became active), never from
+    whatever the client sends -- directly manipulate case_assigned_at to
+    simulate real elapsed time, then confirm the recorded submission
+    matches that, not any client-supplied value."""
+    token = mint_token("stu_17")
     case_id = _case_id(client, token)
-    for bad_value in (-1, 7201):
-        resp = client.post(
-            "/submit",
-            json={
-                "token": token, "case_id": case_id, "stage": "learning",
-                "text": "x", "time_spent_seconds": bad_value,
-            },
+
+    conn = db_module.get_connection()
+    try:
+        conn.execute(
+            "UPDATE progress SET case_assigned_at = ? WHERE student_id = ?",
+            (db_module.now() - 42, "stu_17"),
         )
-        assert resp.status_code == 400, f"expected 400 for time_spent_seconds={bad_value}"
+        conn.commit()
+    finally:
+        conn.close()
+
+    client.post(
+        "/submit",
+        json={
+            "token": token, "case_id": case_id, "stage": "learning",
+            "text": "x", "time_spent_seconds": 99999,  # a lie -- must be ignored
+        },
+    )
+
+    conn = db_module.get_connection()
+    try:
+        row = conn.execute(
+            "SELECT time_spent_seconds FROM submissions WHERE student_id = ?",
+            ("stu_17",),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert row["time_spent_seconds"] is not None
+    assert 40 <= row["time_spent_seconds"] <= 44  # ~42s, small tolerance for test runtime
+    assert row["time_spent_seconds"] != 99999
+
+
+def test_submit_resets_the_clock_for_the_next_case(client, mint_token):
+    """Each case gets its own independently-measured time-on-task --
+    submitting case 1 must not let its elapsed time leak into case 2's
+    measurement."""
+    token = mint_token("stu_18")
+    case_id = _case_id(client, token)
+
+    conn = db_module.get_connection()
+    try:
+        conn.execute(
+            "UPDATE progress SET case_assigned_at = ? WHERE student_id = ?",
+            (db_module.now() - 100, "stu_18"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    client.post(
+        "/submit",
+        json={"token": token, "case_id": case_id, "stage": "learning", "text": "x"},
+    )
+
+    case_id = _case_id(client, token)  # now at assessment
+    client.post(
+        "/submit",
+        json={"token": token, "case_id": case_id, "stage": "assessment",
+              "category": "3", "modifier_s": False},
+    )
+
+    conn = db_module.get_connection()
+    try:
+        row = conn.execute(
+            "SELECT time_spent_seconds FROM submissions WHERE student_id = ? AND stage = 'assessment'",
+            ("stu_18",),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert row["time_spent_seconds"] < 5  # freshly stamped, not ~100s inherited from case 1
 
 
 def test_reset_clears_progress_and_submissions(client, mint_token):
