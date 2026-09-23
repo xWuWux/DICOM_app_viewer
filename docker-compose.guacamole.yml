@@ -1,0 +1,83 @@
+# Guacamole-based alternative delivery mechanism -- a PoC evaluated
+# alongside the Kasm flow specifically because Kasm Workspaces Community
+# Edition is capped at 5 concurrent sessions and restricted to non-
+# commercial/non-profit/personal use (EULA §2.2, see CLAUDE.md), which
+# blocks any real multi-VM cohort deployment without a paid tier + legal/
+# procurement review. Apache Guacamole is Apache-licensed with no such cap.
+#
+# This is an OVERLAY file, not a standalone stack -- run it combined with
+# the base compose file so the new services can reach the existing
+# viewer/grading-api/orthanc backend by container name over the same
+# ipcmc-internal network (already defined there, not redeclared here):
+#   docker compose -f docker-compose.yml -f docker-compose.guacamole.yml up -d --build
+# See scripts/guacamole-iac.sh, which wraps exactly this.
+#
+# Deliberately does NOT attach to kasm_default_network -- the whole point
+# is a delivery mechanism that doesn't depend on Kasm being installed at
+# all. The Weasis+VNC session container (docker/guacamole-weasis/) only
+# ever needs to reach `viewer` (VIEWER_URL, and ORTHANC_URL -- both served
+# by viewer's own nginx, see docker/viewer/default.conf.template), which
+# is already on ipcmc-internal in the base file.
+#
+# Scope note (explicit, not an oversight): this is a BASIC functionality
+# PoC only -- no watermark overlay, no Weasis export/import lockdown, no
+# DLP. docker/guacamole-weasis/ is not a security-hardened image the way
+# docker/kasm-workspace-weasis/ is; don't point it at real patient data.
+#
+# Why a whole extra Postgres DB, on top of grading-api's own SQLite: this
+# is Guacamole's OWN required auth backend (guacamole-auth-jdbc), storing
+# Guacamole users/connections -- something separate from the Lung-RADS
+# grading data, not a redundant duplicate of grading-api's own database.
+# FOSS Guacamole has no supported anonymous-quick-link mechanism (checked
+# before choosing this -- see scripts/provision-guacamole-session.py's own
+# comment); a real JDBC-backed user is the officially-supported way to get
+# a single clickable, no-further-login-prompt link per student, via the
+# documented username/password URL-parameter auto-login.
+
+services:
+  guacamole-db:
+    image: postgres:16-alpine
+    container_name: ipcmc-guacamole-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=guacamole_db
+      - POSTGRES_USER=guacamole
+      - POSTGRES_PASSWORD=${GUACAMOLE_DB_PASSWORD:?Set GUACAMOLE_DB_PASSWORD in .env -- see .env.example}
+    volumes:
+      - guacamole-db-data:/var/lib/postgresql/data
+      # Official Apache-licensed schema, regenerate with:
+      # docker run --rm guacamole/guacamole:1.6.0 /opt/guacamole/bin/initdb.sh --postgresql
+      - ./docker/guacamole/postgres-init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - ipcmc-internal
+
+  guacd:
+    image: guacamole/guacd:1.6.0
+    container_name: ipcmc-guacd
+    restart: unless-stopped
+    networks:
+      - ipcmc-internal
+
+  guacamole:
+    image: guacamole/guacamole:1.6.0
+    container_name: ipcmc-guacamole
+    restart: unless-stopped
+    depends_on:
+      - guacd
+      - guacamole-db
+    environment:
+      - GUACD_HOSTNAME=ipcmc-guacd
+      - POSTGRESQL_HOSTNAME=ipcmc-guacamole-db
+      - POSTGRESQL_DATABASE=guacamole_db
+      - POSTGRESQL_USER=guacamole
+      - POSTGRESQL_PASSWORD=${GUACAMOLE_DB_PASSWORD:?Set GUACAMOLE_DB_PASSWORD in .env -- see .env.example}
+    ports:
+      # Bound to localhost only, same reasoning as viewer's own :8043 in
+      # the base file -- this is an admin/coordinator-facing surface
+      # (login page, connection management), not the student-facing one.
+      - "127.0.0.1:8090:8080"
+    networks:
+      - ipcmc-internal
+
+volumes:
+  guacamole-db-data:

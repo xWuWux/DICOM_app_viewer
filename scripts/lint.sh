@@ -12,7 +12,7 @@ echo "--- bash syntax check ---"
 while IFS= read -r -d '' f; do
   echo "  $f"
   bash -n "$f" || status=1
-done < <(find . \( -name "*.sh" -o -name "*.envsh" \) -not -path "./.git/*" -print0)
+done < <(find . \( -name "*.sh" -o -name "*.envsh" -o -name "xstartup" \) -not -path "./.git/*" -not -path "*/.venv-test/*" -print0)
 
 echo "--- docker compose config validation ---"
 # A placeholder value is fine here -- config only renders/validates the
@@ -21,8 +21,10 @@ echo "--- docker compose config validation ---"
 # (docker-compose.yml's external network) to actually exist.
 export ORTHANC_PASSWORD="lint-only-placeholder-not-a-real-secret"
 export GRADING_COORDINATOR_KEY="lint-only-placeholder-not-a-real-secret"
+export GUACAMOLE_DB_PASSWORD="lint-only-placeholder-not-a-real-secret"
 docker compose -f docker-compose.yml config >/dev/null || status=1
 docker compose -f docker-compose.remote-host.yml config >/dev/null || status=1
+docker compose -f docker-compose.yml -f docker-compose.guacamole.yml config >/dev/null || status=1
 
 if [ "$status" -eq 0 ]; then
   echo "All lint checks passed."
