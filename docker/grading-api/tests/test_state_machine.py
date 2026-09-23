@@ -391,6 +391,45 @@ def test_submit_computes_time_spent_seconds_server_side(client, mint_token):
     assert row["time_spent_seconds"] != 99999
 
 
+def test_submit_clamps_time_spent_seconds_to_zero_if_the_clock_moves_backwards(client, mint_token):
+    """issue #44: a server clock adjustment (e.g. an NTP correction) between
+    case assignment and submission could otherwise make
+    db.now() - case_assigned_at negative -- confirm it's clamped to 0
+    instead of landing a negative value in submissions."""
+    token = mint_token("stu_clock_skew")
+    case_id = _case_id(client, token)
+
+    conn = db_module.get_connection()
+    try:
+        conn.execute(
+            "UPDATE progress SET case_assigned_at = ? WHERE student_id = ?",
+            (db_module.now() + 3600, "stu_clock_skew"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    resp = client.post(
+        "/submit",
+        json={
+            "token": token, "case_id": case_id, "stage": "learning",
+            "text": "x",
+        },
+    )
+    assert resp.status_code == 200
+
+    conn = db_module.get_connection()
+    try:
+        row = conn.execute(
+            "SELECT time_spent_seconds FROM submissions WHERE student_id = ?",
+            ("stu_clock_skew",),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert row["time_spent_seconds"] == 0
+
+
 def test_submit_resets_the_clock_for_the_next_case(client, mint_token):
     """Each case gets its own independently-measured time-on-task --
     submitting case 1 must not let its elapsed time leak into case 2's
