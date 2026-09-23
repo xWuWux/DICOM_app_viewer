@@ -6,7 +6,7 @@ Seed data is PLACEHOLDER content: none of the three sample studies
 are actually lung CTs. This is here to prove the 3-stage mechanics work end
 to end, not to be clinically meaningful. Real curated content (500 studies,
 real ground truth, real reference reports from a radiologist) is separate
-work tracked in Dokumentacja/, not this.
+work, not yet started.
 """
 import os
 import sqlite3

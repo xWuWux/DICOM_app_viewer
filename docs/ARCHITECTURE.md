@@ -61,8 +61,8 @@ sequenceDiagram
     Nginx->>GradingAPI: POST /api/reset
 ```
 
-Key differences from the original design discussion in `Dokumentacja/`
-worth calling out explicitly: no Moodle launches this (a coordinator runs
+Key differences from the original design discussion worth calling out
+explicitly: no Moodle launches this (a coordinator runs
 `create-session.py` by hand), no payment gate, no LTI grade passback, and
 `GET /case` / `POST /submit` enforce that ground truth and the reference
 report are never sent to the browser before the stage that's supposed to

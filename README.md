@@ -1,8 +1,12 @@
 # DICOM Viewer — MVP
 
-Minimal, runnable proof-of-concept for the IP_CMC Lung-RADS training platform
-described in `Dokumentacja/`. See `CLAUDE.md` for the hard rules this project
-must never violate.
+Minimal, runnable proof-of-concept for the IP_CMC Lung-RADS training platform.
+See `CLAUDE.md` for the hard rules this project must never violate.
+
+(This README occasionally refers to "the original design discussion" — PM
+correspondence and radiology requirements gathered during scoping. That
+material is kept local-only and gitignored, never shipped in this repo, so a
+fresh clone won't have it; nothing below depends on it being present.)
 
 **Scope of this MVP** (deliberately narrow — see "What's NOT in this MVP"
 below): a DICOM store with a couple of sample studies, a forensic watermark
@@ -23,7 +27,7 @@ haven't been redrawn for it yet).
 This project didn't replace Orthanc with Weasis — **Orthanc is still the
 DICOM store and DICOMweb server behind both flows.** What changed is which
 *viewer* a student's Kasm session actually shows them, after PM feedback
-(`Dokumentacja/`) wanted something closer to the native desktop viewers
+wanted something closer to the native desktop viewers
 (Horos/Weasis) radiologists already know, instead of Orthanc's own web UI.
 Both flows are real, both are registerable in Kasm at the same time, and
 both talk to the same `grading-api` for the Lung-RADS mechanics:
@@ -172,8 +176,8 @@ differs (`watermark.html` for Chrome, `grading-panel.html` for Weasis):
 sidebar next to the DICOM viewer iframe (same page, no separate route) — on
 loading a case it deep-links the iframe to that one assigned study
 (`ui/app/index.html#/filtered-studies?StudyInstanceUID=...`), not the full
-patient list, matching `Dokumentacja/`'s "Single DICOM Study Isolation"
-requirement. **Worth knowing**: Orthanc's Explorer 2 has no true per-study
+patient list, matching the original design discussion's "Single DICOM Study
+Isolation" requirement. **Worth knowing**: Orthanc's Explorer 2 has no true per-study
 *viewer* deep-link (confirmed against its actual router source — no route
 takes a study ID at all); this filters the list to one row, which still
 needs one click from the student to open the viewer on it. The
@@ -190,13 +194,13 @@ Ground truth + reference reports are **placeholder content** on the
 existing sample studies (CT_small/MR_small/BRAINIX — none of which are
 actually lung CTs) — one case per stage, purely to prove the mechanics work
 end to end. Real curated content (500 studies, real ground truth, a real
-radiologist's reference reports) is separate work tracked in `Dokumentacja/`.
+radiologist's reference reports) is separate work, not yet started.
 
 `grading-api` is internal-only (no host port, not on `kasm_default_network`
 — nothing outside `viewer`'s nginx needs to reach it directly), reached via
 a same-origin `/api/` proxy so the panel's `fetch()` calls need no CORS
-handling. SQLite chosen deliberately over the Postgres `Dokumentacja/`
-originally specified — lighter for proving out the mechanics now; migrating
+handling. SQLite chosen deliberately over the Postgres the original design
+discussion specified — lighter for proving out the mechanics now; migrating
 later means changing a connection string, not the app logic. (Flagging
 explicitly: this means CLAUDE.md's literal "Stratified random sampling via
 PostgreSQL" hard rule doesn't hold today — no Postgres, and no real
@@ -231,9 +235,8 @@ not just a second valid link.
 
 ## What's NOT in this MVP (on purpose)
 
-Per the docs' own recommendation (`Dokumentacja/AI_context_Documentation_DICOM.txt`,
-"About the two-week MVP" section — this file is gitignored/kept local-only,
-see below), all of this is deferred:
+Per the original design discussion's own recommendation ("About the
+two-week MVP" section), all of this is deferred:
 
 - Moodle / LTI 1.3 launch and grade passback.
 - Payments (300 PLN), certificates, access expiry.
@@ -562,7 +565,7 @@ Chrome-image checks wouldn't have.
 
 ## Security note (read this before assuming more than it does)
 
-Per the design discussion in `Dokumentacja/`: **nothing here, or in the real
+Per the original design discussion: **nothing here, or in the real
 Kasm deployment, actually prevents someone from photographing their screen.**
 The watermark is deliberately an attribution/deterrence control, not a
 prevention control — that distinction needs to be in whatever acceptable-use
@@ -674,8 +677,6 @@ above.)
 
 ```
 CLAUDE.md                             hard rules for this project (do not violate)
-Dokumentacja/                         source design discussion + radiology requirements
-                                       (two files here are gitignored/local-only: see .gitignore)
 .env.example                          copy to .env and fill in a real ORTHANC_PASSWORD (gitignored)
 docker-compose.yml                    orthanc + grading-api + viewer, for local testing
 docker-compose.remote-host.yml        variant for running orthanc/viewer on a separate Proxmox VM/LXC
