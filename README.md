@@ -744,13 +744,42 @@ enforce:
 
 ## Testing
 
-Four scripts, all run in CI (`.github/workflows/ci.yml`) on every push/PR
-as four parallel jobs (`lint`, `unit-test`, `shell-test`, `smoke-test`, all
-depending only on `lint` so they run concurrently, not serialized):
+A staged pipeline (`.github/workflows/ci.yml`), each stage gating the
+next so a cheap failure (bad syntax, a build break) fails in seconds
+instead of waiting on the slowest stage — jobs grouped under the same
+stage still run in parallel with each other:
+
+1. **Lint & Format** — `scripts/lint.sh`
+2. **Build Test** — `scripts/build-test.sh`
+3. **Security Scan** — `scripts/security-scan.sh`
+4. **Unit & Shell Tests** — `scripts/test-grading-api.sh` + `scripts/test-shell-scripts.sh`
+5. **Integration Tests** — `scripts/smoke-test.sh` + `scripts/test-guacamole-integration.sh`
+
+Every script above is runnable identically on a local machine, not just
+in CI.
 
 - `scripts/lint.sh` — bash syntax check on every script, `docker compose
-  config` validation on both compose files. No infrastructure needed, safe
-  to run anytime.
+  config` validation on all three compose files, and `ruff check`/
+  `ruff format --check` against `docker/grading-api` (needs `ruff` on
+  `PATH`, e.g. via its own `requirements-dev.txt`). No infrastructure
+  needed, safe to run anytime.
+- `scripts/build-test.sh` — builds every image in the repo (both compose
+  files plus the 3 standalone Kasm/Guacamole workspace Dockerfiles), never
+  runs any of them. Fails fast on a build-breaking change before the
+  slower stages below even start.
+- `scripts/security-scan.sh` — bandit (Python security linter, scoped to
+  `grading-api`'s own `app/` code, not `tests/` — its legitimate asserts
+  trip bandit's B101 with zero security value), shellcheck (real static
+  analysis for the bash scripts, beyond `lint.sh`'s syntax-only check),
+  hadolint (Dockerfile best practices — see `.hadolint.yaml` for the
+  threshold and why 2 low-severity findings are intentionally
+  non-blocking), and trivy (known CVEs in pinned dependencies and built
+  images). Every tool here was dry-run against this repo before being
+  wired in, and every real finding it surfaced was fixed first (3 HIGH
+  starlette CVEs via a `fastapi`/`uvicorn` bump, several `nginx:alpine`
+  base-image CVEs via a version bump + a build-time `apk upgrade`, an
+  unused import, 4 overlong lines, 2 real shellcheck findings) — this
+  stage stays green by default, not noisy from day one.
 - `scripts/test-grading-api.sh` (issues #8, and the session-token fix) —
   unit tests for `grading-api`'s 3-stage state machine and its session-
   token authorization (`docker/grading-api/tests/test_state_machine.py`,
@@ -820,6 +849,18 @@ depending only on `lint` so they run concurrently, not serialized):
   **Tears the stack down with `docker compose down -v` when it's done** —
   don't run this against an environment with data you care about; it's
   meant for a disposable/CI environment.
+- `scripts/test-guacamole-integration.sh` — self-contained wrapper around
+  `scripts/test-guacamole-e2e.sh` (which itself assumes the stack is
+  already up, meant for a developer who already ran
+  `scripts/guacamole-iac.sh`): provisions `.env` secrets, builds
+  `docker/guacamole-weasis:poc`, brings up the core stack + Guacamole
+  infra, loads only the small committed `CT_small.dcm` fixture (a
+  brand-new student always starts on the learning-stage seed case, so the
+  larger `fetch-public-samples.sh` download isn't needed here), runs the
+  real Playwright E2E suite, and tears everything down on exit — same
+  self-contained/self-tearing-down pattern as `smoke-test.sh` above. Needs
+  Docker-in-Docker (bind-mounts the host's `docker.sock`) and
+  `--network host`, same as `scripts/test-guacamole-e2e.sh` itself.
 
 Deliberately not covered by any of these (needs real Kasm infrastructure a
 CI runner doesn't have, stays manual): actually launching a Kasm session,
@@ -833,6 +874,7 @@ above.)
 
 ```
 CLAUDE.md                             hard rules for this project (do not violate)
+.hadolint.yaml                        Dockerfile lint config for scripts/security-scan.sh (threshold + why)
 .env.example                          copy to .env and fill in a real ORTHANC_PASSWORD (gitignored)
 docker-compose.yml                    orthanc + grading-api + viewer, for local testing
 docker-compose.remote-host.yml        variant for running orthanc/viewer on a separate Proxmox VM/LXC
@@ -841,6 +883,7 @@ docker/viewer/                        nginx (config templated, auth token comput
                                        watermark.html (Chrome flow) + grading-panel.html (Weasis flow)
 docker/grading-api/                   Lung-RADS 3-stage grading mechanics (FastAPI + SQLite)
 docker/grading-api/tests/             unit tests (scripts/test-grading-api.sh)
+docker/grading-api/pyproject.toml     ruff config (line-length, isort known-first-party)
 docker/kasm-workspace/                Chrome-based Kasm workspace image -- the one actually deployed
 docker/kasm-workspace-weasis/         Weasis-based workspace image -- milestone in progress, issues #3-#8
 docker-compose.guacamole.yml           Guacamole PoC overlay (guacd + webapp + Postgres) -- combine with
@@ -857,11 +900,15 @@ scripts/mint-local-link.sh            mints a grading-api token for the no-Kasm 
 scripts/guacamole-iac.sh              brings up the whole Guacamole PoC stack from scratch
 scripts/provision-guacamole-session.py mints a per-student Guacamole session link (Kasm-free flow)
 scripts/teardown-guacamole-session.py tears down a Guacamole session (container + Guacamole user/connection)
-scripts/lint.sh                       bash syntax + compose config validation (CI)
-scripts/test-grading-api.sh           grading-api unit tests via pytest (CI)
-scripts/test-shell-scripts.sh         Kasm + Guacamole launcher script tests via BATS (CI)
-scripts/test-guacamole-e2e.sh         full browser-driven E2E test for the Guacamole flow (not in CI --
-                                       needs the full stack + built images already up, see its own comment)
-scripts/smoke-test.sh                 full-stack integration check (CI)
-.github/workflows/ci.yml              the CI jobs above, run on every push/PR
+scripts/lint.sh                       stage 1, Lint & Format: bash syntax + compose config + ruff (CI)
+scripts/build-test.sh                 stage 2, Build Test: builds every image in the repo (CI)
+scripts/security-scan.sh              stage 3, Security Scan: bandit + shellcheck + hadolint + trivy (CI)
+scripts/test-grading-api.sh           stage 4, grading-api unit tests via pytest (CI)
+scripts/test-shell-scripts.sh         stage 4, Kasm + Guacamole launcher script tests via BATS (CI)
+scripts/smoke-test.sh                 stage 5, full-stack integration check (CI)
+scripts/test-guacamole-e2e.sh         full browser-driven E2E test for the Guacamole flow -- assumes the
+                                       stack is already up; scripts/test-guacamole-integration.sh below
+                                       wraps it for CI, this one's for a developer using guacamole-iac.sh
+scripts/test-guacamole-integration.sh stage 5, self-contained wrapper around test-guacamole-e2e.sh (CI)
+.github/workflows/ci.yml              the 5-stage pipeline above, run on every push/PR
 ```

@@ -1,31 +1,90 @@
 name: CI
 
+# Staged pipeline: each stage gates the next (needs:), so a cheap failure
+# (bad syntax, a build break) fails in seconds instead of waiting on the
+# slowest stage. Jobs grouped under the same conceptual stage (e.g. Unit &
+# Shell Tests) still run in parallel with each other -- only the stage
+# boundary itself is sequential.
+#
+#   PR Created --> 1. Lint & Format (fastest)
+#              --> 2. Build Test (does it compile?)
+#              --> 3. Security Scan (SAST)
+#              --> 4. Unit & Shell Tests
+#              --> 5. Integration Tests (slowest)
+#              --> Success: ready for code review and merge
+#
+# Every script here (scripts/lint.sh, build-test.sh, security-scan.sh,
+# test-grading-api.sh, test-shell-scripts.sh, smoke-test.sh,
+# test-guacamole-integration.sh) is runnable identically on a local machine
+# -- this file only handles installing each stage's prerequisites, never
+# duplicates the check logic itself.
+
 on:
   push:
   pull_request:
 
 jobs:
+  # ---- 1. Lint & Format ----
   lint:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Lint (bash syntax + compose config validation)
-        run: ./scripts/lint.sh
-
-  unit-test:
-    runs-on: ubuntu-latest
-    needs: lint
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"  # matches docker/grading-api/Dockerfile's own base image
+      - name: Install ruff
+        run: pip install -r docker/grading-api/requirements-dev.txt
+      - name: Lint & Format (bash syntax, compose config, ruff check/format)
+        run: ./scripts/lint.sh
+
+  # ---- 2. Build Test ----
+  build-test:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build every image in the repo (does it compile?)
+        run: ./scripts/build-test.sh
+
+  # ---- 3. Security Scan (SAST) ----
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: build-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install bandit
+        run: pip install -r docker/grading-api/requirements-dev.txt
+      # shellcheck ships preinstalled on GitHub's ubuntu-latest runner image.
+      - name: Install hadolint
+        run: |
+          curl -sL "https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64" \
+            -o /usr/local/bin/hadolint
+          chmod +x /usr/local/bin/hadolint
+      - name: Install trivy
+        run: |
+          curl -sL "https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz" \
+            | tar -xz -C /usr/local/bin trivy
+      - name: Security Scan (bandit, shellcheck, hadolint, trivy)
+        run: ./scripts/security-scan.sh
+
+  # ---- 4. Unit & Shell Tests ----
+  unit-test:
+    runs-on: ubuntu-latest
+    needs: security-scan
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Unit test grading-api's state machine (issue #8)
         run: ./scripts/test-grading-api.sh
 
   shell-test:
     runs-on: ubuntu-latest
-    needs: lint
+    needs: security-scan
     steps:
       - uses: actions/checkout@v4
       - name: Install bats
@@ -33,10 +92,33 @@ jobs:
       - name: BATS test the Kasm workspace launcher scripts (issue #16)
         run: ./scripts/test-shell-scripts.sh
 
+  # ---- 5. Integration Tests ----
   smoke-test:
     runs-on: ubuntu-latest
-    needs: lint
+    needs: [unit-test, shell-test]
     steps:
       - uses: actions/checkout@v4
       - name: Smoke test (brings the stack up, checks the endpoints)
         run: ./scripts/smoke-test.sh
+
+  guacamole-integration-test:
+    runs-on: ubuntu-latest
+    needs: [unit-test, shell-test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guacamole PoC end-to-end test (Playwright, docker-in-docker)
+        run: ./scripts/test-guacamole-integration.sh
+
+  # ---- Success ----
+  ci-success:
+    runs-on: ubuntu-latest
+    needs: [smoke-test, guacamole-integration-test]
+    if: always()
+    steps:
+      - name: Confirm every stage passed
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" || "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "One or more pipeline stages failed -- see above."
+            exit 1
+          fi
+          echo "All stages passed -- ready for code review and merge."
