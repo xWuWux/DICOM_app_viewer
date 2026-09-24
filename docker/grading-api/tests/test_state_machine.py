@@ -397,6 +397,61 @@ def test_submit_case_id_stage_mismatch_returns_400(client, mint_token):
     assert resp.status_code == 400
 
 
+def test_submit_rejects_an_oversized_text_field(client, mint_token):
+    """text is genuinely open-ended prose but not unbounded -- a client
+    sending an absurdly large payload should get a clean 422 from Pydantic's
+    own validation, not have it land in the DB."""
+    token = mint_token("stu_oversized_text")
+    case_id = _case_id(client, token)
+    resp = client.post(
+        "/submit",
+        json={
+            "token": token, "case_id": case_id, "stage": "learning",
+            "text": "x" * 10_001, "time_spent_seconds": 1,
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_submit_rejects_an_oversized_category_field(client, mint_token):
+    """Real category values are at most 2 chars ("4A"/"4X") -- a much larger
+    string should be rejected before it ever reaches the DB or the
+    correctness comparison."""
+    token = mint_token("stu_oversized_category")
+    client.post(
+        "/submit",
+        json={
+            "token": token, "case_id": _case_id(client, token), "stage": "learning",
+            "text": "x", "time_spent_seconds": 1,
+        },
+    )  # advance past learning so this student is at "assessment"
+    case_id = _case_id(client, token)
+    resp = client.post(
+        "/submit",
+        json={
+            "token": token, "case_id": case_id, "stage": "assessment",
+            "category": "x" * 11, "modifier_s": False, "time_spent_seconds": 1,
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_submit_rejects_an_oversized_stage_field(client, mint_token):
+    """Real stage values are at most 10 chars ("assessment") -- a much
+    larger string should be rejected rather than falling through to the
+    409/400 stage-mismatch checks."""
+    token = mint_token("stu_oversized_stage")
+    case_id = _case_id(client, token)
+    resp = client.post(
+        "/submit",
+        json={
+            "token": token, "case_id": case_id, "stage": "x" * 21,
+            "text": "x", "time_spent_seconds": 1,
+        },
+    )
+    assert resp.status_code == 422
+
+
 def test_submit_computes_time_spent_seconds_server_side(client, mint_token, monkeypatch):
     """issue #29: time-on-task must come from progress.case_assigned_at
     (stamped server-side when the case became active), never from
