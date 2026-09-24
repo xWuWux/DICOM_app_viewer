@@ -1,3 +1,9 @@
+> **Superseded / historical.** This snapshot is from 2026-09-10, before
+> dozens of subsequent PRs (rate limiting, WAL mode, session tokens, unit
+> tests, and more — see `git log`). Kept for the record, not as current
+> status; see `README.md` and `docs/ARCHITECTURE.md` for what's actually
+> true today.
+
 # Code Review V2 — DICOM Viewer MVP
 
 **Data przeglądu**: 2026-09-10 (wersja 2)  
