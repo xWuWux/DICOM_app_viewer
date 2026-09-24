@@ -1,0 +1,13 @@
+[tool.ruff]
+# 120, not the 88 default -- this codebase already had real lines up to 131
+# chars (long f-strings, dense tuple literals) before ruff existed; 120
+# catches genuinely excessive lines without forcing a wall of unrelated
+# reformatting on ones that were already fine.
+line-length = 120
+target-version = "py312"  # matches docker/grading-api/Dockerfile's own base image
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]  # pyflakes + pycodestyle + import sorting -- no opinionated style rules
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]

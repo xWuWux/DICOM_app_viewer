@@ -8,6 +8,7 @@ to end, not to be clinically meaningful. Real curated content (500 studies,
 real ground truth, real reference reports from a radiologist) is separate
 work, not yet started.
 """
+
 import os
 import sqlite3
 import time
@@ -39,29 +40,35 @@ CATEGORY_LABELS = [
 SEED_CASES = [
     # (stage, order_index, orthanc_study_uid, title, ground_truth_category, ground_truth_modifier_s, reference_report)
     (
-        "learning", 0,
+        "learning",
+        0,
         "1.3.6.1.4.1.5962.1.2.1.20040119072730.12322",  # CT_small
         "Przypadek 1 (nauka)",
-        "2", 0,
+        "2",
+        0,
         "PLACEHOLDER — nie jest to prawdziwy opis kliniczny. "
         "Badanie TK klatki piersiowej bez cech guzków podejrzanych. "
         "Widoczna drobna zmiana łagodna o niskim ryzyku złośliwości. "
         "Kategoria referencyjna: Lung-RADS 2.",
     ),
     (
-        "assessment", 0,
+        "assessment",
+        0,
         "1.3.6.1.4.1.5962.1.2.4.20040826185059.5457",  # MR_small
         "Przypadek 1 (ocena)",
-        "3", 0,
+        "3",
+        0,
         "PLACEHOLDER — nie jest to prawdziwy opis kliniczny. "
         "Zmiana prawdopodobnie łagodna, zalecana kontrola krótkoterminowa. "
         "Kategoria referencyjna: Lung-RADS 3.",
     ),
     (
-        "test", 0,
+        "test",
+        0,
         "2.16.840.1.113669.632.20.1211.10000357775",  # BRAINIX
         "Przypadek 1 (test)",
-        "4A", 1,
+        "4A",
+        1,
         "PLACEHOLDER — nie jest to prawdziwy opis kliniczny. "
         "Zmiana podejrzana, umiarkowane ryzyko złośliwości, obecna dodatkowo "
         "zmiana istotna klinicznie spoza płuc. Kategoria referencyjna: Lung-RADS 4A, modyfikator S.",
@@ -108,11 +115,7 @@ def _migrate_existing_schema(conn):
     (every test uses an empty tmp_path file via conftest.py's `client`
     fixture, which never exercises this path at all).
     """
-    tables = {
-        row[0] for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()
-    }
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
 
     if "progress" in tables:
         cols = {row[1] for row in conn.execute("PRAGMA table_info(progress)").fetchall()}
@@ -131,9 +134,7 @@ def _migrate_existing_schema(conn):
             conn.commit()
 
     if "submissions" in tables:
-        has_unique = any(
-            row[2] for row in conn.execute("PRAGMA index_list(submissions)").fetchall()
-        )
+        has_unique = any(row[2] for row in conn.execute("PRAGMA index_list(submissions)").fetchall())
         if not has_unique:
             # SQLite can't ALTER TABLE to add a constraint -- rebuild the
             # table under the new schema instead (SQLite's own documented

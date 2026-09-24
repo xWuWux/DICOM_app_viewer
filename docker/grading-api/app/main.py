@@ -19,6 +19,7 @@ only ever used for display (the watermark text), which is fine since
 displaying the wrong ID isn't a security problem, only trusting it for
 grading actions was.
 """
+
 import os
 import secrets
 import sqlite3
@@ -102,9 +103,7 @@ def _resolve_token(conn, token: str) -> str:
     """Every other endpoint's only path to a student_id -- never trust one
     handed in directly by the caller. Returns the student_id a valid,
     unexpired token was minted for; raises 401 otherwise."""
-    row = conn.execute(
-        "SELECT student_id, expires_at FROM sessions WHERE token = ?", (token,)
-    ).fetchone()
+    row = conn.execute("SELECT student_id, expires_at FROM sessions WHERE token = ?", (token,)).fetchone()
     if row is None:
         raise HTTPException(401, "Invalid or unknown token")
     if row["expires_at"] < db.now():
@@ -113,9 +112,7 @@ def _resolve_token(conn, token: str) -> str:
 
 
 def _get_or_create_progress(conn, student_id: str):
-    row = conn.execute(
-        "SELECT * FROM progress WHERE student_id = ?", (student_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM progress WHERE student_id = ?", (student_id,)).fetchone()
     if row is None:
         # issue #41: two concurrent requests for the same brand-new
         # student_id (e.g. two rapid GET /case calls right after minting
@@ -127,22 +124,19 @@ def _get_or_create_progress(conn, student_id: str):
         # letting it propagate as an unhandled 500.
         try:
             conn.execute(
-                "INSERT INTO progress (student_id, stage, case_order_index, case_assigned_at) VALUES (?, 'learning', 0, ?)",
+                "INSERT INTO progress (student_id, stage, case_order_index, case_assigned_at) "
+                "VALUES (?, 'learning', 0, ?)",
                 (student_id, db.now()),
             )
             conn.commit()
         except sqlite3.IntegrityError:
             pass
-        row = conn.execute(
-            "SELECT * FROM progress WHERE student_id = ?", (student_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM progress WHERE student_id = ?", (student_id,)).fetchone()
     return row
 
 
 def _get_case(conn, stage: str, order_index: int):
-    return conn.execute(
-        "SELECT * FROM cases WHERE stage = ? AND order_index = ?", (stage, order_index)
-    ).fetchone()
+    return conn.execute("SELECT * FROM cases WHERE stage = ? AND order_index = ?", (stage, order_index)).fetchone()
 
 
 def _advance_progress(conn, student_id: str, stage: str, order_index: int):
@@ -168,7 +162,8 @@ def _advance_progress(conn, student_id: str, stage: str, order_index: int):
             )
         else:
             conn.execute(
-                "UPDATE progress SET stage = 'complete', case_order_index = 0, case_assigned_at = ? WHERE student_id = ?",
+                "UPDATE progress SET stage = 'complete', case_order_index = 0, case_assigned_at = ? "
+                "WHERE student_id = ?",
                 (db.now(), student_id),
             )
     conn.commit()
@@ -187,9 +182,7 @@ def get_case(token: str):
         if case is None:
             raise HTTPException(500, f"No case at stage={progress['stage']} index={progress['case_order_index']}")
 
-        total_in_stage = conn.execute(
-            "SELECT COUNT(*) FROM cases WHERE stage = ?", (progress["stage"],)
-        ).fetchone()[0]
+        total_in_stage = conn.execute("SELECT COUNT(*) FROM cases WHERE stage = ?", (progress["stage"],)).fetchone()[0]
 
         response = {
             "complete": False,
@@ -242,7 +235,10 @@ def submit(body: SubmitBody):
         student_id = _resolve_token(conn, body.token)
         progress = _get_or_create_progress(conn, student_id)
         if progress["stage"] != body.stage:
-            raise HTTPException(409, f"Submission stage '{body.stage}' doesn't match current progress stage '{progress['stage']}'")
+            raise HTTPException(
+                409,
+                f"Submission stage '{body.stage}' doesn't match current progress stage '{progress['stage']}'",
+            )
 
         case = conn.execute("SELECT * FROM cases WHERE id = ?", (body.case_id,)).fetchone()
         if case is None or case["stage"] != body.stage:
@@ -279,9 +275,15 @@ def submit(body: SubmitBody):
                     submitted_text, is_correct, time_spent_seconds, submitted_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    student_id, body.case_id, body.stage, body.category,
+                    student_id,
+                    body.case_id,
+                    body.stage,
+                    body.category,
                     None if body.modifier_s is None else int(body.modifier_s),
-                    body.text, is_correct, time_spent_seconds, db.now(),
+                    body.text,
+                    is_correct,
+                    time_spent_seconds,
+                    db.now(),
                 ),
             )
             conn.commit()
@@ -357,7 +359,11 @@ def results(token: str):
         total = len(rows)
         correct = sum(1 for r in rows if r["is_correct"])
         breakdown = [
-            {"ground_truth": r["ground_truth_category"], "submitted": r["submitted_category"], "correct": bool(r["is_correct"])}
+            {
+                "ground_truth": r["ground_truth_category"],
+                "submitted": r["submitted_category"],
+                "correct": bool(r["is_correct"]),
+            }
             for r in rows
         ]
         return {

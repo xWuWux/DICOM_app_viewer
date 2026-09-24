@@ -1,0 +1,13 @@
+# Dockerfile static analysis config for scripts/security-scan.sh /
+# .github/workflows/ci.yml's Security Scan stage.
+#
+# failure-threshold: error -- the only real findings across every Dockerfile
+# in this repo right now are DL3008 (unpinned apt package versions) and
+# DL3015 (missing --no-install-recommends on a single-.deb install line,
+# where it wouldn't reliably do anything useful anyway -- see
+# docker/kasm-workspace-weasis/Dockerfile and docker/guacamole-weasis/
+# Dockerfile's own Weasis-install steps), both "info"/"warning" severity.
+# Still reported below that threshold, just not gating -- pinning every
+# apt package version across a real Ubuntu/Debian mirror is its own,
+# separately-worth-doing effort, not something to force through here.
+failure-threshold: error

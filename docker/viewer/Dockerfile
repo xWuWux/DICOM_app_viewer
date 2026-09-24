@@ -1,4 +1,12 @@
-FROM nginx:1.27-alpine
+FROM nginx:1.29-alpine
+
+# Pulls current Alpine security patches at build time -- the base image tag
+# itself only gets rebuilt on nginx's own release cadence, so OS packages in
+# it can lag Alpine's own package repo by days/weeks (confirmed via trivy:
+# even a freshly-pulled nginx:1.29-alpine still had a few packages one patch
+# release behind). This closes that gap on every build instead of waiting
+# on the next upstream image publish.
+RUN apk update && apk upgrade --no-cache
 
 # .envsh files here are sourced by the base image's own entrypoint, before its
 # 20-envsubst-on-templates.sh substitutes *.template files under

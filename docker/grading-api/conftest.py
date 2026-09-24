@@ -5,6 +5,7 @@ makes `from app import db` / `from app.main import app` importable below
 without any manual sys.path hacking (this file lives next to app/, which
 is a real package -- see app/__init__.py).
 """
+
 import os
 
 # main.py reads GRADING_COORDINATOR_KEY at *module import time* (fails
@@ -48,6 +49,7 @@ def mint_token(client):
     bare student_id (see main.py's module docstring for why) -- this is
     the one path that creates one, so tests don't each hand-roll the same
     POST /session call."""
+
     def _mint(student_id: str, session_id: str = "sess_test") -> str:
         resp = client.post(
             "/session",
@@ -56,4 +58,5 @@ def mint_token(client):
         )
         assert resp.status_code == 200, resp.text
         return resp.json()["token"]
+
     return _mint

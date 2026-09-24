@@ -36,7 +36,7 @@ assessment's is "3", test's is "4A" with modifier_s=1) -- if that seed
 data ever changes, the specific values asserted here need updating too,
 not just the mechanics being tested.
 """
-import os
+
 import sqlite3
 
 import pytest
@@ -108,8 +108,13 @@ def test_two_students_get_independent_tokens_and_state(client, mint_token):
 
     client.post(
         "/submit",
-        json={"token": token_a, "case_id": _case_id(client, token_a), "stage": "learning",
-              "text": "x", "time_spent_seconds": 1},
+        json={
+            "token": token_a,
+            "case_id": _case_id(client, token_a),
+            "stage": "learning",
+            "text": "x",
+            "time_spent_seconds": 1,
+        },
     )
 
     assert client.get(f"/case?token={token_a}").json()["stage"] == "assessment"
@@ -149,7 +154,8 @@ def test_new_student_gets_case_assigned_at_stamped_at_creation(client, mint_toke
     conn = db_module.get_connection()
     try:
         row = conn.execute(
-            "SELECT case_assigned_at FROM progress WHERE student_id = ?", ("stu_new",),
+            "SELECT case_assigned_at FROM progress WHERE student_id = ?",
+            ("stu_new",),
         ).fetchone()
     finally:
         conn.close()
@@ -171,7 +177,8 @@ def test_existing_students_progress_row_is_returned_as_is_not_recreated(client, 
     conn = db_module.get_connection()
     try:
         row = conn.execute(
-            "SELECT case_assigned_at FROM progress WHERE student_id = ?", ("stu_existing",),
+            "SELECT case_assigned_at FROM progress WHERE student_id = ?",
+            ("stu_existing",),
         ).fetchone()
     finally:
         conn.close()
@@ -256,15 +263,18 @@ def test_assessment_submit_correct_category_reveals_ground_truth(client, mint_to
     case_id = _case_id(client, token)
     client.post(
         "/submit",
-        json={"token": token, "case_id": case_id, "stage": "learning",
-              "text": "x", "time_spent_seconds": 1},
+        json={"token": token, "case_id": case_id, "stage": "learning", "text": "x", "time_spent_seconds": 1},
     )
     case_id = _case_id(client, token)
     resp = client.post(
         "/submit",
         json={
-            "token": token, "case_id": case_id, "stage": "assessment",
-            "category": "3", "modifier_s": False, "time_spent_seconds": 10,
+            "token": token,
+            "case_id": case_id,
+            "stage": "assessment",
+            "category": "3",
+            "modifier_s": False,
+            "time_spent_seconds": 10,
         },
     )
     data = resp.json()
@@ -282,15 +292,18 @@ def test_assessment_submit_incorrect_category_still_reveals_ground_truth(client,
     case_id = _case_id(client, token)
     client.post(
         "/submit",
-        json={"token": token, "case_id": case_id, "stage": "learning",
-              "text": "x", "time_spent_seconds": 1},
+        json={"token": token, "case_id": case_id, "stage": "learning", "text": "x", "time_spent_seconds": 1},
     )
     case_id = _case_id(client, token)
     resp = client.post(
         "/submit",
         json={
-            "token": token, "case_id": case_id, "stage": "assessment",
-            "category": "1", "modifier_s": False, "time_spent_seconds": 10,
+            "token": token,
+            "case_id": case_id,
+            "stage": "assessment",
+            "category": "1",
+            "modifier_s": False,
+            "time_spent_seconds": 10,
         },
     )
     data = resp.json()
@@ -304,8 +317,7 @@ def test_test_stage_submit_reveals_nothing(client, mint_token):
     token = mint_token("stu_6")
     for stage in ("learning", "assessment"):
         case_id = _case_id(client, token)
-        body = {"token": token, "case_id": case_id, "stage": stage,
-                 "time_spent_seconds": 1}
+        body = {"token": token, "case_id": case_id, "stage": stage, "time_spent_seconds": 1}
         if stage == "learning":
             body["text"] = "x"
         else:
@@ -317,8 +329,12 @@ def test_test_stage_submit_reveals_nothing(client, mint_token):
     resp = client.post(
         "/submit",
         json={
-            "token": token, "case_id": case_id, "stage": "test",
-            "category": "4A", "modifier_s": True, "time_spent_seconds": 10,
+            "token": token,
+            "case_id": case_id,
+            "stage": "test",
+            "category": "4A",
+            "modifier_s": True,
+            "time_spent_seconds": 10,
         },
     )
     assert resp.status_code == 200
@@ -329,8 +345,7 @@ def test_completing_all_stages_marks_complete(client, mint_token):
     token = mint_token("stu_7")
     for stage in ("learning", "assessment", "test"):
         case_id = _case_id(client, token)
-        body = {"token": token, "case_id": case_id, "stage": stage,
-                 "time_spent_seconds": 1}
+        body = {"token": token, "case_id": case_id, "stage": stage, "time_spent_seconds": 1}
         if stage == "learning":
             body["text"] = "x"
         else:
@@ -352,8 +367,7 @@ def test_results_after_completion_reports_accuracy(client, mint_token):
     token = mint_token("stu_9")
     for stage, category in (("learning", None), ("assessment", "3"), ("test", "4A")):
         case_id = _case_id(client, token)
-        body = {"token": token, "case_id": case_id, "stage": stage,
-                 "time_spent_seconds": 1}
+        body = {"token": token, "case_id": case_id, "stage": stage, "time_spent_seconds": 1}
         if stage == "learning":
             body["text"] = "x"
         else:
@@ -366,9 +380,7 @@ def test_results_after_completion_reports_accuracy(client, mint_token):
     assert data["test_total"] == 1
     assert data["test_correct"] == 1
     assert data["accuracy"] == 1.0
-    assert data["breakdown"] == [
-        {"ground_truth": "4A", "submitted": "4A", "correct": True}
-    ]
+    assert data["breakdown"] == [{"ground_truth": "4A", "submitted": "4A", "correct": True}]
 
 
 def test_submit_stage_mismatch_returns_409(client, mint_token):
@@ -377,8 +389,12 @@ def test_submit_stage_mismatch_returns_409(client, mint_token):
     resp = client.post(
         "/submit",
         json={
-            "token": token, "case_id": case_id, "stage": "assessment",
-            "category": "3", "modifier_s": False, "time_spent_seconds": 1,
+            "token": token,
+            "case_id": case_id,
+            "stage": "assessment",
+            "category": "3",
+            "modifier_s": False,
+            "time_spent_seconds": 1,
         },
     )
     assert resp.status_code == 409
@@ -390,8 +406,11 @@ def test_submit_case_id_stage_mismatch_returns_400(client, mint_token):
     resp = client.post(
         "/submit",
         json={
-            "token": token, "case_id": 2, "stage": "learning",
-            "text": "x", "time_spent_seconds": 1,
+            "token": token,
+            "case_id": 2,
+            "stage": "learning",
+            "text": "x",
+            "time_spent_seconds": 1,
         },
     )
     assert resp.status_code == 400
@@ -406,8 +425,11 @@ def test_submit_rejects_an_oversized_text_field(client, mint_token):
     resp = client.post(
         "/submit",
         json={
-            "token": token, "case_id": case_id, "stage": "learning",
-            "text": "x" * 10_001, "time_spent_seconds": 1,
+            "token": token,
+            "case_id": case_id,
+            "stage": "learning",
+            "text": "x" * 10_001,
+            "time_spent_seconds": 1,
         },
     )
     assert resp.status_code == 422
@@ -421,16 +443,23 @@ def test_submit_rejects_an_oversized_category_field(client, mint_token):
     client.post(
         "/submit",
         json={
-            "token": token, "case_id": _case_id(client, token), "stage": "learning",
-            "text": "x", "time_spent_seconds": 1,
+            "token": token,
+            "case_id": _case_id(client, token),
+            "stage": "learning",
+            "text": "x",
+            "time_spent_seconds": 1,
         },
     )  # advance past learning so this student is at "assessment"
     case_id = _case_id(client, token)
     resp = client.post(
         "/submit",
         json={
-            "token": token, "case_id": case_id, "stage": "assessment",
-            "category": "x" * 11, "modifier_s": False, "time_spent_seconds": 1,
+            "token": token,
+            "case_id": case_id,
+            "stage": "assessment",
+            "category": "x" * 11,
+            "modifier_s": False,
+            "time_spent_seconds": 1,
         },
     )
     assert resp.status_code == 422
@@ -445,8 +474,11 @@ def test_submit_rejects_an_oversized_stage_field(client, mint_token):
     resp = client.post(
         "/submit",
         json={
-            "token": token, "case_id": case_id, "stage": "x" * 21,
-            "text": "x", "time_spent_seconds": 1,
+            "token": token,
+            "case_id": case_id,
+            "stage": "x" * 21,
+            "text": "x",
+            "time_spent_seconds": 1,
         },
     )
     assert resp.status_code == 422
@@ -482,8 +514,11 @@ def test_submit_computes_time_spent_seconds_server_side(client, mint_token, monk
     client.post(
         "/submit",
         json={
-            "token": token, "case_id": case_id, "stage": "learning",
-            "text": "x", "time_spent_seconds": 99999,  # a lie -- must be ignored
+            "token": token,
+            "case_id": case_id,
+            "stage": "learning",
+            "text": "x",
+            "time_spent_seconds": 99999,  # a lie -- must be ignored
         },
     )
 
@@ -521,7 +556,9 @@ def test_submit_clamps_time_spent_seconds_to_zero_if_the_clock_moves_backwards(c
     resp = client.post(
         "/submit",
         json={
-            "token": token, "case_id": case_id, "stage": "learning",
+            "token": token,
+            "case_id": case_id,
+            "stage": "learning",
             "text": "x",
         },
     )
@@ -564,8 +601,7 @@ def test_submit_resets_the_clock_for_the_next_case(client, mint_token):
     case_id = _case_id(client, token)  # now at assessment
     client.post(
         "/submit",
-        json={"token": token, "case_id": case_id, "stage": "assessment",
-              "category": "3", "modifier_s": False},
+        json={"token": token, "case_id": case_id, "stage": "assessment", "category": "3", "modifier_s": False},
     )
 
     conn = db_module.get_connection()
@@ -585,8 +621,7 @@ def test_reset_clears_progress_and_submissions(client, mint_token):
     case_id = _case_id(client, token)
     client.post(
         "/submit",
-        json={"token": token, "case_id": case_id, "stage": "learning",
-              "text": "x", "time_spent_seconds": 1},
+        json={"token": token, "case_id": case_id, "stage": "learning", "text": "x", "time_spent_seconds": 1},
     )
     assert client.get(f"/case?token={token}").json()["stage"] == "assessment"
 
@@ -618,8 +653,7 @@ def test_submit_duplicate_for_same_case_stage_returns_409(client, mint_token):
                (student_id, case_id, stage, submitted_category, submitted_modifier_s,
                 submitted_text, is_correct, time_spent_seconds, submitted_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            ("stu_16", case_id, "learning", None, None, "already submitted",
-             None, 1, db_module.now()),
+            ("stu_16", case_id, "learning", None, None, "already submitted", None, 1, db_module.now()),
         )
         conn.commit()
     finally:
@@ -627,8 +661,7 @@ def test_submit_duplicate_for_same_case_stage_returns_409(client, mint_token):
 
     resp = client.post(
         "/submit",
-        json={"token": token, "case_id": case_id, "stage": "learning",
-              "text": "x", "time_spent_seconds": 1},
+        json={"token": token, "case_id": case_id, "stage": "learning", "text": "x", "time_spent_seconds": 1},
     )
     assert resp.status_code == 409
 
@@ -642,8 +675,7 @@ def test_reset_is_blocked_during_test_stage(client, mint_token):
     token = mint_token("stu_14")
     for stage in ("learning", "assessment"):
         case_id = _case_id(client, token)
-        body = {"token": token, "case_id": case_id, "stage": stage,
-                 "time_spent_seconds": 1}
+        body = {"token": token, "case_id": case_id, "stage": stage, "time_spent_seconds": 1}
         if stage == "learning":
             body["text"] = "x"
         else:
@@ -672,8 +704,7 @@ def test_reset_still_allowed_after_completion(client, mint_token):
     token = mint_token("stu_15")
     for stage in ("learning", "assessment", "test"):
         case_id = _case_id(client, token)
-        body = {"token": token, "case_id": case_id, "stage": stage,
-                 "time_spent_seconds": 1}
+        body = {"token": token, "case_id": case_id, "stage": stage, "time_spent_seconds": 1}
         if stage == "learning":
             body["text"] = "x"
         else:
@@ -724,9 +755,7 @@ def test_migration_adds_case_assigned_at_to_existing_progress_table(tmp_path, mo
     conn.execute(
         "CREATE TABLE progress (student_id TEXT PRIMARY KEY, stage TEXT NOT NULL, case_order_index INTEGER NOT NULL)"
     )
-    conn.execute(
-        "INSERT INTO progress (student_id, stage, case_order_index) VALUES ('stu_old', 'learning', 0)"
-    )
+    conn.execute("INSERT INTO progress (student_id, stage, case_order_index) VALUES ('stu_old', 'learning', 0)")
     conn.commit()
     conn.close()
 
@@ -734,9 +763,7 @@ def test_migration_adds_case_assigned_at_to_existing_progress_table(tmp_path, mo
 
     conn = db_module.get_connection()
     try:
-        row = conn.execute(
-            "SELECT case_assigned_at FROM progress WHERE student_id = 'stu_old'"
-        ).fetchone()
+        row = conn.execute("SELECT case_assigned_at FROM progress WHERE student_id = 'stu_old'").fetchone()
         assert row["case_assigned_at"] is not None
     finally:
         conn.close()
@@ -778,9 +805,7 @@ def test_migration_adds_unique_constraint_to_existing_submissions_table(tmp_path
 
     conn = db_module.get_connection()
     try:
-        rows = conn.execute(
-            "SELECT submitted_text FROM submissions WHERE student_id = 'stu_dup'"
-        ).fetchall()
+        rows = conn.execute("SELECT submitted_text FROM submissions WHERE student_id = 'stu_dup'").fetchall()
         assert len(rows) == 1
         assert rows[0]["submitted_text"] == "second (latest)"
 
@@ -854,9 +879,7 @@ def test_get_or_create_progress_survives_a_concurrent_insert_race(client, mint_t
 
         # Exactly one row exists -- the fix didn't create a duplicate or
         # leave the table in an inconsistent state.
-        count = conn.execute(
-            "SELECT COUNT(*) FROM progress WHERE student_id = ?", ("stu_race",)
-        ).fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM progress WHERE student_id = ?", ("stu_race",)).fetchone()[0]
         assert count == 1
     finally:
         conn.close()
