@@ -513,6 +513,11 @@ python3 scripts/create-session.py --student-id STU_12345 --insecure  # drop --in
 runs somewhere other than the Docker host itself (e.g. the separate-Proxmox
 setup, `docs/PROXMOX_DEPLOYMENT.md`).
 
+`--insecure` should only ever appear against a self-signed local/dev Kasm
+instance — see `docs/PROXMOX_DEPLOYMENT.md`'s "Transport security" section
+for exactly how to replace it with a real certificate (and why the
+separate-host setup needs more than just that) before any real deployment.
+
 Prints a ready-to-share `link` — no login required, it's pre-authenticated
 via a session token Kasm generates. The script also tries a readiness
 check (`get_kasm_status`) but treats it as best-effort: a scoped API key
