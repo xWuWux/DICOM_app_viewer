@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>IP_CMC DICOM Viewer</title>
 <style>
-  /* Deterrence, not prevention: see CLAUDE.md / Dokumentacja for why this is attribution-layer only. */
+  /* Deterrence, not prevention: see CLAUDE.md for why this is attribution-layer only. */
   html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#000; }
 
   #app { position:absolute; inset:0; display:flex; }
@@ -144,8 +144,8 @@
 
   // Anti-tamper: reload if the watermark is hidden or removed from the DOM.
   // NOTE: this deters casual DOM tampering; it does NOT stop a camera photo of the
-  // screen or a determined attacker disabling JS. See Dokumentacja for the full
-  // threat-model discussion — attribution via the watermark is the real control.
+  // screen or a determined attacker disabling JS. See README.md's "Security
+  // note" section — attribution via the watermark is the real control.
   const observer = new MutationObserver(() => {
     if (!document.body.contains(rotator) ||
         rotator.style.display === "none" ||

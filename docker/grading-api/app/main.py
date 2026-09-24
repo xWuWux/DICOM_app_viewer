@@ -259,8 +259,8 @@ def submit(body: SubmitBody):
         time_spent_seconds = max(0, db.now() - progress["case_assigned_at"])
 
         # Correctness is category-only: the modifier is recorded for later
-        # analysis but doesn't affect scoring -- matches Dokumentacja/'s
-        # framing of categorical comparison as the primary metric.
+        # analysis but doesn't affect scoring -- matches the original design
+        # discussion's framing of categorical comparison as the primary metric.
         is_correct = None
         if body.stage in ("assessment", "test"):
             is_correct = 1 if body.category == case["ground_truth_category"] else 0
