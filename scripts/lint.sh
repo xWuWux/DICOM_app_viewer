@@ -4,7 +4,7 @@
 # (.github/workflows/ci.yml). Complements scripts/smoke-test.sh, which
 # actually brings the stack up.
 set -uo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
 status=0
 

@@ -8,7 +8,7 @@
 # create-session.py against a live instance, DLP settings. Those stay manual
 # -- see README.md's own verification notes for how each was actually checked.
 set -uo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
 status=0
 CREATED_ENV=0
