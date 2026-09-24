@@ -127,7 +127,8 @@ def _get_or_create_progress(conn, student_id: str):
         # letting it propagate as an unhandled 500.
         try:
             conn.execute(
-                "INSERT INTO progress (student_id, stage, case_order_index, case_assigned_at) VALUES (?, 'learning', 0, ?)",
+                "INSERT INTO progress (student_id, stage, case_order_index, case_assigned_at) "
+                "VALUES (?, 'learning', 0, ?)",
                 (student_id, db.now()),
             )
             conn.commit()
@@ -168,7 +169,8 @@ def _advance_progress(conn, student_id: str, stage: str, order_index: int):
             )
         else:
             conn.execute(
-                "UPDATE progress SET stage = 'complete', case_order_index = 0, case_assigned_at = ? WHERE student_id = ?",
+                "UPDATE progress SET stage = 'complete', case_order_index = 0, case_assigned_at = ? "
+                "WHERE student_id = ?",
                 (db.now(), student_id),
             )
     conn.commit()
@@ -242,7 +244,10 @@ def submit(body: SubmitBody):
         student_id = _resolve_token(conn, body.token)
         progress = _get_or_create_progress(conn, student_id)
         if progress["stage"] != body.stage:
-            raise HTTPException(409, f"Submission stage '{body.stage}' doesn't match current progress stage '{progress['stage']}'")
+            raise HTTPException(
+                409,
+                f"Submission stage '{body.stage}' doesn't match current progress stage '{progress['stage']}'",
+            )
 
         case = conn.execute("SELECT * FROM cases WHERE id = ?", (body.case_id,)).fetchone()
         if case is None or case["stage"] != body.stage:
@@ -357,7 +362,11 @@ def results(token: str):
         total = len(rows)
         correct = sum(1 for r in rows if r["is_correct"])
         breakdown = [
-            {"ground_truth": r["ground_truth_category"], "submitted": r["submitted_category"], "correct": bool(r["is_correct"])}
+            {
+                "ground_truth": r["ground_truth_category"],
+                "submitted": r["submitted_category"],
+                "correct": bool(r["is_correct"]),
+            }
             for r in rows
         ]
         return {

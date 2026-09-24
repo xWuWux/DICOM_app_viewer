@@ -36,7 +36,6 @@ assessment's is "3", test's is "4A" with modifier_s=1) -- if that seed
 data ever changes, the specific values asserted here need updating too,
 not just the mechanics being tested.
 """
-import os
 import sqlite3
 
 import pytest

@@ -1,8 +1,10 @@
 # Test-only dependencies -- deliberately NOT in requirements.txt (the one
 # the Dockerfile actually installs into the shipped image). Keeps pytest/
-# httpx out of the production container entirely; every extra package is
-# extra attack surface, same reasoning already applied to the Kasm
-# workspace images (see their own Dockerfiles).
+# httpx/ruff/bandit out of the production container entirely; every extra
+# package is extra attack surface, same reasoning already applied to the
+# Kasm workspace images (see their own Dockerfiles).
 -r requirements.txt
 pytest==8.3.3
 httpx==0.27.2
+ruff==0.16.8
+bandit==1.9.4
