@@ -560,6 +560,157 @@ starting, text clipboard blocked) all held. The image-clipboard gap above
 is the one thing that real testing caught that assuming coverage from the
 Chrome-image checks wouldn't have.
 
+## Apache Guacamole flow (PoC, alternative to Kasm)
+
+**Why this exists**: Kasm Workspaces Community Edition is capped at 5
+concurrent sessions and restricted to non-commercial/non-profit/personal
+use (EULA §2.2, see `CLAUDE.md`) — a real blocker for any deployment
+beyond a small pilot, needing a paid tier + legal/procurement review
+before scaling further. Apache Guacamole is Apache-licensed with no such
+cap. This is a proof of concept evaluated *alongside* the Kasm flow, not
+a replacement yet — same backend (`orthanc`/`grading-api`/`viewer`,
+untouched), same Lung-RADS mechanics, just a different way of streaming
+Weasis to a browser.
+
+**Deliberately basic-functionality only, not a hardened flow**: no
+watermark overlay, no Weasis export/import lockdown, no window
+auto-tiling, no per-container VNC password, and `--security-opt
+seccomp=unconfined` on every session container (see below). **Do not
+point this at real patient data or run it as a real deployment** — it
+exists to prove the streaming mechanism works, matching exactly what was
+asked of this PoC; hardening it to Kasm-flow parity is separate, future
+work.
+
+### Architecture
+
+```
+scripts/provision-guacamole-session.py
+        │
+        ├─► grading-api POST /session (mints a token, same as create-session.py)
+        ├─► docker run (a fresh, per-student Weasis+TigerVNC container)
+        └─► Guacamole REST API (creates a real user + VNC connection)
+                        │
+   Guacamole webapp ◄───┘ (Postgres-backed JDBC auth, its own DB --
+        │                  separate from grading-api's own SQLite)
+        ▼
+      guacd  ──── VNC (raw RFB) ────►  docker/guacamole-weasis/ container
+                                       (TigerVNC + openbox + Weasis +
+                                        a plain browser tab for the
+                                        grading panel)
+```
+
+- **`docker-compose.guacamole.yml`** — an overlay file (combine with the
+  base compose file, not standalone): `guacd`, the Guacamole webapp, and
+  its own Postgres (JDBC auth backend — a real, separate requirement from
+  grading-api's own database, not a redundant duplicate). Reuses the base
+  file's existing `ipcmc-internal` network — no dependency on
+  `kasm_default_network` or Kasm being installed at all.
+- **`docker/guacamole-weasis/`** — a new workspace image, plain
+  `ubuntu:24.04` (not any Kasm-maintained base). **TigerVNC, not
+  KasmVNC** — confirmed via direct Guacamole-protocol-level testing (not
+  assumed from docs) that `guacd`'s VNC client cannot complete an RFB
+  handshake against KasmVNC at all: it serves VNC exclusively over its
+  own websocket-wrapped protocol, never a raw RFB TCP port, which is what
+  `guacd` needs.
+- **`scripts/provision-guacamole-session.py`** / **`teardown-guacamole-session.py`**
+  — Guacamole's own equivalent of `create-session.py`. Guacamole has no
+  built-in per-session container provisioning (unlike Kasm's agent) and
+  no supported anonymous quick-link mechanism (checked before building
+  this, not assumed — Guacamole's own "quickconnect" extension explicitly
+  requires prior authentication, and the only anonymous-login extension
+  that exists is an unmaintained third-party fork with no version-
+  compatibility guarantee). A real per-student Guacamole user + Postgres-
+  backed JDBC auth, combined with Guacamole's documented URL-parameter
+  auto-login (`#/?username=...&password=...`), is the officially-supported
+  way to get a single, no-further-login-prompt link per student.
+- **`scripts/guacamole-iac.sh`** — brings the whole stack up from scratch
+  on a fresh host. Plain bash on purpose (not Ansible yet) — the agreed
+  starting point before considering a migration once this PoC's shape has
+  settled.
+
+### Setup
+
+```bash
+./scripts/guacamole-iac.sh
+```
+
+Then mint a per-student link:
+```bash
+GRADING_COORDINATOR_KEY=$(grep GRADING_COORDINATOR_KEY .env | cut -d= -f2) \
+  python3 scripts/provision-guacamole-session.py --student-id STU_12345
+```
+and tear it down once finished:
+```bash
+python3 scripts/teardown-guacamole-session.py --student-id STU_12345 --session-id <from the link>
+```
+
+### Confirmed working, via real tests, not assumed
+
+- Full pipeline verified with a direct Guacamole-protocol test (bypassing
+  the webapp entirely): `guacd` receives real display data
+  (`img`/`rect`/`blob` instructions) from the TigerVNC container — this is
+  what confirmed KasmVNC's incompatibility and TigerVNC's compatibility
+  in the first place.
+- Full browser-driven E2E tests (`docker/guacamole/tests/test_guacamole_e2e.py`,
+  `./scripts/test-guacamole-e2e.sh`): a real headless Chromium, driven by
+  Playwright, confirms the auto-login link logs straight in with no login
+  form shown, and that the remote-display canvas renders real (non-blank)
+  pixel data. Visually confirmed during development (a saved screenshot,
+  not kept in the repo) that this is a correctly-rendered Weasis session
+  showing the assigned study, not just "some canvas content."
+- `docker/guacamole-weasis/launch-session.bats` — same BATS stubbing
+  technique as the Kasm flow's own launcher tests: the case-fetch/
+  `dicom:rs` URI construction (copied verbatim from
+  `docker/kasm-workspace-weasis/custom_startup.sh` — identical regardless
+  of which remote-display tech streams the pixels) and the grading-panel
+  URL construction both verified.
+
+### Real bugs found and fixed along the way
+
+- Weasis's own `.deb` postinst script calls `xdg-desktop-menu`, which
+  fails outright ("No writable system menu directory found") on a
+  minimal image without a full desktop environment's usual menu
+  directories already present — the Kasm base image never hit this
+  because its full XFCE stack provisions them implicitly.
+- `java.awt.Desktop.getDesktop()` throws
+  `UnsupportedOperationException` on a bare `openbox` window manager
+  without `XDG_CURRENT_DESKTOP` set — Weasis calls this at startup and
+  crashed outright without it.
+- `epiphany` (the grading-panel browser) needs unprivileged user
+  namespaces for its own internal `bubblewrap` sandboxing, which this
+  container's default seccomp profile blocks — see the security
+  trade-offs below.
+
+### Known security trade-offs (tracked, not accidental)
+
+- **`--security-opt seccomp=unconfined`** on every session container —
+  needed for `epiphany`'s own internal sandboxing (`bubblewrap`/user
+  namespaces). A real hardening pass should replace this with a narrower
+  custom seccomp profile permitting just the specific syscalls needed,
+  not a blanket disable.
+- **No VNC password** (`-SecurityTypes None`) — safe only because these
+  containers are never published to the host and are reachable
+  exclusively by `guacd` over the internal `ipcmc-internal` network.
+- **Guacamole's default admin credentials** (`guacadmin`/`guacadmin`) —
+  change these before anything beyond a local PoC; `scripts/guacamole-iac.sh`
+  doesn't do this for you.
+- **No automatic idle-session teardown** — unlike Kasm's own agent,
+  nothing here detects an abandoned session and cleans it up
+  automatically; `teardown-guacamole-session.py` must be run explicitly
+  (or scheduled) or containers/Guacamole users accumulate over time.
+
+### Guacamole itself: bugs/conflicts checked, nothing new to report
+
+Researched before building (not assumed): one known CVE
+([CVE-2024-35164](https://github.com/apache/guacamole-server/security/advisories/GHSA-8wh3-jcvc-qrmq),
+an RCE in the terminal emulator's handling of SSH/telnet console codes,
+fixed in 1.6.0) — irrelevant to VNC-only usage here, but confirms pinning
+`guacd`/`guacamole` at `1.6.0` (already done) rather than an older
+version. The KasmVNC incompatibility above is a genuine architectural
+difference between two independent projects' own protocol choices, not a
+Guacamole bug — nothing new was found worth filing against Guacamole's
+own tracker for this work.
+
 ## Security note (read this before assuming more than it does)
 
 Per the design discussion in `Dokumentacja/`: **nothing here, or in the real
@@ -686,14 +837,25 @@ docker/grading-api/                   Lung-RADS 3-stage grading mechanics (FastA
 docker/grading-api/tests/             unit tests (scripts/test-grading-api.sh)
 docker/kasm-workspace/                Chrome-based Kasm workspace image -- the one actually deployed
 docker/kasm-workspace-weasis/         Weasis-based workspace image -- milestone in progress, issues #3-#8
+docker-compose.guacamole.yml           Guacamole PoC overlay (guacd + webapp + Postgres) -- combine with
+                                       docker-compose.yml, doesn't stand alone
+docker/guacamole/postgres-init/       Guacamole's own official Apache-licensed JDBC schema
+docker/guacamole/tests/               full browser-driven E2E tests (scripts/test-guacamole-e2e.sh)
+docker/guacamole-weasis/              basic-functionality-only Weasis+TigerVNC image for the Guacamole flow
+                                       -- not security-hardened, see README's own Guacamole section
 sample-data/                          public-domain sample DICOM files
 scripts/fetch-public-samples.sh       pulls larger public teaching studies (BRAINIX) into sample-data/
 scripts/load-sample-studies.sh        uploads sample-data/ (recursively) into Orthanc
 scripts/create-session.py             mints a per-student Kasm session link (tested against a live instance)
-scripts/mint-local-link.sh             mints a grading-api token for the no-Kasm Quick Start (localhost:8080/... needs a token now, not just student_id)
+scripts/mint-local-link.sh            mints a grading-api token for the no-Kasm Quick Start (localhost:8080/... needs a token now, not just student_id)
+scripts/guacamole-iac.sh              brings up the whole Guacamole PoC stack from scratch
+scripts/provision-guacamole-session.py mints a per-student Guacamole session link (Kasm-free flow)
+scripts/teardown-guacamole-session.py tears down a Guacamole session (container + Guacamole user/connection)
 scripts/lint.sh                       bash syntax + compose config validation (CI)
 scripts/test-grading-api.sh           grading-api unit tests via pytest (CI)
-scripts/test-shell-scripts.sh         Kasm launcher script tests via BATS (CI)
+scripts/test-shell-scripts.sh         Kasm + Guacamole launcher script tests via BATS (CI)
+scripts/test-guacamole-e2e.sh         full browser-driven E2E test for the Guacamole flow (not in CI --
+                                       needs the full stack + built images already up, see its own comment)
 scripts/smoke-test.sh                 full-stack integration check (CI)
-.github/workflows/ci.yml              the four CI jobs above, run on every push/PR
+.github/workflows/ci.yml              the CI jobs above, run on every push/PR
 ```
