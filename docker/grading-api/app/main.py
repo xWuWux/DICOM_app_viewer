@@ -26,7 +26,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import db
 
@@ -210,9 +210,20 @@ def get_case(token: str):
 class SubmitBody(BaseModel):
     token: str
     case_id: int
-    stage: str
-    text: Optional[str] = None
-    category: Optional[str] = None
+    # Longest real value is "assessment" (10 chars) -- generous margin over
+    # that, just enough to reject an oversized/garbage payload before it
+    # reaches the DB, not to encode any real business rule (db.STAGES is
+    # still the actual source of truth for which stages exist).
+    stage: str = Field(max_length=20)
+    # Free-text learning-stage impression -- genuinely open-ended prose, so
+    # bounded generously rather than tightly, just to reject unbounded
+    # payloads (never trusted for grading either way -- learning is
+    # self-assessment only, see this module's docstring).
+    text: Optional[str] = Field(default=None, max_length=10_000)
+    # Longest real value is "4A"/"4X" (2 chars) -- same margin-not-business-
+    # rule reasoning as stage above; db.CATEGORY_LABELS is still what
+    # actually validates a category as correct/incorrect.
+    category: Optional[str] = Field(default=None, max_length=10)
     modifier_s: Optional[bool] = None
     # No time_spent_seconds field (issue #29): this data feeds a scientific
     # publication, so time-on-task is computed server-side in submit()
