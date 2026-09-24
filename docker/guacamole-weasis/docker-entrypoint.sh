@@ -6,27 +6,37 @@
 # the container stops, same ephemeral-session spirit as the Kasm flow
 # (see CLAUDE.md) even without Kasm's own agent managing it.
 #
-# -SecurityTypes None: no VNC password. Deliberate simplification for this
-# basic-functionality PoC (explicit scope: no anti-cheat/hardening yet) --
-# safe *only* because this container is never published to the host and
-# is reachable exclusively by guacd over the internal ipcmc-internal
-# network (see docker-compose.guacamole.yml). Do not carry this forward
-# into any hardened/production version of this flow.
+# issue #53: real VNC auth, not -SecurityTypes None. Safe *only* because
+# this container is never published to the host (reachable exclusively by
+# guacd over the internal ipcmc-internal network -- see
+# docker-compose.guacamole.yml) was the original justification for zero
+# auth here; this closes the gap for real regardless, in case that
+# assumption is ever violated (e.g. a stray `ports:`/`-p` during
+# debugging). VNC_PASSWORD is minted per-session by
+# scripts/provision-guacamole-session.py and handed to Guacamole's own
+# connection config as its `password` parameter -- guacd authenticates
+# with it like any other VNC client would.
 set -euo pipefail
 
 VNC_GEOMETRY="${VNC_GEOMETRY:-1280x800}"
 VNC_DISPLAY="${VNC_DISPLAY:-:1}"
 
 mkdir -p "$HOME/.vnc"
-# --I-KNOW-THIS-IS-INSECURE: TigerVNC itself refuses -SecurityTypes None
-# + -localhost no without this exact flag, as a safety guard against
-# accidentally exposing an unauthenticated VNC server -- which is exactly
-# what this is, deliberately, for this PoC (see this file's own header
-# comment on why that's an acceptable, scoped trade-off here and not
-# something to carry forward).
+# The classic VNC/RFB password scheme (VncAuth) only ever uses the first 8
+# bytes of the password -- inherent to the protocol, not something to "fix"
+# here. `vncpasswd -f` (from the tightvncpasswd package -- see Dockerfile's
+# own comment on why upstream tigervnc's own vncpasswd isn't available in
+# this Ubuntu packaging) reads a password from stdin and writes the
+# correctly-obfuscated password file, the same universal format every
+# RFB-derived server/client reads.
+printf '%s\n' "${VNC_PASSWORD:?VNC_PASSWORD must be set -- see scripts/provision-guacamole-session.py}" \
+  | vncpasswd -f > "$HOME/.vnc/passwd"
+chmod 600 "$HOME/.vnc/passwd"
+
+# No -SecurityTypes flag needed: TigerVNC defaults to VncAuth once a
+# password file exists (confirmed against /etc/tigervnc/vncserver-config-
+# defaults' own documented default), which is exactly what's wanted here.
 exec vncserver "$VNC_DISPLAY" \
     -geometry "$VNC_GEOMETRY" \
-    -SecurityTypes None \
     -localhost no \
-    --I-KNOW-THIS-IS-INSECURE \
     -fg

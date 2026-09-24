@@ -118,12 +118,29 @@ def main():
     # 2. Fresh per-student container. Its name doubles as the VNC
     # "hostname" Guacamole connects to -- Docker's embedded DNS resolves
     # container names on a shared network, no need to inspect an IP.
+    #
+    # issue #53: real VNC auth, not -SecurityTypes None. token_hex(4) (8
+    # hex chars) deliberately, not token_urlsafe like guac_password below
+    # -- classic VNC/RFB auth only ever uses the first 8 bytes of the
+    # password, a protocol limitation, not a mistake to "fix" by
+    # generating something longer. Handed to the container via
+    # VNC_PASSWORD (docker-entrypoint.sh writes it into TigerVNC's own
+    # password file) and to Guacamole's connection config below, as the
+    # same secret both ends of that VNC handshake need to agree on.
+    vnc_password = secrets.token_hex(4)
     container_name = f"guac-weasis-{student_id}-{session_id}"
     subprocess.run(["docker", "rm", "-f", container_name], capture_output=True, check=False)
     run_result = subprocess.run(
         [
             "docker", "run", "-d", "--name", container_name,
             "--network", docker_network,
+            # No -p/--publish -- this container's VNC port must only ever
+            # be reachable from guacd over docker_network, never a
+            # published host port (issue #53; see
+            # docker/guacamole-weasis/docker-entrypoint.sh's own comment).
+            # See scripts/tests/test_provision_guacamole_session.py for
+            # the regression test guarding this.
+            #
             # See docker/guacamole-weasis/launch-session.sh's own comment:
             # the grading panel's browser needs unprivileged user
             # namespaces for its own internal sandboxing (bubblewrap) --
@@ -135,6 +152,7 @@ def main():
             "-e", f"STUDENT_ID={student_id}",
             "-e", f"SESSION_ID={session_id}",
             "-e", f"GRADING_TOKEN={grading_token}",
+            "-e", f"VNC_PASSWORD={vnc_password}",
             image,
         ],
         capture_output=True, text=True,
@@ -176,7 +194,12 @@ def main():
             "parentIdentifier": "ROOT",
             "name": container_name,
             "protocol": "vnc",
-            "parameters": {"hostname": container_name, "port": "5901"},
+            # "password" here is the VNC/RFB auth secret (issue #53), a
+            # completely separate credential from guac_password above
+            # (that one's Guacamole's own web-login password for this
+            # student's account) -- same vnc_password the container's own
+            # VNC_PASSWORD env var was given, above.
+            "parameters": {"hostname": container_name, "port": "5901", "password": vnc_password},
             "attributes": {},
         },
         headers={"Content-Type": "application/json"},

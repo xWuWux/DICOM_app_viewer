@@ -7,10 +7,8 @@
 #
 # Deliberately basic-functionality only, per explicit scope for this PoC:
 # NO watermark overlay, NO Weasis export/import lockdown, NO window
-# auto-tiling, NO VNC password (see docker-entrypoint.sh's own comment on
-# why that's safe only in this specific network topology). This is NOT a
-# security-hardened image the way docker/kasm-workspace-weasis/ is --
-# don't point it at real patient data.
+# auto-tiling. This is NOT a security-hardened image the way
+# docker/kasm-workspace-weasis/ is -- don't point it at real patient data.
 #
 # Base: plain ubuntu:24.04, not any Kasm-maintained image -- the whole
 # point is a flow that doesn't depend on Kasm at all. TigerVNC standard
@@ -22,10 +20,20 @@ FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 
+# issue #53: tightvncpasswd generates the password file docker-entrypoint.sh
+# uses for real VNC auth. Ubuntu's own tigervnc-standalone-server/
+# tigervnc-common packages don't ship a vncpasswd utility at all (confirmed
+# empirically -- dpkg -L on both shows no such binary), unlike upstream
+# TigerVNC. tightvncpasswd's own vncpasswd writes the exact same universal
+# VNC password-file format every RFB-derived server/client reads (TigerVNC,
+# TightVNC, RealVNC, x11vnc all descend from the same original codebase) --
+# confirmed by installing it and inspecting the output file directly, not
+# assumed. Pulls in zero extra dependencies beyond what's already installed.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       tigervnc-standalone-server \
       tigervnc-common \
+      tightvncpasswd \
       openbox \
       dbus-x11 \
       epiphany-browser \

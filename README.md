@@ -582,9 +582,9 @@ Weasis to a browser.
 
 **Deliberately basic-functionality only, not a hardened flow**: no
 watermark overlay, no Weasis export/import lockdown, no window
-auto-tiling, no per-container VNC password, and `--security-opt
-seccomp=unconfined` on every session container (see below). **Do not
-point this at real patient data or run it as a real deployment** — it
+auto-tiling, and `--security-opt seccomp=unconfined` on every session
+container (see below). **Do not point this at real patient data or run
+it as a real deployment** — it
 exists to prove the streaming mechanism works, matching exactly what was
 asked of this PoC; hardening it to Kasm-flow parity is separate, future
 work.
@@ -691,14 +691,25 @@ python3 scripts/teardown-guacamole-session.py --student-id STU_12345 --session-i
 
 ### Known security trade-offs (tracked, not accidental)
 
+**Fixed since first written**: per-session VNC authentication (issue
+#53) — every container used to run with `-SecurityTypes None` (zero VNC
+auth), safe only because it was never published to the host. Now
+`scripts/provision-guacamole-session.py` mints a real per-session
+password (`secrets.token_hex(4)` — classic VNC/RFB auth only ever uses
+the first 8 bytes, a protocol limitation), hands it to the container via
+`VNC_PASSWORD` (`docker/guacamole-weasis/docker-entrypoint.sh` writes it
+into TigerVNC's own password file via `tightvncpasswd`'s `vncpasswd`,
+since Ubuntu's own `tigervnc-standalone-server` package doesn't ship
+one), and gives Guacamole's connection config the same password so
+`guacd` actually authenticates. Regression-tested
+(`scripts/tests/test_provision_guacamole_session.py`) against both this
+and the container never gaining a published port.
+
 - **`--security-opt seccomp=unconfined`** on every session container —
   needed for `epiphany`'s own internal sandboxing (`bubblewrap`/user
   namespaces). A real hardening pass should replace this with a narrower
   custom seccomp profile permitting just the specific syscalls needed,
   not a blanket disable.
-- **No VNC password** (`-SecurityTypes None`) — safe only because these
-  containers are never published to the host and are reachable
-  exclusively by `guacd` over the internal `ipcmc-internal` network.
 - **Guacamole's default admin credentials** (`guacadmin`/`guacadmin`) —
   change these before anything beyond a local PoC; `scripts/guacamole-iac.sh`
   doesn't do this for you.
@@ -752,7 +763,7 @@ stage still run in parallel with each other:
 1. **Lint & Format** — `scripts/lint.sh`
 2. **Build Test** — `scripts/build-test.sh`
 3. **Security Scan** — `scripts/security-scan.sh`
-4. **Unit & Shell Tests** — `scripts/test-grading-api.sh` + `scripts/test-shell-scripts.sh`
+4. **Unit & Shell Tests** — `scripts/test-grading-api.sh` + `scripts/test-shell-scripts.sh` + `scripts/test-provision-guacamole-session.sh`
 5. **Integration Tests** — `scripts/smoke-test.sh` + `scripts/test-guacamole-integration.sh`
 
 Every script above is runnable identically on a local machine, not just
@@ -834,6 +845,16 @@ in CI.
     Fixed by capturing `$?` into a variable immediately after the command
     it belongs to. Verified the same way: confirmed the test fails
     against the original code, passes against the fix.
+- `scripts/test-provision-guacamole-session.sh` (issue #53) — unit tests
+  for `scripts/provision-guacamole-session.py` (3 tests), `subprocess.run`
+  and `urllib.request.urlopen` both mocked, no Docker/real Guacamole
+  needed. Guards the two invariants that make per-session VNC auth
+  actually work: the container's `docker run` never gains a `-p`/
+  `--publish` (the port must stay reachable only via `docker_network`),
+  and the same `VNC_PASSWORD` the container gets is exactly what
+  Guacamole's connection config sends back during authentication.
+  Verified each independently by injecting the corresponding regression
+  and confirming exactly that test failed, then reverting.
 - `scripts/smoke-test.sh` — brings the main stack up for real (building
   images, stubbing `kasm_default_network` if it doesn't exist) and checks
   the HTTP status codes that were, until this was added, verified by hand
@@ -905,6 +926,9 @@ scripts/build-test.sh                 stage 2, Build Test: builds every image in
 scripts/security-scan.sh              stage 3, Security Scan: bandit + shellcheck + hadolint + trivy (CI)
 scripts/test-grading-api.sh           stage 4, grading-api unit tests via pytest (CI)
 scripts/test-shell-scripts.sh         stage 4, Kasm + Guacamole launcher script tests via BATS (CI)
+scripts/test-provision-guacamole-session.sh
+                                       stage 4, provision-guacamole-session.py unit tests via pytest (CI)
+scripts/tests/                        test_provision_guacamole_session.py + its own requirements-dev.txt
 scripts/smoke-test.sh                 stage 5, full-stack integration check (CI)
 scripts/test-guacamole-e2e.sh         full browser-driven E2E test for the Guacamole flow -- assumes the
                                        stack is already up; scripts/test-guacamole-integration.sh below
