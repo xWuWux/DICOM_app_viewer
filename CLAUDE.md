@@ -38,6 +38,7 @@ Load sample DICOM data: ./scripts/fetch-public-samples.sh && ./scripts/load-samp
 3. Security Scan (bandit, shellcheck, hadolint, trivy -- see .hadolint.yaml for the threshold/rationale): ./scripts/security-scan.sh
 4. Unit test grading-api's state machine (no infra needed, ~0.1s): ./scripts/test-grading-api.sh
 4. BATS test the Kasm workspace launcher scripts (no infra needed, requires bats): ./scripts/test-shell-scripts.sh
+4. Unit test provision-guacamole-session.py (no infra needed): ./scripts/test-provision-guacamole-session.sh
 5. Smoke test (brings the stack up for real, then tears it down -- don't run against data you care about): ./scripts/smoke-test.sh
 5. Guacamole PoC end-to-end test (Playwright, docker-in-docker, self-contained/self-tearing-down): ./scripts/test-guacamole-integration.sh
 Mint a per-student Kasm link: python3 scripts/create-session.py --student-id ...

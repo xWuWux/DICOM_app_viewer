@@ -1,0 +1,5 @@
+# Test-only dependency for test_provision_guacamole_session.py -- the
+# script under test (../provision-guacamole-session.py) itself has no
+# third-party dependencies at all (stdlib only), so this is genuinely all
+# that's needed.
+pytest==8.3.3
