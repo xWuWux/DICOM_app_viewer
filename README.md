@@ -233,6 +233,59 @@ for a `student_id` also revokes whatever token existed before it — a
 coordinator re-minting a link they suspect leaked gets real revocation,
 not just a second valid link.
 
+### Logging and error handling (issues #72, #74)
+
+Two foundational pieces added deliberately together, before working
+through the rest of the open issue backlog: `grading-api` previously had
+no logging at all (not even a stray `print()`) and every error was an
+ad hoc `HTTPException(code, "free-text string")`.
+
+- **Structured logging** (`docker/grading-api/app/logging_config.py`) —
+  one JSON object per line, to stdout (no log-shipping agent needed).
+  `RequestIdMiddleware` (`main.py`) generates or honors an incoming
+  `X-Request-Id`, echoes it in the response, and stamps it onto every log
+  line emitted while handling that request (via a `contextvars`-based
+  filter, not just baked into the formatted string — inspectable directly
+  on the `LogRecord`, which is what makes it testable with pytest's
+  `caplog`) — the actual "log correlation propagated across boundaries"
+  mechanism. Logs: one access-log line per request, every auth failure
+  and error response (via the taxonomy below), and stage
+  transitions/submissions recorded. Deliberately never logs: the raw
+  session token, `GRADING_COORDINATOR_KEY`, or student free-text answers
+  — regression-tested directly (`tests/test_logging.py`), not just
+  documented as an intention. `httpx`'s own logger is explicitly quieted
+  (found empirically while writing that test: it logs full request URLs,
+  including query-string tokens, at INFO level — test-harness-only today,
+  but silenced at the source rather than relied on to stay irrelevant),
+  and uvicorn's own default access log is disabled in the Dockerfile
+  (`--no-access-log`) — redundant with the new structured one, and would
+  otherwise log the token-bearing query string on every request until
+  issue #63 moves it out of the URL.
+- **Stable error taxonomy** (`docker/grading-api/app/errors.py`) — every
+  error response, from every endpoint, is now
+  `{"error_code": "...", "message": "..."}` instead of a bare string.
+  Two catch-all handlers guarantee this holds even for errors this file
+  never anticipated: `RequestValidationError` (pydantic validation
+  failures — the client gets a generic message, never the raw rejected
+  input, which for a `max_length` violation could otherwise mean echoing
+  a large payload straight back) and a bare `Exception` handler (any
+  truly unexpected bug still gets a generic `SERVER_ERROR` response, with
+  the real exception logged server-side via `logger.exception`, full
+  traceback included). This is also where issue #62 (`/healthz` leaking
+  raw sqlite exception text) actually gets fixed, generalized to every
+  endpoint rather than patched once at `/healthz` specifically — found
+  while fixing it that `/healthz`'s own DB connection also leaked on
+  every failure path (only ever closed on success), fixed alongside.
+
+Both are covered by dedicated tests (`tests/test_logging.py`,
+`tests/test_error_taxonomy.py`) that run in CI on every PR, same as
+everything else in `docker/grading-api/tests/`. Several were verified
+the way this project verifies tests generally — not just "written and
+green," but confirmed to actually fail against the bug they guard
+against: the `/healthz` leak test fails if `str(e)` goes back into the
+message, and the no-secrets-in-logs test fails if a token/coordinator
+key ever gets logged.
+
 ## What's NOT in this MVP (on purpose)
 
 Per the original design discussion's own recommendation ("About the
@@ -903,6 +956,8 @@ docker/orthanc/                       Orthanc config (no credentials in here -- 
 docker/viewer/                        nginx (config templated, auth token computed from env) +
                                        watermark.html (Chrome flow) + grading-panel.html (Weasis flow)
 docker/grading-api/                   Lung-RADS 3-stage grading mechanics (FastAPI + SQLite)
+docker/grading-api/app/logging_config.py  structured JSON logging + request-id correlation (issue #72)
+docker/grading-api/app/errors.py      stable {error_code, message} error taxonomy (issue #74)
 docker/grading-api/tests/             unit tests (scripts/test-grading-api.sh)
 docker/grading-api/pyproject.toml     ruff config (line-length, isort known-first-party)
 docker/kasm-workspace/                Chrome-based Kasm workspace image -- the one actually deployed
