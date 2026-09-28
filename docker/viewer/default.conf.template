@@ -62,24 +62,48 @@ server {
     listen 8043;
     server_name _;
 
+    # issue #64: this proxy used to forward every method to every path --
+    # anyone who could reach it (any container on kasm_default_network, not
+    # just `viewer`) got Orthanc's full authenticated REST API, including
+    # write/delete, not just the read-only browsing this platform actually
+    # needs. Shared by every location below (nginx inherits proxy_* at
+    # server level unless a location overrides them).
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Authorization "Basic ${ORTHANC_AUTH_B64}";
+    proxy_http_version 1.1;
+    proxy_buffering off;
+
+    # Confirmed via a real Playwright-driven browse-and-open flow (not
+    # assumed, not the narrower "/dicom-web/ only" fix originally proposed
+    # -- that would have broken Explorer2 outright: it barely touches
+    # /dicom-web/ at all, and does its own browsing via Orthanc's native
+    # REST API across many paths -- /ui/*, /system, /peers, /modalities,
+    # /statistics, /studies/.../series, /instances/.../tags, /tools/labels,
+    # etc.) that /tools/find is the *only* non-GET call ordinary read-only
+    # browsing makes: Orthanc's own "search/query" endpoint, POST-based by
+    # Orthanc's REST API design (it takes a JSON query body) despite being
+    # a pure read, used for the study/series list and the filtered-studies
+    # view's own StudyInstanceUID lookup.
+    location = /tools/find {
+        limit_except POST {
+            deny all;
+        }
+        proxy_pass http://orthanc:8042/tools/find;
+    }
+
     location / {
+        # Default-deny anything else non-GET/HEAD. This -- not a path
+        # allowlist -- is what actually closes the real gap (write/delete
+        # reachable at all): every GET-based endpoint Explorer2 or Weasis's
+        # DICOMweb queries use keeps working, including ones not explicitly
+        # enumerated here or added in a future Orthanc/Explorer2 version,
+        # while POST/PUT/DELETE against anything (upload, delete, execute-
+        # script, modality/peer store, settings) is rejected outright,
+        # regardless of path.
+        limit_except GET HEAD {
+            deny all;
+        }
         proxy_pass http://orthanc:8042/;
-        # $http_host, NOT $host: nginx's $host variable strips the port from
-        # the Host header even when the original request had one -- Orthanc's
-        # DICOMweb plugin has no "Host" override set (deprecated since plugin
-        # 0.7 in favor of exactly this: reading the forwarded Host header), so
-        # it builds every QIDO-RS response's RetrieveURL (tag 00081190) from
-        # whatever Host it receives here. With $host, that came out as
-        # "http://ipcmc-viewer/..." (port silently dropped) -- Weasis's WADO-RS
-        # retrieval then connection-refused against the wrong (default) port.
-        # Confirmed via docker/kasm-workspace-weasis: QIDO-RS queries always
-        # worked (they hit this proxy directly, at :8043), but every
-        # subsequent bulk/thumbnail download against Orthanc's own returned
-        # RetrieveURL failed until this was fixed.
-        proxy_set_header Host $http_host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header Authorization "Basic ${ORTHANC_AUTH_B64}";
-        proxy_http_version 1.1;
-        proxy_buffering off;
     }
 }

@@ -805,6 +805,18 @@ enforce:
   overlay within ~1 second if it's killed — deterrents, not guarantees
   (disabling JS entirely, or having root in the container, defeats them
   respectively — same as noted in the docs).
+- The auth-injecting Orthanc proxy (`:8043`) is read-only (issue #64) —
+  it used to forward every method to every path, so anything reachable on
+  `kasm_default_network` (not just `viewer` itself) got Orthanc's full
+  authenticated REST API, including delete. Confirmed the real
+  vulnerability first (a `DELETE` through the proxy genuinely destroyed a
+  study), then fixed it with a method restriction
+  (`limit_except GET HEAD`), not a path allowlist — confirmed via a real
+  Playwright-driven browse-and-open flow that Explorer2's own read-only
+  browsing needs GET across many paths plus exactly one POST endpoint
+  (`/tools/find`, Orthanc's own search/query call), which is why
+  `/dicom-web/`-only was rejected as the fix even though that's what was
+  originally proposed.
 
 ## Testing
 
