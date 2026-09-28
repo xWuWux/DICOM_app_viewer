@@ -23,13 +23,26 @@ grading actions was.
 import os
 import secrets
 import sqlite3
+import time
+import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, Request
+from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import db
+from .errors import AppError, app_error_handler, unhandled_exception_handler, validation_error_handler
+from .logging_config import configure_logging, get_logger, request_id_var
+
+# Configured once, at import time -- not inside lifespan(), which would
+# re-run (and reset logging's root handlers) on every TestClient context
+# in tests, fighting pytest's own caplog handler. See logging_config.py's
+# own comment on configure_logging().
+configure_logging()
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -39,6 +52,47 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="IP_CMC Grading API", lifespan=lifespan)
+app.add_exception_handler(AppError, app_error_handler)
+app.add_exception_handler(RequestValidationError, validation_error_handler)
+app.add_exception_handler(Exception, unhandled_exception_handler)
+
+
+class RequestIdMiddleware(BaseHTTPMiddleware):
+    """Generates (or honors an incoming) X-Request-Id, makes it available
+    to every log line emitted while handling this request via
+    request_id_var, and echoes it back in the response -- the actual
+    mechanism issue #72 asked for ("trace/log correlation propagated
+    across boundaries"). Also logs one INFO line per request (method,
+    path, status, duration) as a basic structured access log."""
+
+    async def dispatch(self, request: Request, call_next):
+        request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+        token = request_id_var.set(request_id)
+        start = time.monotonic()
+        try:
+            response = await call_next(request)
+            # Logged here, still inside the contextvar's scope -- logging
+            # this after the finally below resets it would mean the access
+            # log line itself never carries the request_id it's meant to
+            # be correlated by. Caught by test_logging.py's own assertion
+            # that this line's request_id matches the response header.
+            duration_ms = round((time.monotonic() - start) * 1000, 1)
+            logger.info(
+                "request",
+                extra={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": response.status_code,
+                    "duration_ms": duration_ms,
+                },
+            )
+            response.headers["x-request-id"] = request_id
+            return response
+        finally:
+            request_id_var.reset(token)
+
+
+app.add_middleware(RequestIdMiddleware)
 
 # Shared secret only the coordinator (scripts/create-session.py, run by
 # whoever mints links) knows -- required so POST /session can't just be
@@ -53,13 +107,24 @@ COORDINATOR_KEY = os.environ["GRADING_COORDINATOR_KEY"]
 @app.get("/healthz")
 def healthz():
     """Health check with database connection verification (issue #6)."""
+    conn = None
     try:
         conn = db.get_connection()
         conn.execute("SELECT 1")
-        conn.close()
         return {"status": "ok"}
-    except Exception as e:
-        raise HTTPException(503, f"Database error: {str(e)}")
+    except Exception:
+        # issue #62: used to put str(e) straight into the client response,
+        # leaking sqlite file paths/internals to an unauthenticated caller.
+        # logger.exception (not .error) captures the full traceback
+        # server-side -- that's where this detail actually belongs.
+        logger.exception("healthz_database_error")
+        raise AppError(503, "DATABASE_UNAVAILABLE", "Database unavailable")
+    finally:
+        # Previously only closed on the success path -- a real connection
+        # leak on every failure, found while touching this function for
+        # the above.
+        if conn is not None:
+            conn.close()
 
 
 class SessionBody(BaseModel):
@@ -73,7 +138,10 @@ def create_session(body: SessionBody, x_coordinator_key: str = Header(...)):
     that binding. Called by scripts/create-session.py right after minting
     the Kasm session itself, not by anything running inside a session."""
     if not secrets.compare_digest(x_coordinator_key, COORDINATOR_KEY):
-        raise HTTPException(401, "Invalid coordinator key")
+        # app_error_handler logs every AppError generically (error_code,
+        # status_code, path) -- no need to also log here, that would just
+        # double-log the same failure.
+        raise AppError(401, "AUTH_INVALID_COORDINATOR_KEY", "Invalid coordinator key")
 
     conn = db.get_connection()
     try:
@@ -105,9 +173,9 @@ def _resolve_token(conn, token: str) -> str:
     unexpired token was minted for; raises 401 otherwise."""
     row = conn.execute("SELECT student_id, expires_at FROM sessions WHERE token = ?", (token,)).fetchone()
     if row is None:
-        raise HTTPException(401, "Invalid or unknown token")
+        raise AppError(401, "AUTH_INVALID_TOKEN", "Invalid or unknown token")
     if row["expires_at"] < db.now():
-        raise HTTPException(401, "Token expired")
+        raise AppError(401, "AUTH_TOKEN_EXPIRED", "Token expired")
     return row["student_id"]
 
 
@@ -160,12 +228,14 @@ def _advance_progress(conn, student_id: str, stage: str, order_index: int):
                 "UPDATE progress SET stage = ?, case_order_index = 0, case_assigned_at = ? WHERE student_id = ?",
                 (next_stage, db.now(), student_id),
             )
+            logger.info("stage_advanced", extra={"from_stage": stage, "to_stage": next_stage})
         else:
             conn.execute(
                 "UPDATE progress SET stage = 'complete', case_order_index = 0, case_assigned_at = ? "
                 "WHERE student_id = ?",
                 (db.now(), student_id),
             )
+            logger.info("training_complete", extra={"from_stage": stage})
     conn.commit()
 
 
@@ -180,7 +250,16 @@ def get_case(token: str):
 
         case = _get_case(conn, progress["stage"], progress["case_order_index"])
         if case is None:
-            raise HTTPException(500, f"No case at stage={progress['stage']} index={progress['case_order_index']}")
+            # A real data-integrity bug (seed data doesn't cover a
+            # position progress claims to be at), not a client mistake --
+            # the stage/index detail is genuinely useful for diagnosing
+            # it, but that's server-side-only information, not something
+            # to hand back to whatever's calling /case.
+            logger.error(
+                "no_case_at_progress_position",
+                extra={"stage": progress["stage"], "case_order_index": progress["case_order_index"]},
+            )
+            raise AppError(500, "SERVER_ERROR", "Internal server error")
 
         total_in_stage = conn.execute("SELECT COUNT(*) FROM cases WHERE stage = ?", (progress["stage"],)).fetchone()[0]
 
@@ -235,14 +314,15 @@ def submit(body: SubmitBody):
         student_id = _resolve_token(conn, body.token)
         progress = _get_or_create_progress(conn, student_id)
         if progress["stage"] != body.stage:
-            raise HTTPException(
+            raise AppError(
                 409,
+                "VALIDATION_STAGE_MISMATCH",
                 f"Submission stage '{body.stage}' doesn't match current progress stage '{progress['stage']}'",
             )
 
         case = conn.execute("SELECT * FROM cases WHERE id = ?", (body.case_id,)).fetchone()
         if case is None or case["stage"] != body.stage:
-            raise HTTPException(400, "case_id doesn't match the submitted stage")
+            raise AppError(400, "VALIDATION_CASE_MISMATCH", "case_id doesn't match the submitted stage")
 
         # issue #29: time-on-task computed server-side from when this case
         # actually became active (case_assigned_at, stamped by
@@ -288,7 +368,12 @@ def submit(body: SubmitBody):
             )
             conn.commit()
         except sqlite3.IntegrityError:
-            raise HTTPException(409, "This case/stage was already submitted")
+            raise AppError(409, "DUPLICATE_SUBMISSION", "This case/stage was already submitted")
+
+        # No student_id/submitted content here on purpose (see
+        # logging_config.py's own comment) -- stage/is_correct are just
+        # aggregate/class-label facts, not anything identifying.
+        logger.info("submission_recorded", extra={"stage": body.stage, "is_correct": is_correct})
 
         _advance_progress(conn, student_id, progress["stage"], progress["case_order_index"])
 
@@ -331,7 +416,7 @@ def reset(body: ResetBody):
         student_id = _resolve_token(conn, body.token)
         progress = _get_or_create_progress(conn, student_id)
         if progress["stage"] == "test":
-            raise HTTPException(403, "Cannot reset during the test stage")
+            raise AppError(403, "RESET_BLOCKED_DURING_TEST", "Cannot reset during the test stage")
         conn.execute("DELETE FROM progress WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM submissions WHERE student_id = ?", (student_id,))
         conn.commit()
