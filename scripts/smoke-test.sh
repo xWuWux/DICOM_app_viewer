@@ -158,6 +158,51 @@ else
   status=1
 fi
 
+# issue #64 regression checks: the auth-injecting proxy (:8043) used to
+# forward every method to every path, handing out Orthanc's full
+# authenticated REST API (including write/delete) to anything reachable on
+# kasm_default_network, not just the read-only browsing this platform
+# actually needs. Confirmed via a real Playwright-driven browse-and-open
+# flow (not assumed) that Explorer2's own read-only browsing needs GET
+# broadly across many paths plus exactly one POST endpoint
+# (Orthanc's own /tools/find, its search/query call) -- so this is a
+# method restriction with one narrow allowlisted exception, not a path
+# allowlist (which would have broken Explorer2 outright: it barely
+# touches /dicom-web/ at all).
+ORTHANC_STUDY_ID=$(curl -s -u "orthanc:${ORTHANC_PASSWORD}" "http://localhost:8042/studies" | python3 -c "import sys,json; print(json.load(sys.stdin)[0])" 2>/dev/null)
+
+DELETE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "http://localhost:8043/studies/${ORTHANC_STUDY_ID}")
+if [ "$DELETE_CODE" = "403" ]; then
+  echo "--- auth-injecting proxy rejects DELETE against a real study: OK (403) ---"
+else
+  echo "--- auth-injecting proxy rejects DELETE against a real study: FAIL, got HTTP $DELETE_CODE (expected 403) ---"
+  status=1
+fi
+
+STILL_THERE_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8043/studies/${ORTHANC_STUDY_ID}")
+if [ "$STILL_THERE_CODE" = "200" ]; then
+  echo "--- study survived the rejected DELETE attempt: OK (200) ---"
+else
+  echo "--- study survived the rejected DELETE attempt: FAIL, got HTTP $STILL_THERE_CODE (expected 200 -- the DELETE above may not have actually been blocked) ---"
+  status=1
+fi
+
+UPLOAD_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://localhost:8043/instances" --data-binary "@sample-data/MR_small.dcm" -H "Expect:")
+if [ "$UPLOAD_CODE" = "403" ]; then
+  echo "--- auth-injecting proxy rejects POST /instances (upload): OK (403) ---"
+else
+  echo "--- auth-injecting proxy rejects POST /instances (upload): FAIL, got HTTP $UPLOAD_CODE (expected 403) ---"
+  status=1
+fi
+
+FIND_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://localhost:8043/tools/find" -H "Content-Type: application/json" -d '{"Level":"Study","Query":{}}')
+if [ "$FIND_CODE" = "200" ]; then
+  echo "--- auth-injecting proxy still allows POST /tools/find (Explorer2's own search call): OK (200) ---"
+else
+  echo "--- auth-injecting proxy still allows POST /tools/find (Explorer2's own search call): FAIL, got HTTP $FIND_CODE (expected 200) ---"
+  status=1
+fi
+
 if [ "$status" -eq 0 ]; then
   echo "All smoke checks passed."
 else

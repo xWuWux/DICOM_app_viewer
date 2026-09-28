@@ -45,7 +45,12 @@ your Kasm host's IP** — without it, `8042` exposes Orthanc's Basic-Auth UI to
 anyone who can reach this host at all, and `8043` (the auth-injecting proxy —
 see `docker/viewer/default.conf.template`) hands out valid, unauthenticated
 Orthanc access to anyone who reaches it, no login required, by design (that's
-what makes it work transparently from inside an iframe).
+what makes it work transparently from inside an iframe). That access is now
+read-only (issue #64: `limit_except GET HEAD` on everything except one
+narrow, verified-necessary POST allowlist entry — write/delete/admin
+operations are rejected regardless of path), but the firewall rule above is
+still not optional: read access to real patient studies is still real
+access, and this proxy still bypasses Orthanc's own login for it.
 
 Using Proxmox's own firewall (Datacenter → Firewall, or the VM/LXC's own
 Firewall tab): add an **IN, ACCEPT** rule with **Source** = your Kasm host's
