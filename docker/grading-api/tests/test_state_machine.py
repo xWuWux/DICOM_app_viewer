@@ -883,3 +883,84 @@ def test_get_or_create_progress_survives_a_concurrent_insert_race(client, mint_t
         assert count == 1
     finally:
         conn.close()
+
+
+def test_submit_rolls_back_the_submission_if_advance_progress_fails(client, mint_token, monkeypatch):
+    """issue #60: the submission INSERT and _advance_progress()'s own
+    UPDATE(s) must land as one transaction. Forces _advance_progress() to
+    raise -- simulating the realistic real-world trigger described in the
+    issue's own comment thread (SQLite writer-lock contention under
+    concurrent submissions near a shared stage deadline, since
+    db.get_connection() sets no PRAGMA busy_timeout) -- and confirms
+    neither the submission nor the progress advance was persisted. Then
+    confirms a plain retry of the exact same submission succeeds cleanly:
+    that's the actual bug this closes -- before this fix, the retry would
+    hit UNIQUE(student_id, case_id, stage) and return 409 forever, with no
+    way for the student to move on."""
+    token = mint_token("stu_atomic")
+    case_id = _case_id(client, token)
+
+    real_advance_progress = main_module._advance_progress
+
+    def _boom(*_args, **_kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(main_module, "_advance_progress", _boom)
+
+    # The `client` fixture's TestClient uses raise_server_exceptions=True
+    # (Starlette's own default) -- confirmed with an isolated repro that
+    # this re-raises the original exception even though the app's own
+    # registered Exception handler (unhandled_exception_handler) already
+    # produced a correct 500 response; that handler's own behavior is
+    # unaffected and unrelated to this fix, not something broken by it.
+    with pytest.raises(sqlite3.OperationalError):
+        client.post(
+            "/submit",
+            json={
+                "token": token,
+                "case_id": case_id,
+                "stage": "learning",
+                "text": "first attempt",
+                "time_spent_seconds": 1,
+            },
+        )
+
+    conn = db_module.get_connection()
+    try:
+        submission_count = conn.execute(
+            "SELECT COUNT(*) FROM submissions WHERE student_id = ? AND case_id = ? AND stage = ?",
+            ("stu_atomic", case_id, "learning"),
+        ).fetchone()[0]
+        assert submission_count == 0, "the submission must not survive a failed _advance_progress()"
+
+        progress = conn.execute(
+            "SELECT stage, case_order_index FROM progress WHERE student_id = ?", ("stu_atomic",)
+        ).fetchone()
+        assert progress["stage"] == "learning"
+        assert progress["case_order_index"] == 0
+    finally:
+        conn.close()
+
+    # Restore the real _advance_progress before retrying -- this is the
+    # part that actually proves the fix: before it, this exact retry would
+    # 409 forever (UNIQUE(student_id, case_id, stage) already satisfied by
+    # a submission that should never have survived the rollback above).
+    #
+    # A second explicit setattr, not monkeypatch.undo(): undo() reverts
+    # *every* patch made via this test's monkeypatch fixture, including
+    # the `client` fixture's own db_module.DB_PATH patch (same shared
+    # fixture instance) -- confirmed the hard way, undo() here broke the
+    # retry below with "unable to open database file" the first time this
+    # test was written.
+    monkeypatch.setattr(main_module, "_advance_progress", real_advance_progress)
+
+    retry = client.post(
+        "/submit",
+        json={"token": token, "case_id": case_id, "stage": "learning", "text": "retry", "time_spent_seconds": 1},
+    )
+    assert retry.status_code == 200, (
+        "a retry after the rolled-back failure above must succeed cleanly, "
+        "not 409 DUPLICATE_SUBMISSION -- that stuck-forever state is "
+        "exactly the bug issue #60 reports"
+    )
+    assert client.get(f"/case?token={token}").json()["stage"] == "assessment"
