@@ -213,7 +213,13 @@ def _advance_progress(conn, student_id: str, stage: str, order_index: int):
     case_assigned_at is re-stamped on every transition (issue #29) -- the
     moment this runs is exactly the moment the next case (if any) becomes
     the student's active one, so this is the only correct place to reset
-    the clock."""
+    the clock.
+
+    Does NOT commit -- issue #60: this used to commit on its own, as a
+    separate transaction from its caller's own submission INSERT. The one
+    caller (submit()) now commits once, after both writes, so a failure
+    here rolls back the submission too instead of leaving it stranded.
+    """
     next_case = _get_case(conn, stage, order_index + 1)
     if next_case is not None:
         conn.execute(
@@ -236,7 +242,6 @@ def _advance_progress(conn, student_id: str, stage: str, order_index: int):
                 (db.now(), student_id),
             )
             logger.info("training_complete", extra={"from_stage": stage})
-    conn.commit()
 
 
 @app.get("/case")
@@ -348,6 +353,20 @@ def submit(body: SubmitBody):
         # db.py) turns that race into a clean, guaranteed-consistent
         # IntegrityError here rather than silently creating duplicate
         # submissions that would skew /results accuracy numbers.
+        # issue #60: the submission INSERT and _advance_progress()'s own
+        # UPDATE(s) must land as ONE transaction -- previously each
+        # committed separately, so a failure between them (most likely in
+        # practice: SQLite writer-lock contention under concurrent
+        # submissions near a shared stage deadline, since db.get_connection()
+        # sets no PRAGMA busy_timeout) left the submission durably stored
+        # but progress never advanced. Every retry then hit
+        # UNIQUE(student_id, case_id, stage) and returned 409 forever, with
+        # no way for the student to move on. See the issue's own comment
+        # thread for the full failure-mode writeup.
+        #
+        # Neither statement below calls conn.commit() itself -- one commit
+        # at the very end of this block covers both, and any exception from
+        # either rolls back everything, not just the statement that failed.
         try:
             conn.execute(
                 """INSERT INTO submissions
@@ -366,8 +385,8 @@ def submit(body: SubmitBody):
                     db.now(),
                 ),
             )
-            conn.commit()
         except sqlite3.IntegrityError:
+            conn.rollback()
             raise AppError(409, "DUPLICATE_SUBMISSION", "This case/stage was already submitted")
 
         # No student_id/submitted content here on purpose (see
@@ -375,7 +394,13 @@ def submit(body: SubmitBody):
         # aggregate/class-label facts, not anything identifying.
         logger.info("submission_recorded", extra={"stage": body.stage, "is_correct": is_correct})
 
-        _advance_progress(conn, student_id, progress["stage"], progress["case_order_index"])
+        try:
+            _advance_progress(conn, student_id, progress["stage"], progress["case_order_index"])
+        except Exception:
+            conn.rollback()
+            raise
+
+        conn.commit()
 
         if body.stage == "learning":
             return {"reference_report": case["reference_report"]}
