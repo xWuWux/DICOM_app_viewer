@@ -120,10 +120,30 @@ jobs:
       - name: Guacamole PoC end-to-end test (Playwright, docker-in-docker)
         run: ./scripts/test-guacamole-integration.sh
 
+  visual-regression-test:
+    runs-on: ubuntu-latest
+    needs: [unit-test, shell-test, provision-guacamole-session-test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Visual regression test (watermark.html + grading-panel.html)
+        run: ./scripts/test-visual-regression.sh
+      # On a mismatch, the plugin overwrites the baseline in this ephemeral
+      # checkout (so it can be diffed here) but never touches the committed
+      # one -- upload the actual/expected/diff images so a reviewer can see
+      # exactly what changed, since docker/viewer/tests/__snapshot_failures__/
+      # is gitignored and wouldn't otherwise survive past this job.
+      - name: Upload visual diff artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-regression-diffs
+          path: docker/viewer/tests/__snapshot_failures__/
+          if-no-files-found: ignore
+
   # ---- Success ----
   ci-success:
     runs-on: ubuntu-latest
-    needs: [smoke-test, guacamole-integration-test]
+    needs: [smoke-test, guacamole-integration-test, visual-regression-test]
     if: always()
     steps:
       - name: Confirm every stage passed

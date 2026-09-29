@@ -12,6 +12,11 @@ docker/grading-api/.venv-test/
 docker/guacamole/tests/.venv-test/
 .pytest_cache/
 
+# scripts/test-visual-regression.sh's own failure-diff images -- these are
+# regenerated on every failing run, never meant to be committed. Accepted
+# baselines under docker/viewer/tests/__snapshots__/ ARE committed.
+docker/viewer/tests/__snapshot_failures__/
+
 # Claude Code /export transcripts -- these capture the full conversation,
 # including any real credentials pasted into chat along the way (e.g. the
 # Kasm API key/secret used earlier in this project). Never commit these.
