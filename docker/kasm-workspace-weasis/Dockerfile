@@ -73,6 +73,51 @@ RUN chmod +x /opt/grading-panel/arrange_windows.sh
 COPY custom_startup.sh /dockerstartup/custom_startup.sh
 RUN chmod +x /dockerstartup/custom_startup.sh
 
+# Desktop lockdown: this base image's default session (vnc_startup.sh's
+# start_window_manager(), START_XFCE4=1) is a FULL XFCE desktop -- panel,
+# desktop-icon right-click menu, file manager, and two separate terminal
+# emulators are all present and reachable despite this Dockerfile's own
+# header comment above already trying to avoid exactly that ("nothing
+# else... every extra app is extra attack surface"). Confirmed via
+# `dpkg -l` against this exact base image, not assumed.
+#
+# Fix is package removal, not switching window managers: `openbox` isn't
+# even installed here, and arrange_windows.sh's wmctrl calls above are
+# tuned specifically against xfwm4's real behavior (e.g. the maximized-
+# window quirk documented in that file) -- swapping window managers would
+# risk silently breaking already-tested window placement. xfwm4 and
+# xfce4-session are deliberately NOT in this removal list.
+#
+# Verified in an isolated throwaway container (not assumed from package
+# names alone): after this exact removal, `startxfce4` still launches,
+# `wmctrl -m` still reports Xfwm4 as the active window manager (matching
+# arrange_windows.sh's own wmctrl dependency), a real app window still
+# opens/gets managed normally, and `which xterm xfce4-terminal
+# gnome-terminal konsole` finds nothing anywhere on PATH. xfce4-panel and
+# xfdesktop4 are what register a client-list with the WM in the first
+# place -- with both gone, there is no panel, no taskbar, and no
+# desktop-icon right-click menu at all, not merely a hidden one.
+#
+# Deliberately NOT followed by `apt-get autoremove`: tested that too, and
+# it silently takes xfwm4 and xfce4-session down with it (they end up
+# looking like orphaned dependencies of the now-gone xfce4 metapackage) --
+# `startxfce4` stops existing at all. Caught only by actually running
+# autoremove for real and checking `dpkg -l` afterwards; a `--dry-run`
+# pass alone is not enough evidence here since its output list is long
+# enough to hide exactly these two entries if it gets truncated.
+RUN apt-get update && \
+    apt-get remove -y --purge \
+      xfce4-panel \
+      xfdesktop4 \
+      thunar \
+      thunar-volman \
+      xfce4-terminal \
+      xterm \
+      xfce4-appfinder \
+      xfce4 \
+      xorg && \
+    rm -rf /var/lib/apt/lists/*
+
 # Baked-in kasmvnc.yaml override (see that file's own comment for the real
 # clipboard-DLP gap this closes) -- placed at the exact path
 # vnc_startup.sh only creates a default for if nothing exists there yet,
