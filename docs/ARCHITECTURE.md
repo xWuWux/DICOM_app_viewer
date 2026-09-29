@@ -125,10 +125,115 @@ this diagram, for the authoritative list so the two don't drift apart.
 
 Separately, a **Weasis-based session flow is being built alongside this
 one** (milestone "Weasis viewer migration", GitHub issues #3-#8) — a second
-Kasm workspace image (`docker/kasm-workspace-weasis/`) exists and is
-verified to launch Weasis correctly, but it isn't wired into any live
-session yet (no auto-launch against an assigned study, no grading panel,
-no watermark overlay for it). Both diagrams above still describe the
-Chrome+Orthanc flow because that's the only one actually running
-end-to-end today; they'll be redrawn once the Weasis flow reaches the same
-point.
+Kasm workspace image (`docker/kasm-workspace-weasis/`) now auto-launches
+Weasis against the assigned study, displays the grading panel in its own
+window, and runs the native watermark overlay (see the layer breakdown
+below — none of that was true the last time this note was written). What's
+still missing is automation: `scripts/create-session.py` and the main
+`docker-compose.yml` only know about the Chrome workspace, so today a
+coordinator would have to register/launch the Weasis workspace by hand in
+Kasm's own admin UI rather than getting a minted link the same way. Both
+diagrams above still describe the Chrome+Orthanc flow because that's the
+only one wired into the automated per-student link path; they'll be
+redrawn once `create-session.py` can mint links for either workspace.
+
+## Display layer stack — what the user actually sees
+
+Both flows end in "pixels inside a KasmVNC-streamed browser tab," but
+*how* those pixels get composited is structurally different between them —
+worth spelling out explicitly, because that difference is also the root
+cause of at least one real, currently-open display bug (see below).
+
+```mermaid
+flowchart TD
+    subgraph Chrome["Chrome flow — one process, one compositor"]
+        direction TB
+        C1["Kasm session container<br/>(ipcmc/dicom-viewer:mvp, destroyed on logout)"]
+        C2["KasmVNC<br/>X server + VNC-over-WebSocket"]
+        C3["xfwm4 window manager<br/>(present, but invisible: Chrome runs --kiosk,<br/>undecorated, fullscreen, nothing else on the desktop)"]
+        C4["Google Chrome — a single process,<br/>a single rendering/compositing pipeline"]
+        C5["watermark.html — one DOM document"]
+        C6["iframe: Orthanc stone-webviewer<br/>(the actual DICOM pixels)"]
+        C7["grading panel DOM<br/>(stage-specific form, same document)"]
+        C8["#watermark-rotator overlay<br/>(CSS/JS, tiled text, -15deg, updates every 1s)"]
+        C1 --> C2 --> C3 --> C4 --> C5
+        C5 --> C6
+        C5 --> C7
+        C5 --> C8
+    end
+```
+
+```mermaid
+flowchart TD
+    subgraph Weasis["Weasis flow — independent X11 windows, no compositor"]
+        direction TB
+        W1["Kasm session container<br/>(ipcmc/dicom-viewer-weasis, destroyed on logout)"]
+        W2["KasmVNC<br/>X server + VNC-over-WebSocket"]
+        W3["xfwm4 + xfce4-session<br/>(only these two XFCE pieces remain by design --<br/>panel/desktop/file-manager/terminals stripped, PR #78)"]
+        W4["Weasis<br/>(Java Swing, its own native window,<br/>positioned/resized by arrange_windows.sh via wmctrl)"]
+        W5["IP_CMC Grading Panel<br/>(GTK window embedding a WebKit2GTK WebView,<br/>grading_panel_window.py, loads grading-panel.html)"]
+        W6["Watermark overlay<br/>(GTK POPUP, override-redirect + keep-above + sticky,<br/>full-screen, X SHAPE extension, overlay.py)<br/>redrawn AND reshaped every 1s"]
+        W7["watchdog.sh — relaunches the overlay<br/>within ~1s if it's ever killed"]
+        W1 --> W2 --> W3
+        W3 --> W4
+        W3 --> W5
+        W3 --> W6
+        W7 -. supervises .-> W6
+    end
+```
+
+The Chrome flow's three visible pieces (viewer iframe, grading panel,
+watermark) are DOM elements inside **one** document, painted by **one**
+browser compositor in a single atomic frame. There is no window stacking
+to arbitrate and no exposure/redraw handshake between independent
+processes — the watermark's per-second re-render is just another DOM
+repaint, invisible as a discrete event.
+
+The Weasis flow has none of that: Weasis, the grading panel, and the
+watermark overlay are three **separate X11 clients**, stacked and
+arbitrated by `xfwm4` with **no compositor running** (see `overlay.py`'s
+own header comment — that's a deliberate choice, since CSS-style alpha
+blending has no real equivalent without one). Overlay transparency and
+click-through are instead implemented with the X **Shape** extension:
+only the actual glyph pixels are part of the watermark window at all, and
+that shape is fully recomputed from scratch every second (new timestamp,
+new rendered glyphs), on a window sized to the whole screen and always on
+top of everything else.
+
+**This is the mechanism behind the screen flash reported when the Weasis
+workspace is enabled, and not the Chrome one**: recombining the shape of a
+full-screen, always-on-top window forces the X server to treat whatever
+the *previous* second's shape covered — and the *new* second's shape no
+longer covers — as newly exposed, and Weasis (a Java Swing application,
+running with no compositor to paper over partial repaints) has to redraw
+that exposed region itself. A visible flash is that redraw handshake
+between two independent, uncomposited X11 clients, playing out once a
+second. The Chrome flow has no analogous moment, structurally: there's
+only one compositor, and it never needs to ask a *different process* to
+redraw anything.
+
+**Not yet fixed** — this is a diagnosis, not a patch. The lowest-risk fix
+that hasn't been tried yet: compute the watermark's Shape region once
+(sized generously enough to cover any digit's glyph variation) instead of
+recombining it every second, and only repaint pixel content inside that
+fixed shape on each tick — this removes the once-a-second exposure churn
+entirely without changing the forensic per-second timestamp requirement
+(CLAUDE.md) at all.
+
+**Visual regression testing does not catch this, structurally, for three
+independent reasons** (`docker/viewer/tests/test_visual_regression.py`,
+PR #77):
+1. Those tests screenshot `watermark.html`/`grading-panel.html` directly
+   via Playwright's own Chromium, outside any Kasm container — they never
+   touch `xfwm4`, `overlay.py`, or Weasis's real native window at all, for
+   either flow.
+2. Even pointed at a live session, pixelmatch-style diffing compares two
+   static single points in time. A one-frame flash is a temporal artifact
+   between those two points, not a difference between them — this class
+   of tool cannot see it by construction, only frame-by-frame video
+   capture could.
+3. The suite's own determinism trick works directly against it: it
+   freezes the clock (`page.clock.set_fixed_time`) specifically so the
+   once-a-second redraw never fires during a screenshot. That's what makes
+   the tests reproducible, and it's exactly the mechanism that would need
+   to fire for this bug to appear.
