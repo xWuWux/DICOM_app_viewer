@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Unit tests for scripts/provision-guacamole-session.py (issue #53). Fast,
+# Unit tests for scripts/provision-guacamole-session.py (issue #53) and the
+# Guacamole PoC's seccomp profile (issue #52, scripts/tests/
+# test_seccomp_profile.py -- picked up automatically by pytest's own
+# discovery from this directory, not called out separately below). Fast,
 # no Docker/real infrastructure needed -- unlike
 # scripts/test-guacamole-integration.sh, this never brings up the actual
 # stack: subprocess.run and urllib.request.urlopen are both mocked (see

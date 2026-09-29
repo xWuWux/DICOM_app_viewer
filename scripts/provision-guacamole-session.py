@@ -59,6 +59,14 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+# issue #52: a narrow custom seccomp profile, not blanket
+# `seccomp=unconfined` -- see docker/guacamole-weasis/seccomp/
+# build-profile.py's own docstring for how this was derived and verified.
+_SECCOMP_PROFILE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..", "docker", "guacamole-weasis", "seccomp", "profile.json",
+)
+
 
 def api_call(method, url, data=None, headers=None, fatal=True, label="API"):
     body = None
@@ -145,10 +153,19 @@ def main():
             # the grading panel's browser needs unprivileged user
             # namespaces for its own internal sandboxing (bubblewrap) --
             # confirmed the hard way this container's default seccomp
-            # profile blocks that outright. A real hardening pass should
-            # use a narrower custom seccomp profile, not blanket
-            # unconfined -- tracked as a known gap, not an oversight.
-            "--security-opt", "seccomp=unconfined",
+            # profile blocks that outright.
+            #
+            # issue #52: this used to be blanket `seccomp=unconfined`,
+            # exposing the full host kernel syscall surface. Replaced with
+            # a narrow custom profile (Docker's own default profile plus
+            # only the namespace/mount syscalls bwrap actually needs) --
+            # see docker/guacamole-weasis/seccomp/build-profile.py's own
+            # docstring for exactly how this was derived and verified
+            # (built the real image, confirmed epiphany's bwrap-wrapped
+            # processes start under this profile exactly as they do under
+            # unconfined, and separately confirmed bpf/keyctl/io_uring/
+            # userfaultfd/perf_event_open all still return EPERM under it).
+            "--security-opt", f"seccomp={_SECCOMP_PROFILE_PATH}",
             "-e", f"STUDENT_ID={student_id}",
             "-e", f"SESSION_ID={session_id}",
             "-e", f"GRADING_TOKEN={grading_token}",
