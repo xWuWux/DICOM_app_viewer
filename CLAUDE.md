@@ -29,6 +29,7 @@ docker compose up -d --build
 ./scripts/security-scan.sh
 ./scripts/test-grading-api.sh
 ./scripts/test-shell-scripts.sh
+./scripts/test-visual-regression.sh
 Workflow
 CI is a 5-stage pipeline (.github/workflows/ci.yml), each stage gating the next: Lint & Format -> Build Test -> Security Scan -> Unit & Shell Tests -> Integration Tests. Every stage has a script runnable identically locally.
 Start local infrastructure: docker compose up -d --build
@@ -41,6 +42,7 @@ Load sample DICOM data: ./scripts/fetch-public-samples.sh && ./scripts/load-samp
 4. Unit test provision-guacamole-session.py (no infra needed): ./scripts/test-provision-guacamole-session.sh
 5. Smoke test (brings the stack up for real, then tears it down -- don't run against data you care about): ./scripts/smoke-test.sh
 5. Guacamole PoC end-to-end test (Playwright, docker-in-docker, self-contained/self-tearing-down): ./scripts/test-guacamole-integration.sh
+5. Visual regression test for watermark.html + grading-panel.html (catches UI/UX changes, self-contained/self-tearing-down): ./scripts/test-visual-regression.sh
 Mint a per-student Kasm link: python3 scripts/create-session.py --student-id ...
 Guacamole PoC (see README.md): ./scripts/guacamole-iac.sh, then python3 scripts/provision-guacamole-session.py --student-id ...
 Stop Conditions

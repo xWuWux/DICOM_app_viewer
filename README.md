@@ -829,7 +829,7 @@ stage still run in parallel with each other:
 2. **Build Test** — `scripts/build-test.sh`
 3. **Security Scan** — `scripts/security-scan.sh`
 4. **Unit & Shell Tests** — `scripts/test-grading-api.sh` + `scripts/test-shell-scripts.sh` + `scripts/test-provision-guacamole-session.sh`
-5. **Integration Tests** — `scripts/smoke-test.sh` + `scripts/test-guacamole-integration.sh`
+5. **Integration Tests** — `scripts/smoke-test.sh` + `scripts/test-guacamole-integration.sh` + `scripts/test-visual-regression.sh`
 
 Every script above is runnable identically on a local machine, not just
 in CI.
@@ -947,6 +947,33 @@ in CI.
   self-contained/self-tearing-down pattern as `smoke-test.sh` above. Needs
   Docker-in-Docker (bind-mounts the host's `docker.sock`) and
   `--network host`, same as `scripts/test-guacamole-e2e.sh` itself.
+- `scripts/test-visual-regression.sh` — visual regression testing for
+  `watermark.html` and `grading-panel.html`: catches any change to what a
+  student actually *sees* (`docker/viewer/tests/test_visual_regression.py`,
+  14 tests — every meaningfully distinct panel state, both flows), not
+  just whether the API responses are correct. Uses
+  [`pytest-playwright-visual-snapshot`](https://pypi.org/project/pytest-playwright-visual-snapshot/)
+  (`pixelmatch` under the hood, the same engine Playwright's own JS visual
+  comparisons use) — the open-source equivalent of what a commercial
+  UI/UX-testing SaaS product would otherwise be needed for. The hard part
+  is determinism: a live-updating watermark (student/session ID +
+  timestamp, re-rendered every second) would make every screenshot differ
+  from the last if left alone. Solved with Playwright's Clock API
+  (`page.clock.set_fixed_time`, frozen *before* the page's own script
+  runs) rather than masking the watermark away — confirmed with two
+  independent fresh-stack runs producing byte-identical results before
+  committing the baselines, and confirmed the other direction too: a
+  deliberately introduced visible change (a button's color) was caught
+  precisely on the 6 states that button actually appears in, nothing
+  else. Same self-contained/self-tearing-down pattern as the other
+  integration tests. Baselines live under
+  `docker/viewer/tests/__snapshots__/` (committed); on a mismatch,
+  diff/actual/expected images are written to
+  `docker/viewer/tests/__snapshot_failures__/` (gitignored — uploaded as
+  a CI artifact instead, see `.github/workflows/ci.yml`) so a reviewer
+  can see exactly what changed. Run
+  `./scripts/test-visual-regression.sh --update-snapshots` and review the
+  resulting images before committing a deliberate UI change.
 
 Deliberately not covered by any of these (needs real Kasm infrastructure a
 CI runner doesn't have, stays manual): actually launching a Kasm session,
@@ -980,6 +1007,8 @@ docker/guacamole/postgres-init/       Guacamole's own official Apache-licensed J
 docker/guacamole/tests/               full browser-driven E2E tests (scripts/test-guacamole-e2e.sh)
 docker/guacamole-weasis/              basic-functionality-only Weasis+TigerVNC image for the Guacamole flow
                                        -- not security-hardened, see README's own Guacamole section
+docker/viewer/tests/                  visual regression tests (scripts/test-visual-regression.sh) --
+                                       __snapshots__/ (committed baselines), __snapshot_failures__/ (gitignored)
 sample-data/                          public-domain sample DICOM files
 scripts/fetch-public-samples.sh       pulls larger public teaching studies (BRAINIX) into sample-data/
 scripts/load-sample-studies.sh        uploads sample-data/ (recursively) into Orthanc
@@ -1001,5 +1030,7 @@ scripts/test-guacamole-e2e.sh         full browser-driven E2E test for the Guaca
                                        stack is already up; scripts/test-guacamole-integration.sh below
                                        wraps it for CI, this one's for a developer using guacamole-iac.sh
 scripts/test-guacamole-integration.sh stage 5, self-contained wrapper around test-guacamole-e2e.sh (CI)
+scripts/test-visual-regression.sh     stage 5, visual regression testing for watermark.html +
+                                       grading-panel.html (CI)
 .github/workflows/ci.yml              the 5-stage pipeline above, run on every push/PR
 ```
