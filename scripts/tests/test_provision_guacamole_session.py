@@ -118,6 +118,28 @@ def test_docker_run_passes_a_real_vnc_password(mock_docker_run, monkeypatch, cap
     assert len(password) == 8
 
 
+def test_docker_run_uses_the_narrow_seccomp_profile_not_unconfined(mock_docker_run, monkeypatch, capsys):
+    """issue #52: `--security-opt seccomp=unconfined` exposed the full
+    host kernel syscall surface. Guard against a regression back to it,
+    and confirm the profile this actually points at is a real, existing
+    file (not a typo'd path that would silently fall back to Docker's
+    unconfined-if-file-missing... actually Docker just fails `docker run`
+    outright on a missing profile path, but a real file is still the
+    point: this profile has to be the one build-profile.py generates)."""
+    docker_run_args = _run_main(mock_docker_run, monkeypatch)
+    capsys.readouterr()
+
+    security_opts = [
+        a for a in docker_run_args if isinstance(a, str) and a.startswith("seccomp=")
+    ]
+    assert len(security_opts) == 1, "expected exactly one seccomp --security-opt"
+    assert security_opts[0] != "seccomp=unconfined"
+
+    profile_path = security_opts[0].split("=", 1)[1]
+    assert os.path.isfile(profile_path), f"seccomp profile path does not exist: {profile_path}"
+    assert os.path.basename(profile_path) == "profile.json"
+
+
 def test_guacamole_connection_gets_the_same_vnc_password(mock_docker_run, monkeypatch, capsys):
     """The two ends of the VNC handshake must agree: whatever password the
     container's own VNC_PASSWORD env var got must be exactly what

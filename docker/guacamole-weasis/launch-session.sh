@@ -55,15 +55,19 @@ PYEOF
 # component exists specifically to close off save/print/devtools/
 # navigation as attack surface, all explicitly out of scope here.
 #
-# WEBKIT_FORCE_SANDBOX=0: epiphany (WebKitGTK) uses bubblewrap internally
-# for its own process sandboxing, which needs unprivileged user
-# namespaces -- confirmed the hard way, it crashed outright ("No
-# permissions to create new namespace") without this, since this
-# container doesn't have them enabled. Disabling WebKitGTK's own internal
-# sandbox is the standard, minimal fix for this in a containerized
-# environment (the container itself already provides isolation) rather
-# than loosening the container's own namespace/seccomp restrictions more
-# broadly just to satisfy one app's redundant extra sandbox layer.
+# WEBKIT_FORCE_SANDBOX=0: fixes a *different* problem than it looks like
+# at first -- confirmed the hard way (issue #52's own investigation) that
+# this does NOT disable bubblewrap (bwrap) itself. epiphany's WebProcess
+# and its xdg-dbus-proxy still run wrapped in bwrap regardless of this
+# variable (visible in `ps aux` inside a real session either way). What
+# actually happens without it: WebKitGTK's own sandbox-negotiation layer
+# crash-loops the WebProcess repeatedly ("Web process crashed", over and
+# over) even when bwrap's own namespace syscalls succeed -- a GTK-level
+# issue, unrelated to seccomp. This variable avoids that crash loop; it is
+# NOT a substitute for giving bwrap the namespace/mount syscalls it still
+# needs regardless -- see scripts/provision-guacamole-session.py's own
+# comment and docker/guacamole-weasis/seccomp/build-profile.py for that
+# separate, still-necessary fix.
 export WEBKIT_FORCE_SANDBOX=0
 BROWSER_BIN="${BROWSER_BIN:-epiphany}"
 GRADING_PANEL_URL="${VIEWER_URL}grading-panel.html?student_id=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$STUDENT_ID")&session_id=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$SESSION_ID")&token=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$GRADING_TOKEN")"
