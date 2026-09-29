@@ -49,8 +49,13 @@ reasoning that already covers Weasis's own unconditional Print menu,
 which has no dedicated preference to hide it either.
 """
 import json
+import os
 
-PATH = "/opt/weasis/lib/app/conf/base.json"
+# WEASIS_BASE_JSON_PATH is a test-only seam (see
+# scripts/tests/test_copy_lockdown.py) -- unset at build time, so it always
+# resolves to the real path below, same convention as WEASIS_BIN/
+# OVERLAY_SCRIPT/CHROME_BIN in this image's other scripts.
+PATH = os.environ.get("WEASIS_BASE_JSON_PATH", "/opt/weasis/lib/app/conf/base.json")
 
 FALSE_KEYS = {
     "weasis.show.disclaimer",

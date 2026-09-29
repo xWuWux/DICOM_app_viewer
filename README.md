@@ -621,6 +621,20 @@ starting, text clipboard blocked) all held. The image-clipboard gap above
 is the one thing that real testing caught that assuming coverage from the
 Chrome-image checks wouldn't have.
 
+**Regression-tested on every PR, not just verified once**
+(`scripts/test-copy-lockdown.sh`, `scripts/tests/test_copy_lockdown.py`):
+the two copy-mechanism lockdowns that live as actual files in this repo —
+Weasis's own native export/import/send/Q-R (`patch-weasis-config.py`) and
+the `kasmvnc.yaml` rich-clipboard-mimetype block above, for **both**
+workspace images — are asserted against, including a real `docker build`
+of the Weasis image so a later Dockerfile edit that silently stops
+applying the patch would fail CI, not just an isolated unit test. What
+this can't cover, structurally: the Group-level admin-UI toggles at the
+top of this section live in a real, running Kasm instance's own Postgres
+DB, not in any file here — a GitHub Actions runner has no live Kasm to
+re-check those against, so that verification stays the one-time, by-hand
+act described above unless someone re-runs it against the real instance.
+
 ## Apache Guacamole flow (PoC, alternative to Kasm)
 
 **Why this exists**: Kasm Workspaces Community Edition is capped at 5
