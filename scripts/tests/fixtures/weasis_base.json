@@ -1,0 +1,49 @@
+{
+  "weasisPreferences": [
+    {
+      "code": "weasis.show.disclaimer",
+      "value": "true",
+      "type": "BOOLEAN"
+    },
+    {
+      "code": "weasis.export.dicom",
+      "value": "true",
+      "type": "BOOLEAN"
+    },
+    {
+      "code": "weasis.export.dicom.send",
+      "value": "true",
+      "type": "BOOLEAN"
+    },
+    {
+      "code": "weasis.import.dicom",
+      "value": "true",
+      "type": "BOOLEAN"
+    },
+    {
+      "code": "weasis.import.images",
+      "value": "true",
+      "type": "BOOLEAN"
+    },
+    {
+      "code": "weasis.import.dicom.qr",
+      "value": "true",
+      "type": "BOOLEAN"
+    },
+    {
+      "code": "felix.auto.start.110",
+      "value": "reference:org.weasis.dicom.send reference:org.weasis.dicom.qr reference:org.weasis.dicom.isolate",
+      "type": "STRING"
+    },
+    {
+      "code": "weasis.export.image",
+      "value": "true",
+      "type": "BOOLEAN"
+    },
+    {
+      "code": "weasis.language",
+      "value": "en",
+      "type": "STRING"
+    }
+  ]
+}
