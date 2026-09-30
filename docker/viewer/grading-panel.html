@@ -242,6 +242,25 @@
         body: JSON.stringify(body),
       });
       if (!res.ok) {
+        // issue #61: a 409 here (VALIDATION_CASE_MISMATCH or
+        // DUPLICATE_SUBMISSION) means the server's own progress has moved
+        // on, or this case was already answered, since this page last
+        // loaded it -- never something the student did knowingly (this
+        // page only ever submits currentCase.case_id, whatever /api/case
+        // last handed it), so resync automatically instead of showing a
+        // raw HTTP error and waiting for a manual click.
+        let errorCode = null;
+        try {
+          errorCode = (await res.json()).error_code;
+        } catch (_parseErr) {
+          // Non-JSON error body (e.g. a raw network/proxy failure) --
+          // fall through to the generic handler below.
+        }
+        if (res.status === 409 && (errorCode === "VALIDATION_CASE_MISMATCH" || errorCode === "DUPLICATE_SUBMISSION")) {
+          panel.innerHTML = `<p>Twój postęp się zmienił — pobieramy aktualny przypadek...</p>`;
+          await loadCase();
+          return;
+        }
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
       const result = await res.json();

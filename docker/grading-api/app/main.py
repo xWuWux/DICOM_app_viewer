@@ -325,9 +325,36 @@ def submit(body: SubmitBody):
                 f"Submission stage '{body.stage}' doesn't match current progress stage '{progress['stage']}'",
             )
 
-        case = conn.execute("SELECT * FROM cases WHERE id = ?", (body.case_id,)).fetchone()
-        if case is None or case["stage"] != body.stage:
-            raise AppError(400, "VALIDATION_CASE_MISMATCH", "case_id doesn't match the submitted stage")
+        # issue #61: resolve the case from progress's own position, not
+        # from whatever case_id the client sent -- the old
+        # `SELECT * FROM cases WHERE id = ?` accepted ANY case belonging to
+        # the right stage, not only the one actually assigned. A client
+        # submitting a later case in the same stage would skip the real
+        # current case (never answered), _advance_progress() still moved
+        # on from the current index regardless, and when progress later
+        # reached the skipped case, its submission already existed from
+        # the out-of-order request -- the same "stuck behind a 409"
+        # symptom as issue #60. In the assessment stage it would also have
+        # handed back the ground truth of a case the student hasn't
+        # actually been shown yet.
+        case = _get_case(conn, progress["stage"], progress["case_order_index"])
+        if case is None:
+            # Mirrors GET /case's own handling of this exact failure mode
+            # (see that endpoint) -- a real data-integrity bug (seed data
+            # doesn't cover progress's current position), not a client
+            # mistake.
+            logger.error(
+                "no_case_at_progress_position",
+                extra={"stage": progress["stage"], "case_order_index": progress["case_order_index"]},
+            )
+            raise AppError(500, "SERVER_ERROR", "Internal server error")
+
+        if body.case_id != case["id"]:
+            raise AppError(
+                409,
+                "VALIDATION_CASE_MISMATCH",
+                "case_id doesn't match the currently assigned case",
+            )
 
         # issue #29: time-on-task computed server-side from when this case
         # actually became active (case_assigned_at, stamped by

@@ -400,7 +400,16 @@ def test_submit_stage_mismatch_returns_409(client, mint_token):
     assert resp.status_code == 409
 
 
-def test_submit_case_id_stage_mismatch_returns_400(client, mint_token):
+def test_submit_case_id_from_a_different_stage_returns_409(client, mint_token):
+    """issue #61: case_id is now always resolved against progress's own
+    position (_get_case(conn, progress["stage"], progress["case_order_index"])),
+    never looked up by the client-supplied id directly -- a case_id
+    belonging to a different stage entirely can no longer reach a distinct
+    400 path (that VALIDATION_CASE_MISMATCH/400 codepath doesn't exist
+    anymore); it's just another way body.case_id fails to match the one
+    case that's actually assigned, so it's the same 409 as any other
+    mismatch now (this test used to assert 400 -- see the test below for
+    the same-stage, wrong-position case this issue actually targets)."""
     token = mint_token("stu_11")
     # case_id 2 is the seeded assessment-stage case, not learning's.
     resp = client.post(
@@ -413,7 +422,84 @@ def test_submit_case_id_stage_mismatch_returns_400(client, mint_token):
             "time_spent_seconds": 1,
         },
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 409
+    assert resp.json()["error_code"] == "VALIDATION_CASE_MISMATCH"
+
+
+def test_submit_a_later_case_in_the_same_stage_returns_409_and_leaves_progress_unchanged(client, mint_token):
+    """issue #61: submit() checked that body.case_id belonged to the
+    submitted stage, but not that it was the case at
+    progress["case_order_index"] specifically -- a client could submit an
+    answer for a LATER case in the same stage. That would silently skip
+    the actually-assigned case (never answered), _advance_progress() would
+    still move on from the current index regardless, and when progress
+    later reached the skipped case, its submission would already exist
+    from this out-of-order request -- the same "stuck behind a 409"
+    symptom as issue #60. In the assessment stage it would also hand back
+    the ground truth of a case the student hasn't actually been shown yet.
+
+    Only one case per stage exists in the current seed data (db.py's own
+    SEED_CASES) -- a second "learning" case is inserted directly here,
+    same technique already used by test_submit_duplicate_for_same_case_
+    stage_returns_409 for a scenario seed data alone doesn't cover."""
+    token = mint_token("stu_61")
+    real_case_id = _case_id(client, token)  # the actually-assigned learning case (order_index 0)
+
+    conn = db_module.get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO cases
+               (stage, order_index, orthanc_study_uid, title, ground_truth_category,
+                ground_truth_modifier_s, reference_report)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            ("learning", 1, "1.2.3.4.5.6", "Przypadek 2 (nauka)", "0", 0, "PLACEHOLDER"),
+        )
+        conn.commit()
+        later_case_id = conn.execute("SELECT id FROM cases WHERE stage = 'learning' AND order_index = 1").fetchone()[0]
+    finally:
+        conn.close()
+
+    resp = client.post(
+        "/submit",
+        json={
+            "token": token,
+            "case_id": later_case_id,
+            "stage": "learning",
+            "text": "answering out of order",
+            "time_spent_seconds": 1,
+        },
+    )
+    assert resp.status_code == 409
+    assert resp.json()["error_code"] == "VALIDATION_CASE_MISMATCH"
+
+    # Progress must not have advanced, and neither case's submission should
+    # exist -- the rejected request must leave no trace at all.
+    data = client.get(f"/case?token={token}").json()
+    assert data["case_id"] == real_case_id
+    assert data["position"] == 1
+
+    conn = db_module.get_connection()
+    try:
+        submission_count = conn.execute(
+            "SELECT COUNT(*) FROM submissions WHERE student_id = ?", ("stu_61",)
+        ).fetchone()[0]
+        assert submission_count == 0
+    finally:
+        conn.close()
+
+    # The real, currently-assigned case must still be submittable normally
+    # afterward -- the rejected out-of-order attempt didn't corrupt state.
+    resp2 = client.post(
+        "/submit",
+        json={
+            "token": token,
+            "case_id": real_case_id,
+            "stage": "learning",
+            "text": "answering in order",
+            "time_spent_seconds": 1,
+        },
+    )
+    assert resp2.status_code == 200
 
 
 def test_submit_rejects_an_oversized_text_field(client, mint_token):

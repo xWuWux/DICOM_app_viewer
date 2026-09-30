@@ -63,13 +63,17 @@ def test_submit_stage_mismatch_has_stable_error_shape(client, mint_token):
 
 
 def test_submit_case_mismatch_has_stable_error_shape(client, mint_token):
+    """issue #61: case_id is now always resolved against progress's own
+    position, never looked up by the client-supplied id directly -- any
+    mismatch (wrong stage entirely, or right stage but wrong position)
+    is the same 409 VALIDATION_CASE_MISMATCH now, not a separate 400."""
     token = mint_token("stu_case_mismatch")
     # case_id 2 is the seeded assessment-stage case, not learning's.
     resp = client.post(
         "/submit",
         json={"token": token, "case_id": 2, "stage": "learning", "text": "x"},
     )
-    _assert_error_shape(resp, 400, "VALIDATION_CASE_MISMATCH")
+    _assert_error_shape(resp, 409, "VALIDATION_CASE_MISMATCH")
 
 
 def test_duplicate_submission_has_stable_error_shape(client, mint_token):
