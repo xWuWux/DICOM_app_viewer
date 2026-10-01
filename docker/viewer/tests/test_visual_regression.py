@@ -218,3 +218,54 @@ class TestGradingPanelStates:
         page.click("#next-btn")
         page.wait_for_timeout(1000)  # results screen has no distinctive selector to wait on
         assert_snapshot(panel_locator)
+
+
+class TestSubmitErrorRecovery:
+    """Not a visual-snapshot test (no assert_snapshot here) -- a
+    functional check of onSubmit()'s error handling itself (issue #61).
+
+    A 409 VALIDATION_CASE_MISMATCH/DUPLICATE_SUBMISSION from /api/submit
+    means the server's own progress has moved on, or this case was already
+    answered, since this page last loaded it -- never something the
+    student did knowingly (this page only ever submits
+    currentCase.case_id, whatever /api/case last handed it). The fix must
+    resync automatically (a real, unmocked GET /api/case) rather than
+    stranding the student behind a raw HTTP error requiring a manual
+    click. /api/submit itself is mocked here (page.route) purely to force
+    this response deterministically, without needing to fabricate the
+    exact backend race that would produce it for real -- that scenario is
+    already covered against the real backend by
+    docker/grading-api/tests/test_state_machine.py's own
+    test_submit_a_later_case_in_the_same_stage_returns_409_and_leaves_progress_unchanged.
+    """
+
+    def test_case_mismatch_409_auto_resyncs_without_a_manual_click(self, page, flow_page, student_id, token, base_url):
+        _open(page, base_url, flow_page, token, student_id, "vr")
+
+        page.route(
+            "**/api/submit",
+            lambda route: route.fulfill(
+                status=409,
+                json={"error_code": "VALIDATION_CASE_MISMATCH", "message": "case_id doesn't match the currently assigned case"},
+            ),
+            times=1,
+        )
+        page.fill("#text-input", "Odpowiedź wysłana ze stanem, który serwer odrzuci jako nieaktualny.")
+
+        # Synchronize on the actual mocked network response landing, not on
+        # a guessed DOM-timing window -- two DOM-race approaches were tried
+        # and both proved flaky: checking #submit-btn right after the click
+        # can pass trivially before onSubmit()'s async fetch/catch has done
+        # anything at all (it can still be the pre-click button), and
+        # requiring it to detach first can *also* false-fail if the mocked
+        # response and the resulting resync both complete faster than this
+        # test's own next line executes. expect_response removes the
+        # guesswork: this blocks until that exact response is observed,
+        # so everything checked afterward is genuinely after the mock fired.
+        with page.expect_response(lambda r: r.url.endswith("/api/submit") and r.status == 409):
+            page.click("#submit-btn")
+
+        # No #back-btn click anywhere above -- if onSubmit() regressed to
+        # the old generic-error path (which only reaches a fresh case form
+        # again via a manual #back-btn click), this would time out.
+        page.wait_for_selector("#submit-btn", timeout=15000)
