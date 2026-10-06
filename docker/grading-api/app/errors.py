@@ -34,6 +34,11 @@ logger = get_logger(__name__)
 # rejected request can never produce an unbounded log line.
 _MAX_LOGGED_VALIDATION_ERRORS = 10
 _MAX_LOGGED_MSG_CHARS = 200
+# CR #109: loc elements are field NAMES, but a client can choose an
+# unknown/extra field name arbitrarily, so the "can't be attacker text"
+# argument only holds for known schemas -- truncate them like everything
+# else.
+_MAX_LOGGED_LOC_ELEMENT_CHARS = 64
 
 
 class AppError(Exception):
@@ -70,7 +75,8 @@ def _sanitized_validation_errors(errors: list) -> list:
     sanitized = []
     for err in errors[:_MAX_LOGGED_VALIDATION_ERRORS]:
         msg = str(err.get("msg", ""))[:_MAX_LOGGED_MSG_CHARS]
-        sanitized.append({"loc": list(err.get("loc", [])), "type": err.get("type"), "msg": msg})
+        loc = [str(el)[:_MAX_LOGGED_LOC_ELEMENT_CHARS] for el in err.get("loc", [])]
+        sanitized.append({"loc": loc, "type": err.get("type"), "msg": msg})
     if len(errors) > _MAX_LOGGED_VALIDATION_ERRORS:
         sanitized.append({"truncated_count": len(errors) - _MAX_LOGGED_VALIDATION_ERRORS})
     return sanitized

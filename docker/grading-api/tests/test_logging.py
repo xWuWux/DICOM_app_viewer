@@ -182,6 +182,22 @@ def test_422_never_logs_token_or_student_text(client, mint_token, caplog):
     assert all("input" not in err and "ctx" not in err for err in errors)
 
 
+def test_sanitizer_truncates_loc_elements():
+    """CR #109 item 1: loc entries are field names, but nothing in this
+    function's contract guarantees callers only ever pass known schema
+    names (pydantic embeds value-internal paths for structured fields),
+    so each element is bounded like msg is. Unit-level on purpose -- the
+    current flat models never *emit* an oversized loc over HTTP
+    (top-level unknown fields are ignored, not reported), and the
+    sanitizer must not depend on that staying true."""
+    from app.errors import _sanitized_validation_errors
+
+    huge = "a" * 500
+    (out,) = _sanitized_validation_errors([{"loc": ["body", huge], "type": "extra_forbidden", "msg": "m" * 500}])
+    assert out["loc"] == ["body", "a" * 64]
+    assert out["msg"] == "m" * 200
+
+
 def test_no_log_record_ever_contains_the_coordinator_key_or_a_real_token(client, caplog):
     coordinator_key = os.environ["GRADING_COORDINATOR_KEY"]
 
