@@ -23,7 +23,11 @@ VIEWER_URL="${VIEWER_URL:?set VIEWER_URL to the internal viewer address}"
 ORTHANC_URL="${ORTHANC_URL:?set ORTHANC_URL to the internal auth-proxy address}"
 GRADING_TOKEN="${GRADING_TOKEN:?set GRADING_TOKEN to the token minted by grading-api POST /session}"
 
-CASE_JSON=$(curl -fsS "${VIEWER_URL}api/case?token=${GRADING_TOKEN}") || CASE_JSON='{"complete": true}'
+# issue #94: the token rides an X-Grading-Token HEADER, fed to curl via
+# --config on stdin (bash process substitution + builtin printf) so it is
+# never in curl's argv (`ps`-invisible) and never in a query string
+# (nginx logs). Mirrors docker/kasm-workspace-weasis/custom_startup.sh.
+CASE_JSON=$(curl -fsS --config - "${VIEWER_URL}api/case" < <(printf 'header = "X-Grading-Token: %s"\n' "$GRADING_TOKEN")) || CASE_JSON='{"complete": true}'
 
 WEASIS_URI=$(python3 - "$CASE_JSON" "$ORTHANC_URL" <<'PYEOF'
 import json, sys, urllib.parse

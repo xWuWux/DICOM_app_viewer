@@ -31,6 +31,7 @@ EOF
   cat > "$STUB_DIR/curl" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$CURL_ARGS_FILE"
+cat > "${CURL_STDIN_FILE:-/dev/null}"
 if [ -n "${CURL_EXIT_CODE:-}" ] && [ "$CURL_EXIT_CODE" != "0" ]; then
   exit "$CURL_EXIT_CODE"
 fi
@@ -44,6 +45,7 @@ EOF
   export WEASIS_ARGS_FILE="$BATS_TEST_TMPDIR/weasis-args.txt"
   export BROWSER_ARGS_FILE="$BATS_TEST_TMPDIR/browser-args.txt"
   export CURL_ARGS_FILE="$BATS_TEST_TMPDIR/curl-args.txt"
+  export CURL_STDIN_FILE="$BATS_TEST_TMPDIR/curl-stdin.txt"
   export VIEWER_URL="http://ipcmc-viewer:8080/"
   export ORTHANC_URL="http://ipcmc-viewer:8043/"
   export GRADING_TOKEN="test-token-abc"
@@ -75,7 +77,12 @@ EOF
   export CURL_RESPONSE_JSON='{"complete": true}'
   run bash "$SCRIPT"
   [ "$status" -eq 0 ]
-  grep -qF -- "api/case?token=test-token-abc" "$CURL_ARGS_FILE"
+  # issue #94: the token travels as an X-Grading-Token header fed via
+  # --config on stdin -- present in the stdin header, absent from argv
+  # (ps-invisible), absent from the URL (no query-string leak into logs).
+  grep -qF -- 'header = "X-Grading-Token: test-token-abc"' "$CURL_STDIN_FILE"
+  ! grep -qF -- "test-token-abc" "$CURL_ARGS_FILE"
+  grep -qF -- "api/case" "$CURL_ARGS_FILE"
   ! grep -q -- "student_id=" "$CURL_ARGS_FILE"
 }
 
@@ -124,5 +131,7 @@ print(' '.join(urllib.parse.unquote(p) for p in uri.split('+')))
     sleep 0.1
   done
   url=$(cat "$BROWSER_ARGS_FILE")
-  [[ "$url" == "http://ipcmc-viewer:8080/grading-panel.html?student_id=stu%201&session_id=sess_1&token=test-token-abc" ]]
+  # issue #94: the token sits in the URL FRAGMENT (#token=...) -- the
+  # browser never transmits fragments, so it can't reach nginx logs.
+  [[ "$url" == "http://ipcmc-viewer:8080/grading-panel.html?student_id=stu%201&session_id=sess_1#token=test-token-abc" ]]
 }
