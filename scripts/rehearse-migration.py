@@ -68,7 +68,11 @@ def build_synthetic(path: str) -> None:
         sid = f"stu{n}"
         c.execute("INSERT INTO progress VALUES (?, 'complete', 0, 1.0)", (sid,))
         c.execute("INSERT INTO sessions VALUES (?, ?, 's', 1.0, 9e9)", (f"tok{n}", sid))
-        for case_id, stage, ans in ((1, "learning", "2"), (2, "assessment", "3"), (3, "test", "4A" if n % 2 else "4B")):
+        for case_id, stage, ans in (
+            (1, "learning", "2"),
+            (2, "assessment", "3"),
+            (3, "test", "4A" if n % 2 else "4B"),
+        ):
             correct = 1 if ans == {1: "2", 2: "3", 3: "4A"}[case_id] else 0
             c.execute(
                 "INSERT INTO submissions (student_id, case_id, stage, submitted_category,"
@@ -91,8 +95,13 @@ def online_copy(src: str, dst: str) -> None:
 def snapshot(path: str) -> dict:
     c = sqlite3.connect(path)
     c.row_factory = sqlite3.Row
-    tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    counts = {t: c.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0] for t in sorted(tables)}
+    tables = {
+        r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    counts = {
+        t: c.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
+        for t in sorted(tables)
+    }
     sub = []
     if "submissions" in tables:
         sub = [
@@ -111,17 +120,28 @@ class Report:
         self.failed = 0
 
     def check(self, name: str, ok: bool, detail: str = "") -> None:
-        print(f"{'PASS' if ok else 'FAIL'}: {name}" + (f" -- {detail}" if detail and not ok else ""))
+        print(
+            f"{'PASS' if ok else 'FAIL'}: {name}"
+            + (f" -- {detail}" if detail and not ok else "")
+        )
         if not ok:
             self.failed += 1
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--db", help="path to a grading.db (read-only; a copy is migrated)")
-    g.add_argument("--synthetic", action="store_true", help="use the built-in pre-#96 legacy fixture")
-    ap.add_argument("--keep", action="store_true", help="keep the migrated copy and print its path")
+    g.add_argument(
+        "--synthetic",
+        action="store_true",
+        help="use the built-in pre-#96 legacy fixture",
+    )
+    ap.add_argument(
+        "--keep", action="store_true", help="keep the migrated copy and print its path"
+    )
     args = ap.parse_args()
 
     work = tempfile.mkdtemp(prefix="rehearse-migration-")
@@ -136,13 +156,18 @@ def main() -> int:
             online_copy(args.db, copy)
 
         os.environ["GRADING_DB_PATH"] = copy
-        os.environ.setdefault("GRADING_COORDINATOR_KEY", "rehearsal-only-key-" + "x" * 32)
+        os.environ.setdefault(
+            "GRADING_COORDINATOR_KEY", "rehearsal-only-key-" + "x" * 32
+        )
         from app import db  # imported only now: DB_PATH is read at import time
 
         r = Report()
         before = snapshot(copy)
         pc = sqlite3.connect(copy)
-        r.check("source copy passes integrity_check", pc.execute("PRAGMA integrity_check").fetchone()[0] == "ok")
+        r.check(
+            "source copy passes integrity_check",
+            pc.execute("PRAGMA integrity_check").fetchone()[0] == "ok",
+        )
         pc.close()
 
         db.init_db()  # the migration under test (SystemExit on failure = FAIL)
@@ -150,17 +175,26 @@ def main() -> int:
 
         c = sqlite3.connect(copy)
         c.execute("PRAGMA foreign_keys=ON")
-        r.check("integrity_check ok after migration", c.execute("PRAGMA integrity_check").fetchone()[0] == "ok")
+        r.check(
+            "integrity_check ok after migration",
+            c.execute("PRAGMA integrity_check").fetchone()[0] == "ok",
+        )
         fk = c.execute("PRAGMA foreign_key_check").fetchall()
         r.check("foreign_key_check is empty", not fk, f"{len(fk)} violation(s)")
         # \w+_old as a whole identifier (case-sensitive): a bare LIKE '%_old%' would also match
         # the trigger's own `OLD.id` pseudo-row.
         bad_refs = [
             row[0]
-            for row in c.execute("SELECT name, sql FROM sqlite_master WHERE type IN ('table','trigger','index','view')")
+            for row in c.execute(
+                "SELECT name, sql FROM sqlite_master WHERE type IN ('table','trigger','index','view')"
+            )
             if row[1] and re.search(r"\b\w+_old\b", row[1])
         ]
-        r.check("no schema object references a *_old table", not bad_refs, ", ".join(bad_refs))
+        r.check(
+            "no schema object references a *_old table",
+            not bad_refs,
+            ", ".join(bad_refs),
+        )
         r.check(
             "no leftover *_old tables",
             not [t for t in after["counts"] if t.endswith("_old")],
@@ -177,22 +211,45 @@ def main() -> int:
         post_sub = {s[0]: s for s in after["submissions"]}
         # a legacy db with pre-constraint duplicates legitimately loses the older ones (db.py)
         lost = [i for i in pre_sub if i not in post_sub]
-        r.check("no submission lost (except documented duplicate collapse)", not lost or _only_duplicates(before, lost), str(lost))
+        r.check(
+            "no submission lost (except documented duplicate collapse)",
+            not lost or _only_duplicates(before, lost),
+            str(lost),
+        )
         changed = [i for i in post_sub if i in pre_sub and post_sub[i] != pre_sub[i]]
-        r.check("legacy submission columns byte-identical", not changed, f"ids {changed[:5]}")
+        r.check(
+            "legacy submission columns byte-identical",
+            not changed,
+            f"ids {changed[:5]}",
+        )
 
         cols = {row[1] for row in c.execute("PRAGMA table_info(submissions)")}
-        need = {"ground_truth_category", "ground_truth_modifier_s", "case_version", "gt_backfilled"}
+        need = {
+            "ground_truth_category",
+            "ground_truth_modifier_s",
+            "case_version",
+            "gt_backfilled",
+        }
         r.check("submissions has snapshot columns", need <= cols, str(need - cols))
         n_unflagged = c.execute(
             "SELECT COUNT(*) FROM submissions WHERE ground_truth_category IS NULL"
         ).fetchone()[0]
-        r.check("every migrated submission has a frozen ground truth", n_unflagged == 0, f"{n_unflagged} NULL")
-        n_back = c.execute("SELECT COUNT(*) FROM submissions WHERE gt_backfilled=1").fetchone()[0]
-        print(f"INFO: {n_back} submission(s) backfilled from CURRENT cases (gt_backfilled=1): analysis-time caveat")
+        r.check(
+            "every migrated submission has a frozen ground truth",
+            n_unflagged == 0,
+            f"{n_unflagged} NULL",
+        )
+        n_back = c.execute(
+            "SELECT COUNT(*) FROM submissions WHERE gt_backfilled=1"
+        ).fetchone()[0]
+        print(
+            f"INFO: {n_back} submission(s) backfilled from CURRENT cases (gt_backfilled=1): analysis-time caveat"
+        )
         r.check(
             "trigger cases_ground_truth_frozen exists",
-            c.execute("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='cases_ground_truth_frozen'").fetchone()
+            c.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='cases_ground_truth_frozen'"
+            ).fetchone()
             is not None,
         )
 
@@ -213,15 +270,22 @@ def main() -> int:
                 c.execute("RELEASE probe")
             except sqlite3.Error:
                 pass
-        r.check("INSERT into submissions works after migration (FK probe)", probe_ok, err)
+        r.check(
+            "INSERT into submissions works after migration (FK probe)", probe_ok, err
+        )
 
         trig_ok, terr = False, "no submission to test against"
         row = c.execute("SELECT case_id FROM submissions LIMIT 1").fetchone()
         if row:
             try:
                 c.execute("SAVEPOINT trig")
-                c.execute("UPDATE cases SET ground_truth_category='ZZ' WHERE id=?", (row[0],))
-                trig_ok, terr = False, "UPDATE of a submitted case's ground truth was NOT blocked"
+                c.execute(
+                    "UPDATE cases SET ground_truth_category='ZZ' WHERE id=?", (row[0],)
+                )
+                trig_ok, terr = (
+                    False,
+                    "UPDATE of a submitted case's ground truth was NOT blocked",
+                )
             except sqlite3.IntegrityError:
                 trig_ok, terr = True, ""
             finally:
@@ -231,16 +295,28 @@ def main() -> int:
         c.close()
 
         backups = sorted(Path(work).glob("copy.db.pre-migration-*.sqlite.bak"))
-        r.check("exactly one pre-migration backup written", len(backups) == 1, str(backups))
+        r.check(
+            "exactly one pre-migration backup written", len(backups) == 1, str(backups)
+        )
         if backups:
             b = snapshot(str(backups[0]))
-            r.check("backup row counts equal the pre-migration counts", b["counts"] == before["counts"], f"{b['counts']} vs {before['counts']}")
+            r.check(
+                "backup row counts equal the pre-migration counts",
+                b["counts"] == before["counts"],
+                f"{b['counts']} vs {before['counts']}",
+            )
 
         db.init_db()  # second start must be a no-op
         again = sorted(Path(work).glob("copy.db.pre-migration-*.sqlite.bak"))
-        r.check("second start is idempotent (no second backup, same data)", len(again) == len(backups) and snapshot(copy) == after)
+        r.check(
+            "second start is idempotent (no second backup, same data)",
+            len(again) == len(backups) and snapshot(copy) == after,
+        )
 
-        print("\nREHEARSAL", "PASSED" if r.failed == 0 else f"FAILED ({r.failed} check(s))")
+        print(
+            "\nREHEARSAL",
+            "PASSED" if r.failed == 0 else f"FAILED ({r.failed} check(s))",
+        )
         if args.keep:
             print(f"kept: {work}")
         return 0 if r.failed == 0 else 1
@@ -256,7 +332,9 @@ def _only_duplicates(before: dict, lost_ids: list) -> bool:
     keep = {}
     for s in before["submissions"]:
         keep.setdefault((s[1], s[2], s[3]), []).append(s[0])
-    return all(any(i in ids and i != max(ids) for ids in keep.values()) for i in lost_ids)
+    return all(
+        any(i in ids and i != max(ids) for ids in keep.values()) for i in lost_ids
+    )
 
 
 if __name__ == "__main__":
