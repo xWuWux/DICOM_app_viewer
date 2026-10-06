@@ -65,6 +65,14 @@ of this section that only set `ORTHANC_PASSWORD` hit
 `docker compose up`, which cascaded into `load-sample-studies.sh` failing
 too (nothing was actually running yet).
 
+> **BREAKING (issue #97):** `GRADING_COORDINATOR_KEY` must now be at least
+> 32 characters, contain no leading/trailing whitespace, and be set in
+> every launch path (not just compose) — grading-api exits at startup
+> otherwise with a `CONFIGURATION ERROR` naming the variable. Deployments
+> that used a shorter key stop starting until it's regenerated
+> (`openssl rand -hex 32`). `GRADING_TOKEN_TTL_SECONDS`, if set, must be
+> an integer between 1 and 604800 (7 days).
+
 ```
 ┌──────────────┐      ┌───────────────────────┐      ┌─────────────┐
 │  Your browser│ ───► │ viewer (nginx:8080)   │ ───► │  orthanc    │
