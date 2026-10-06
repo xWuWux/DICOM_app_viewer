@@ -245,10 +245,23 @@ def _advance_progress(conn, student_id: str, stage: str, order_index: int):
 
 
 @app.get("/case")
-def get_case(token: str):
+def get_case(x_grading_token: str = Header(alias="X-Grading-Token")):
+    """issue #94: the token moved from ?token= to a header, everywhere.
+
+    A query-string credential was reproduced verbatim by nginx's access
+    log AND its error log (upstream URL) -- two log files holding live
+    session tokens per request (audit-confirmed on the running viewer
+    container; issues #63/#94). Headers appear in neither. Every client
+    of these two GET endpoints is first-party (watermark.html,
+    grading-panel.html, custom_startup.sh, the tests) -- there are no
+    external integrations to keep query-compatibility for, and tokens
+    are hours-lived, so query acceptance is removed outright rather
+    than deprecated (a #63 note for the changelog goes in with #100).
+    POST /submit and /reset keep the token in the JSON body: a body is
+    not logged by nginx, so they were never part of this leak."""
     conn = db.get_connection()
     try:
-        student_id = _resolve_token(conn, token)
+        student_id = _resolve_token(conn, x_grading_token)
         progress = _get_or_create_progress(conn, student_id)
         if progress["stage"] == "complete":
             return {"complete": True}
@@ -478,10 +491,10 @@ def reset(body: ResetBody):
 
 
 @app.get("/results")
-def results(token: str):
+def results(x_grading_token: str = Header(alias="X-Grading-Token")):
     conn = db.get_connection()
     try:
-        student_id = _resolve_token(conn, token)
+        student_id = _resolve_token(conn, x_grading_token)
         progress = _get_or_create_progress(conn, student_id)
         if progress["stage"] != "complete":
             return {"complete": False}

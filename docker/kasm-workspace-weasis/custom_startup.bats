@@ -29,12 +29,15 @@ EOF
   # A stub curl, not the real one -- this is what lets these tests run
   # against grading-api's response *shape* without grading-api existing.
   # Also records its own argv, so a test can confirm the script actually
-  # authenticates with ?token=, not the bare ?student_id= it used to send
-  # (a real gap README.md flagged: nothing checked student_id belonged to
-  # the caller).
+  # authenticates via a header (issue #94: no ?token=, and no token in
+  # argv either -- curl gets it through --config on stdin, mirrored to
+  # CURL_STDIN_FILE here so tests can assert BOTH absence-from-argv and
+  # presence-of-the-right-header). The older bare-student_id auth gap
+  # stays asserted too.
   cat > "$STUB_DIR/curl" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$CURL_ARGS_FILE"
+cat > "${CURL_STDIN_FILE:-/dev/null}"
 if [ -n "${CURL_EXIT_CODE:-}" ] && [ "$CURL_EXIT_CODE" != "0" ]; then
   exit "$CURL_EXIT_CODE"
 fi
@@ -46,6 +49,7 @@ EOF
   export WEASIS_BIN="$STUB_DIR/weasis"
   export WEASIS_ARGS_FILE="$BATS_TEST_TMPDIR/weasis-args.txt"
   export CURL_ARGS_FILE="$BATS_TEST_TMPDIR/curl-args.txt"
+  export CURL_STDIN_FILE="$BATS_TEST_TMPDIR/curl-stdin.txt"
   export VIEWER_URL="http://ipcmc-viewer:8080/"
   export ORTHANC_URL="http://ipcmc-viewer:8043/"
   export GRADING_TOKEN="test-token-abc"
@@ -77,8 +81,16 @@ EOF
   export CURL_RESPONSE_JSON='{"complete": true}'
   run bash "$SCRIPT"
   [ "$status" -eq 0 ]
-  grep -qF -- "api/case?token=test-token-abc" "$CURL_ARGS_FILE"
+  grep -qF -- "api/case" "$CURL_ARGS_FILE"
   ! grep -q -- "student_id=" "$CURL_ARGS_FILE"
+}
+
+@test "issue #94: the token never appears in curl argv, only in the stdin-fed header" {
+  export CURL_RESPONSE_JSON='{"complete": true}'
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  ! grep -qF -- "test-token-abc" "$CURL_ARGS_FILE"
+  grep -qF -- 'header = "X-Grading-Token: test-token-abc"' "$CURL_STDIN_FILE"
 }
 
 @test "launches the assigned study with a correctly built dicom:rs URI" {

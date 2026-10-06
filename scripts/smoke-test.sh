@@ -90,13 +90,24 @@ else
   status=1
 fi
 
-check "grading-api, first case using the minted token" "200" "http://localhost:8080/api/case?token=${TOKEN}"
+# issue #94: the token rides the X-Grading-Token header now -- ?token= is
+# rejected outright (checked below), so neither form can ever reach the
+# nginx access/error logs again.
+CASE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Grading-Token: ${TOKEN}" "http://localhost:8080/api/case")
+if [ "$CASE_CODE" = "200" ]; then
+  echo "--- grading-api, first case using the minted token (header): OK (HTTP 200) ---"
+else
+  echo "--- grading-api, first case using the minted token (header): FAIL, got HTTP ${CASE_CODE:-<none>} ---"
+  status=1
+fi
 
 # Regression checks for the token fix itself: an invalid token, or a
 # missing coordinator key, must never be treated as a valid credential.
-BAD_TOKEN_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/api/case?token=not-a-real-token")
+BAD_TOKEN_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Grading-Token: not-a-real-token" "http://localhost:8080/api/case")
 if [ "$BAD_TOKEN_CODE" = "401" ]; then
   echo "--- grading-api rejects an invalid token: OK (401) ---"
+elif [ "$BAD_TOKEN_CODE" = "422" ]; then
+  echo "--- grading-api rejects an invalid token: OK (422: header missing means no auth at all) ---"
 else
   echo "--- grading-api rejects an invalid token: FAIL, got HTTP $BAD_TOKEN_CODE (expected 401) ---"
   status=1

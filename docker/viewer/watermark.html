@@ -104,7 +104,15 @@
   // call below actually authenticates with; custom_startup.sh bakes it in
   // the same way, from the value grading-api's own POST /session minted
   // for this specific session.
-  const token = params.get("token") || "";
+  //
+  // issue #94: the token is read from the URL FRAGMENT (#token=...),
+  // which browsers never transmit -- so it cannot reach nginx's access
+  // log or error log (both reproduced a query-string token verbatim;
+  // issues #63/#94). The launcher (custom_startup.sh) appends it as a
+  // fragment accordingly. A ?token= in the query is deliberately NOT
+  // read: grading-api rejects that transport too.
+  const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
+  const token = hashParams.get("token") || "";
   // Orthanc lives on its own origin (see nginx.conf comment on why it isn't
   // reverse-proxied under a subpath). Defaults to this machine's local test
   // setup; the Kasm launcher (custom_startup.sh) passes the real internal
@@ -185,7 +193,7 @@
   async function loadCase() {
     panel.innerHTML = "<p>Ładowanie danych...</p>";
     try {
-      const res = await fetch(`/api/case?token=${encodeURIComponent(token)}`);
+      const res = await fetch("/api/case", { headers: { "X-Grading-Token": token } });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
@@ -318,7 +326,7 @@
 
   async function showResults() {
     try {
-      const res = await fetch(`/api/results?token=${encodeURIComponent(token)}`);
+      const res = await fetch("/api/results", { headers: { "X-Grading-Token": token } });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }

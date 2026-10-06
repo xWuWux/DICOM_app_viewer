@@ -106,7 +106,11 @@
   // call below actually authenticates with; custom_startup.sh bakes it in
   // the same way, from the value grading-api's own POST /session minted
   // for this specific session.
-  const token = params.get("token") || "";
+  // issue #94: token arrives via the URL fragment (#token=...), never a
+  // query string -- the browser never sends fragments to the server, so
+  // it cannot appear in nginx access/error logs (see watermark.html).
+  const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
+  const token = hashParams.get("token") || "";
 
   const rotator = document.getElementById("watermark-rotator");
   const grid = document.getElementById("watermark-grid");
@@ -175,7 +179,7 @@
   async function loadCase() {
     panel.innerHTML = "<p>Ładowanie danych...</p>";
     try {
-      const res = await fetch(`/api/case?token=${encodeURIComponent(token)}`);
+      const res = await fetch("/api/case", { headers: { "X-Grading-Token": token } });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
@@ -293,7 +297,7 @@
 
   async function showResults() {
     try {
-      const res = await fetch(`/api/results?token=${encodeURIComponent(token)}`);
+      const res = await fetch("/api/results", { headers: { "X-Grading-Token": token } });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }

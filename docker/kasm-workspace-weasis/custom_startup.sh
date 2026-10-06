@@ -58,7 +58,12 @@ GRADING_TOKEN="${GRADING_TOKEN:?set GRADING_TOKEN to the token minted by grading
 # session start (matches create-session.py's own non-fatal-readiness-check
 # philosophy) -- falls through to "no case" below, which still launches a
 # usable (just study-less) Weasis session instead of nothing at all.
-CASE_JSON=$(curl -fsS "${VIEWER_URL}api/case?token=${GRADING_TOKEN}") || CASE_JSON='{"complete": true}'
+# issue #94: the token travels in a request HEADER, fed to curl through
+# --config on stdin (a <(...) process substitution -- bash forks its own
+# subshell for the builtin printf, nothing execs with the token in its
+# argv), so it is invisible both to `ps` and to every nginx log: query
+# strings were reproduced in access.log AND error.log, argv in ps.
+CASE_JSON=$(curl -fsS --config - "${VIEWER_URL}api/case" < <(printf 'header = "X-Grading-Token: %s"\n' "$GRADING_TOKEN")) || CASE_JSON='{"complete": true}'
 
 # One python3 script (not a shell one-liner) since this needs real JSON
 # parsing plus per-token percent-encoding -- same reasoning as the Chrome
