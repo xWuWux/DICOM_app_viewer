@@ -13,9 +13,8 @@ import os
 import sqlite3
 import time
 
-# main.py reads db.TOKEN_TTL_SECONDS; the (now validated -- issue #97)
-# reading lives in app/config.py; re-export keeps call sites working.
-from .config import TOKEN_TTL_SECONDS  # noqa: F401
+# main.py reads db.TOKEN_TTL_SECONDS; validation lives in config.py (#97).
+from .config import TOKEN_TTL_SECONDS  # noqa: F401  re-export, call sites unchanged
 
 DB_PATH = os.environ.get("GRADING_DB_PATH", "/data/grading.db")
 

@@ -23,16 +23,23 @@ vector (issue #93's lesson applied to startup).
 
 import os
 
-# 32 characters of entropy (not 32 bytes -- this is a shared secret
-# compared via compare_digest, so "characters" of a >=32-char ASCII
-# secret like `openssl rand -hex 32`'s 64-char output is the meaningful
-# unit) is the floor below which brute-forcing the mint-your-own-token
-# endpoint stops being absurd. Deliberately NO dev/test exception: every
+# Minimum LENGTH -- note this is a brute-force floor, not an entropy
+# guarantee (`'k'*32` passes; the CR #111 nit is fair, but rejecting
+# low-complexity-by-pattern keys server-side is security theater the
+# moment any real `openssl rand` output clears it by 2x anyway). 32
+# characters is where brute-forcing the mint-your-own-token endpoint
+# stops being absurd. Deliberately NO dev/test exception: every
 # environment that can import this app proves the same property, so a
 # test suite can't silently ship a deployment that skipped it.
 MIN_COORDINATOR_KEY_CHARS = 32
 
 DEFAULT_TOKEN_TTL_SECONDS = 8 * 60 * 60
+
+# CR #111 item 3: an unbounded TTL turns "leaked token" into "permanent
+# impersonation". A session token maps to one training/exam sitting;
+# 7 days gives a weekend-plus-break margin over the 8h design point
+# while keeping any leaked token's blast radius bounded by a week.
+MAX_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60
 
 # Bad non-secret values get quoted into error messages (they're not
 # secrets -- a TTL is); capped so a megabyte of garbage in the env can't
@@ -55,6 +62,23 @@ def validate_coordinator_key(raw: str | None) -> str:
             "(generate one, e.g.: openssl rand -hex 32). The service refuses to start "
             "without it: without a real secret, anyone could call POST /session and "
             "mint a token for any student_id."
+        )
+    if not raw.strip():
+        # 32 spaces would sail past a bare len() check; .env files pick
+        # up exactly this kind of junk (CR #111 item 1).
+        raise ConfigError(
+            "GRADING_COORDINATOR_KEY is set but contains only whitespace. Generate a "
+            "real secret, e.g.: openssl rand -hex 32."
+        )
+    if raw != raw.strip():
+        # Rejected, not silently stripped: scripts/create-session.py
+        # sends the key's exact bytes from ITS env -- if the server
+        # quietly normalized while the client didn't, a trailing space
+        # becomes a silent 401 mystery instead of a loudly fixed typo.
+        raise ConfigError(
+            "GRADING_COORDINATOR_KEY has leading/trailing whitespace (a common .env "
+            "artifact). Remove it -- the key is matched byte-for-byte against what "
+            "scripts/create-session.py sends."
         )
     if len(raw) < MIN_COORDINATOR_KEY_CHARS:
         # The LENGTH is reported, never the value (and never via a repr
@@ -80,6 +104,13 @@ def validate_token_ttl_seconds(raw: str | None) -> int:
         raise ConfigError(
             f"GRADING_TOKEN_TTL_SECONDS must be greater than 0, got {ttl} -- "
             f"every minted token would be born expired (default: {DEFAULT_TOKEN_TTL_SECONDS})."
+        )
+    if ttl > MAX_TOKEN_TTL_SECONDS:
+        raise ConfigError(
+            f"GRADING_TOKEN_TTL_SECONDS={ttl} exceeds the {MAX_TOKEN_TTL_SECONDS}-second "
+            f"(7 day) ceiling -- session tokens must not outlive the longest plausible "
+            f"sitting, or a leaked token stays valid indefinitely "
+            f"(default: {DEFAULT_TOKEN_TTL_SECONDS})."
         )
     return ttl
 

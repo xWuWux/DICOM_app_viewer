@@ -62,11 +62,28 @@ def test_minimum_length_key_is_accepted_verbatim():
     assert validate_coordinator_key(VALID_KEY) == VALID_KEY
 
 
+def test_whitespace_only_coordinator_key_is_rejected():
+    # CR #111 item 1: 32 spaces passed a bare len() check.
+    for blank in [" " * MIN_COORDINATOR_KEY_CHARS, "\t" * 40]:
+        with pytest.raises(ConfigError) as excinfo:
+            validate_coordinator_key(blank)
+        assert "GRADING_COORDINATOR_KEY" in str(excinfo.value)
+
+
+def test_coordinator_key_with_surrounding_whitespace_is_rejected_not_stripped():
+    # Not silently stripped: the client side (create-session.py) sends
+    # exact bytes, so server-side normalization would be a silent 401.
+    for bad in [VALID_KEY + " ", "\n" + VALID_KEY, VALID_KEY + "\t"]:
+        with pytest.raises(ConfigError) as excinfo:
+            validate_coordinator_key(bad)
+        assert "whitespace" in str(excinfo.value)
+
+
 def test_ttl_default_used_when_unset():
     assert validate_token_ttl_seconds(None) == DEFAULT_TOKEN_TTL_SECONDS
 
 
-@pytest.mark.parametrize("bad", ["8 godzin", "", "  ", "28800.5", "0", "-3600"])
+@pytest.mark.parametrize("bad", ["8 godzin", "", "  ", "28800.5", "0", "-3600", "99999999999"])
 def test_bad_ttl_is_rejected_with_variable_named(bad):
     with pytest.raises(ConfigError) as excinfo:
         validate_token_ttl_seconds(bad)
@@ -75,6 +92,15 @@ def test_bad_ttl_is_rejected_with_variable_named(bad):
 
 def test_good_ttl_accepted():
     assert validate_token_ttl_seconds("28800") == 28800
+
+
+def test_ttl_upper_bound_is_enforced():
+    from app.config import MAX_TOKEN_TTL_SECONDS
+
+    assert validate_token_ttl_seconds(str(MAX_TOKEN_TTL_SECONDS)) == MAX_TOKEN_TTL_SECONDS
+    with pytest.raises(ConfigError) as excinfo:
+        validate_token_ttl_seconds(str(MAX_TOKEN_TTL_SECONDS + 1))
+    assert "ceiling" in str(excinfo.value)
 
 
 # ---- the import-time contract, in a real subprocess ----
