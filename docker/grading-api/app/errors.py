@@ -25,6 +25,16 @@ from .logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# issue #93: bounds on what validation_error_handler may log. An
+# unbounded exc.errors() dump logged the *entire rejected payload* --
+# including a live session token in `input` (POST /submit with a missing
+# case_id logs the whole body, token and all) and up to ~20 KB of raw
+# student free text per rejected request. Only loc/type/msg are ever
+# logged, msg is truncated, and the list itself is capped, so one
+# rejected request can never produce an unbounded log line.
+_MAX_LOGGED_VALIDATION_ERRORS = 10
+_MAX_LOGGED_MSG_CHARS = 200
+
 
 class AppError(Exception):
     """Raise this instead of fastapi.HTTPException everywhere in this
@@ -49,13 +59,35 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     )
 
 
+def _sanitized_validation_errors(errors: list) -> list:
+    """issue #93: keep the diagnostic part of each pydantic error (which
+    field, which failure type, why) and drop everything value-derived.
+
+    `input` is the rejected value itself -- a live session token on a
+    partial /submit body, an entire student answer on an overlong `text`
+    -- and `ctx` can embed value text too. Neither is needed to diagnose
+    *which field* failed, so neither is ever logged."""
+    sanitized = []
+    for err in errors[:_MAX_LOGGED_VALIDATION_ERRORS]:
+        msg = str(err.get("msg", ""))[:_MAX_LOGGED_MSG_CHARS]
+        sanitized.append({"loc": list(err.get("loc", [])), "type": err.get("type"), "msg": msg})
+    if len(errors) > _MAX_LOGGED_VALIDATION_ERRORS:
+        sanitized.append({"truncated_count": len(errors) - _MAX_LOGGED_VALIDATION_ERRORS})
+    return sanitized
+
+
 async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    # exc.errors() is logged in full server-side (real diagnostic value --
-    # which field, what pydantic rejected) but never echoed to the client:
-    # it can include the actual rejected input value, which for a
-    # max_length violation could mean bouncing a large payload straight
-    # back at whoever sent it -- an amplification vector, not just noise.
-    logger.info("validation_error", extra={"path": request.url.path, "errors": exc.errors()})
+    # Logged server-side for real diagnostic value (which field, what
+    # pydantic rejected) but never echoed to the client: it could mean
+    # bouncing a rejected payload back at whoever sent it -- an
+    # amplification vector, not just noise. And since issue #93, the
+    # *logged* form is sanitized too (no input/ctx, capped) -- logging
+    # exc.errors() raw meant every 422 wrote, in cleartext, a session
+    # token minted moments earlier and/or the student's whole answer.
+    logger.info(
+        "validation_error",
+        extra={"path": request.url.path, "errors": _sanitized_validation_errors(exc.errors())},
+    )
     return JSONResponse(
         status_code=422,
         content={"error_code": "VALIDATION_ERROR", "message": "Invalid request"},
