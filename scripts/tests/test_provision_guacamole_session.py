@@ -19,7 +19,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-os.environ.setdefault("GRADING_COORDINATOR_KEY", "test-only-coordinator-key")
+# >= 32 chars: grading-api's app/config.py enforces a minimum
+# coordinator-key length for any process importing the app (issue #97);
+# kept in sync here so both suites share one convention even though this
+# script only forwards the key as an HTTP header.
+os.environ.setdefault("GRADING_COORDINATOR_KEY", "test-only-coordinator-key-0123456789abcdef")
 
 # provision-guacamole-session.py has a hyphen in its filename, so it can't
 # be `import`ed normally -- load it by path instead, same technique the

@@ -13,13 +13,14 @@ import os
 import sqlite3
 import time
 
+# main.py reads db.TOKEN_TTL_SECONDS; validation lives in config.py (#97).
+from .config import TOKEN_TTL_SECONDS  # noqa: F401  re-export, call sites unchanged
+
 DB_PATH = os.environ.get("GRADING_DB_PATH", "/data/grading.db")
 
-# How long a minted session token stays valid. A single training/exam
-# session is expected to last at most a few hours; 8h gives real headroom
-# without tokens living forever. Configurable since real cohorts may need
-# a different window.
-TOKEN_TTL_SECONDS = int(os.environ.get("GRADING_TOKEN_TTL_SECONDS", 8 * 60 * 60))
+# How long a minted session token stays valid -- see config.py for the
+# (now validated) reading of GRADING_TOKEN_TTL_SECONDS; re-exported above
+# so every existing db.TOKEN_TTL_SECONDS call site keeps working.
 
 STAGES = ["learning", "assessment", "test"]
 
