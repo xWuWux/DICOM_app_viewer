@@ -123,7 +123,13 @@ def _backup_before_migration(conn):
     backup_path = f"{DB_PATH}.pre-migration-{stamp}.sqlite.bak"
     try:
         conn.execute("VACUUM INTO ?", (backup_path,))
-    except sqlite3.Error:
+        # issue #96 CR: this copy holds real student answers -- VACUUM INTO
+        # creates the file under the process umask (0644 in the default
+        # container), readable by any local account. Tighten it before
+        # anything else can open it; failing to do so is as bad as failing
+        # to copy at all. Rotation/retention/encryption stay #85's job.
+        os.chmod(backup_path, 0o600)
+    except (sqlite3.Error, OSError):
         logger.exception("pre_migration_backup_failed")
         raise SystemExit(
             f"CONFIGURATION ERROR: could not write the pre-migration backup "
@@ -151,19 +157,34 @@ def _migrate_existing_schema(conn):
         if "version" not in cases_cols:
             # issue #96: ground truth becomes versionable. SQLite can't
             # drop the inline UNIQUE(stage, order_index) in place, so
-            # rebuild under UNIQUE(stage, order_index, version) -- same
-            # documented pattern the submissions rebuild below uses.
-            # Manual BEGIN IMMEDIATE/COMMIT, per-statement executes, and
-            # EXPLICIT column lists (reviewer note on #96: `INSERT ...
-            # SELECT *` is column-order dependent; executescript issues
-            # an implicit COMMIT -- both forbidden for this migration).
+            # rebuild under UNIQUE(stage, order_index, version).
+            #
+            # PARENT-table rebuild: `ALTER TABLE cases RENAME TO cases_old`
+            # first is WRONG here -- since SQLite 3.26 RENAME rewrites
+            # FOREIGN KEY clauses in CHILD tables, so submissions would
+            # point at "cases_old" and the later DROP leaves EVERY /submit
+            # on a migrated database dying with "no such table:
+            # main.cases_old" (CR on #120, reproduced on sqlite 3.46 --
+            # invisible to tests until one inserts AFTER migrating; see
+            # test_after_migration_submissions...). Follow SQLite's
+            # documented rebuild order instead: build cases_new, copy with
+            # EXPLICIT columns (INSERT...SELECT * is column-order
+            # dependent; executescript's implicit COMMIT is forbidden --
+            # manual BEGIN IMMEDIATE per statement, reviewer note on #96),
+            # DROP the old table, RENAME into place. Children reference
+            # "cases" BY NAME and resolve against the new table again;
+            # legacy_alter_table=ON keeps RENAME touching only the renamed
+            # table's own references and tolerates the transient dangling
+            # child reference mid-swap. foreign_key_check runs BEFORE
+            # COMMIT -- anything it reports rolls the whole swap back
+            # instead of committing a schema every /submit will hit.
             conn.execute("PRAGMA foreign_keys=OFF")
+            conn.execute("PRAGMA legacy_alter_table=ON")
             conn.isolation_level = None  # manual transaction control
             try:
                 conn.execute("BEGIN IMMEDIATE")
-                conn.execute("ALTER TABLE cases RENAME TO cases_old")
                 conn.execute(
-                    """CREATE TABLE cases (
+                    """CREATE TABLE cases_new (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         stage TEXT NOT NULL,
                         order_index INTEGER NOT NULL,
@@ -177,20 +198,26 @@ def _migrate_existing_schema(conn):
                     )"""
                 )
                 conn.execute(
-                    """INSERT INTO cases
+                    """INSERT INTO cases_new
                         (id, stage, order_index, orthanc_study_uid, title,
                          ground_truth_category, ground_truth_modifier_s, reference_report, version)
                        SELECT id, stage, order_index, orthanc_study_uid, title,
                               ground_truth_category, ground_truth_modifier_s, reference_report, 1
-                       FROM cases_old"""
+                       FROM cases"""
                 )
-                conn.execute("DROP TABLE cases_old")
+                conn.execute("DROP TABLE cases")
+                conn.execute("ALTER TABLE cases_new RENAME TO cases")
+                violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+                if violations:
+                    raise sqlite3.IntegrityError(f"foreign_key_check after cases rebuild: {violations[:5]}")
                 conn.execute("COMMIT")
             except sqlite3.Error:
                 conn.execute("ROLLBACK")
-                # Loud SystemExit, not a half-migrated service: ROLLBACK
-                # restored the pre-BEGIN state (cases intact under its own
-                # name) and the _backup_before_migration copy is on disk.
+                # Loud SystemExit, not a half-migrated service: every DROP
+                # and RENAME above sits inside the one BEGIN IMMEDIATE, so
+                # ROLLBACK restores the exact pre-swap state (cases intact
+                # under its own name) and the _backup_before_migration
+                # copy is on disk.
                 logger.exception("cases_version_migration_failed")
                 raise SystemExit(
                     "CONFIGURATION ERROR: could not migrate the cases table to the "
@@ -199,7 +226,11 @@ def _migrate_existing_schema(conn):
                 ) from None
             finally:
                 conn.isolation_level = ""
+                conn.execute("PRAGMA legacy_alter_table=OFF")
             conn.execute("PRAGMA foreign_keys=ON")
+            # idx_cases_stage died with the dropped table; init_db's
+            # executescript (every start, after this function, IF NOT
+            # EXISTS) recreates indexes for the swapped-in table.
 
     if "progress" in tables:
         cols = {row[1] for row in conn.execute("PRAGMA table_info(progress)").fetchall()}
@@ -407,19 +438,38 @@ def init_db():
             UNIQUE(student_id, case_id, stage)
         );
 
-        -- issue #96, the enforcement half: editing a submitted case's
-        -- ground truth is ALWAYS a data-integrity mistake (it silently
-        -- falsifies already-published results); the legal change path
-        -- is INSERTing a new version row -- allowed precisely because
-        -- UNIQUE moved to (stage, order_index, version). ABORT rolls
-        -- back just the offending statement. This trigger is created
-        -- for fresh AND migrated databases alike (executescript below
-        -- runs on every start; IF NOT EXISTS keeps it idempotent).
+        -- issue #96, the enforcement half: editing a SUBMITTED case in any
+        -- grading-relevant column is ALWAYS a data-integrity mistake --
+        -- not just the ground truth: re-pointing orthanc_study_uid, moving
+        -- the case's (stage, order_index) position, or bumping version
+        -- after the fact silently rewrites what was graded (CR on #120).
+        -- The legal change path is INSERTing a new version row -- allowed
+        -- precisely because UNIQUE moved to (stage, order_index, version).
+        -- title/reference_report stay editable: presentation text nothing
+        -- is scored against. ABORT rolls back just the offending
+        -- statement. This trigger is created for fresh AND migrated
+        -- databases alike (executescript below runs on every start;
+        -- IF NOT EXISTS keeps it idempotent).
         CREATE TRIGGER IF NOT EXISTS cases_ground_truth_frozen
-        BEFORE UPDATE OF ground_truth_category, ground_truth_modifier_s ON cases
+        BEFORE UPDATE OF
+            stage, order_index, version, orthanc_study_uid,
+            ground_truth_category, ground_truth_modifier_s
+        ON cases
         FOR EACH ROW WHEN EXISTS (SELECT 1 FROM submissions WHERE case_id = OLD.id)
         BEGIN
-            SELECT RAISE(ABORT, 'ground truth frozen (issue #96): case has submissions -- insert a new version row');
+            SELECT RAISE(ABORT, 'immutable once submitted (issue #96): insert a new version row instead');
+        END;
+
+        -- Explicit delete guard (CR on #120): with foreign_keys=ON the FK
+        -- alone already refuses this DELETE, but tools/scripts may connect
+        -- with the pragma OFF (the sqlite3 CLI defaults to OFF!) -- then
+        -- the delete would succeed and orphan graded history. Make the
+        -- protection schema-level, not session-level.
+        CREATE TRIGGER IF NOT EXISTS cases_delete_frozen
+        BEFORE DELETE ON cases
+        FOR EACH ROW WHEN EXISTS (SELECT 1 FROM submissions WHERE case_id = OLD.id)
+        BEGIN
+            SELECT RAISE(ABORT, 'case has submissions (issue #96): delete would orphan graded history');
         END;
 
         -- Binds an unguessable, server-issued token to a student_id --
