@@ -15,8 +15,11 @@ import time
 
 # main.py reads db.TOKEN_TTL_SECONDS; validation lives in config.py (#97).
 from .config import TOKEN_TTL_SECONDS  # noqa: F401  re-export, call sites unchanged
+from .logging_config import get_logger
 
 DB_PATH = os.environ.get("GRADING_DB_PATH", "/data/grading.db")
+
+logger = get_logger(__name__)
 
 # How long a minted session token stays valid -- see config.py for the
 # (now validated) reading of GRADING_TOKEN_TTL_SECONDS; re-exported above
@@ -104,6 +107,31 @@ def get_connection():
     return conn
 
 
+def _backup_before_migration(conn):
+    """issue #96 / #85 hook: any deploy against an EXISTING database
+    migrates (rewrites) real rows at container start, silently -- so the
+    migration gets a consistent file copy first. VACUUM INTO, not `cp`
+    (#85's own warning): it captures a transactionally consistent
+    snapshot INCLUDING in-flight WAL contents, which `cp` of a live
+    WAL-mode file does not.
+
+    Stays on-premise on the same volume (CLAUDE.md); rotation/
+    encryption/retention of these files is #85's job, not this hook's.
+    Failure to back up aborts startup: migrating without a copy is the
+    irreversible path this hook exists to prevent."""
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    backup_path = f"{DB_PATH}.pre-migration-{stamp}.sqlite.bak"
+    try:
+        conn.execute("VACUUM INTO ?", (backup_path,))
+    except sqlite3.Error:
+        logger.exception("pre_migration_backup_failed")
+        raise SystemExit(
+            f"CONFIGURATION ERROR: could not write the pre-migration backup "
+            f"({backup_path}); refusing to migrate real data without a copy (issue #85)."
+        ) from None
+    logger.info("pre_migration_backup_written", extra={"backup_path": backup_path})
+
+
 def _migrate_existing_schema(conn):
     """Handles a database file that already existed before a later schema
     change -- CREATE TABLE IF NOT EXISTS is a genuine no-op once a table
@@ -117,6 +145,61 @@ def _migrate_existing_schema(conn):
     fixture, which never exercises this path at all).
     """
     tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+
+    if "cases" in tables:
+        cases_cols = {row[1] for row in conn.execute("PRAGMA table_info(cases)").fetchall()}
+        if "version" not in cases_cols:
+            # issue #96: ground truth becomes versionable. SQLite can't
+            # drop the inline UNIQUE(stage, order_index) in place, so
+            # rebuild under UNIQUE(stage, order_index, version) -- same
+            # documented pattern the submissions rebuild below uses.
+            # Manual BEGIN IMMEDIATE/COMMIT, per-statement executes, and
+            # EXPLICIT column lists (reviewer note on #96: `INSERT ...
+            # SELECT *` is column-order dependent; executescript issues
+            # an implicit COMMIT -- both forbidden for this migration).
+            conn.execute("PRAGMA foreign_keys=OFF")
+            conn.isolation_level = None  # manual transaction control
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute("ALTER TABLE cases RENAME TO cases_old")
+                conn.execute(
+                    """CREATE TABLE cases (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        stage TEXT NOT NULL,
+                        order_index INTEGER NOT NULL,
+                        orthanc_study_uid TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        ground_truth_category TEXT NOT NULL,
+                        ground_truth_modifier_s INTEGER NOT NULL DEFAULT 0,
+                        reference_report TEXT NOT NULL,
+                        version INTEGER NOT NULL DEFAULT 1,
+                        UNIQUE(stage, order_index, version)
+                    )"""
+                )
+                conn.execute(
+                    """INSERT INTO cases
+                        (id, stage, order_index, orthanc_study_uid, title,
+                         ground_truth_category, ground_truth_modifier_s, reference_report, version)
+                       SELECT id, stage, order_index, orthanc_study_uid, title,
+                              ground_truth_category, ground_truth_modifier_s, reference_report, 1
+                       FROM cases_old"""
+                )
+                conn.execute("DROP TABLE cases_old")
+                conn.execute("COMMIT")
+            except sqlite3.Error:
+                conn.execute("ROLLBACK")
+                # Loud SystemExit, not a half-migrated service: ROLLBACK
+                # restored the pre-BEGIN state (cases intact under its own
+                # name) and the _backup_before_migration copy is on disk.
+                logger.exception("cases_version_migration_failed")
+                raise SystemExit(
+                    "CONFIGURATION ERROR: could not migrate the cases table to the "
+                    "versioned schema (issue #96); the database is unchanged. "
+                    "See the traceback above for the underlying sqlite3 error."
+                ) from None
+            finally:
+                conn.isolation_level = ""
+            conn.execute("PRAGMA foreign_keys=ON")
 
     if "progress" in tables:
         cols = {row[1] for row in conn.execute("PRAGMA table_info(progress)").fetchall()}
@@ -161,7 +244,11 @@ def _migrate_existing_schema(conn):
                     UNIQUE(student_id, case_id, stage)
                 );
                 INSERT INTO submissions
-                    SELECT * FROM submissions_old
+                    (id, student_id, case_id, stage, submitted_category, submitted_modifier_s,
+                     submitted_text, is_correct, time_spent_seconds, submitted_at)
+                    SELECT id, student_id, case_id, stage, submitted_category, submitted_modifier_s,
+                           submitted_text, is_correct, time_spent_seconds, submitted_at
+                    FROM submissions_old
                     WHERE id IN (
                         SELECT MAX(id) FROM submissions_old
                         GROUP BY student_id, case_id, stage
@@ -172,9 +259,74 @@ def _migrate_existing_schema(conn):
             conn.commit()
             conn.execute("PRAGMA foreign_keys=ON")
 
+        sub_cols = {row[1] for row in conn.execute("PRAGMA table_info(submissions)").fetchall()}
+        if "ground_truth_category" not in sub_cols:
+            # issue #96: freeze the ground truth into each submission as
+            # of /submit time. ALTER ADD COLUMN with constant defaults
+            # needs no table rebuild (unlike the cases UNIQUE change
+            # above). Runs AFTER the unique-rebuild branch so a pre-#28
+            # database lands on the same schema in a single start.
+            conn.execute("ALTER TABLE submissions ADD COLUMN ground_truth_category TEXT")
+            conn.execute("ALTER TABLE submissions ADD COLUMN ground_truth_modifier_s INTEGER")
+            conn.execute("ALTER TABLE submissions ADD COLUMN case_version INTEGER")
+            conn.execute("ALTER TABLE submissions ADD COLUMN gt_backfilled INTEGER NOT NULL DEFAULT 0")
+            # Backfill from CURRENT cases: best available guess, NOT a
+            # proven snapshot -- if the course GT was edited before this
+            # upgrade, these rows carry today's GT, not the GT in effect
+            # when the student answered. gt_backfilled=1 marks exactly
+            # that uncertainty for whoever analyzes the data later.
+            # Skipped (new columns stay NULL) when the database has no
+            # cases table at all -- the minimal legacy fixtures in
+            # test_state_machine.py exercise exactly that shape.
+            if "cases" in tables:
+                conn.execute(
+                    "UPDATE submissions SET "
+                    "ground_truth_category = "
+                    "(SELECT c.ground_truth_category FROM cases c WHERE c.id = submissions.case_id), "
+                    "ground_truth_modifier_s = "
+                    "(SELECT c.ground_truth_modifier_s FROM cases c WHERE c.id = submissions.case_id), "
+                    "case_version = (SELECT c.version FROM cases c WHERE c.id = submissions.case_id), "
+                    "gt_backfilled = 1"
+                )
+                conn.commit()
+                logger.warning(
+                    "ground_truth_backfilled",
+                    extra={
+                        "note": "existing submissions' ground truth backfilled "
+                        "from CURRENT cases; marked gt_backfilled=1"
+                    },
+                )
+
+
+def _migration_needed(conn) -> bool:
+    """True only when _migrate_existing_schema would actually change
+    something -- drives the #85 pre-migration backup so a routine
+    restart of an already-current database neither rewrites anything nor
+    litters the volume with byte-identical copies."""
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    if not tables:
+        return False
+    if "progress" in tables:
+        if "case_assigned_at" not in {row[1] for row in conn.execute("PRAGMA table_info(progress)").fetchall()}:
+            return True
+    if "cases" in tables:
+        if "version" not in {row[1] for row in conn.execute("PRAGMA table_info(cases)").fetchall()}:
+            return True
+    if "submissions" in tables:
+        if not any(row[2] for row in conn.execute("PRAGMA index_list(submissions)").fetchall()):
+            return True
+        if "ground_truth_category" not in {row[1] for row in conn.execute("PRAGMA table_info(submissions)").fetchall()}:
+            return True
+    return False
+
 
 def init_db():
     conn = get_connection()
+    # issue #96/#85 hook: copy the file BEFORE anything rewrites it.
+    # Gated on _migration_needed so routine restarts don't pile up
+    # identical copies (nor pay the VACUUM cost) on an already-current db.
+    if _migration_needed(conn):
+        _backup_before_migration(conn)
     _migrate_existing_schema(conn)
     conn.executescript(
         """
@@ -187,7 +339,14 @@ def init_db():
             ground_truth_category TEXT NOT NULL,
             ground_truth_modifier_s INTEGER NOT NULL DEFAULT 0,
             reference_report TEXT NOT NULL,
-            UNIQUE(stage, order_index)
+            -- issue #96: a case's ground truth may legally change
+            -- between cohort runs (user decision 2026-10-06) -- as a NEW
+            -- version row, never as an UPDATE once submissions exist
+            -- (enforced by cases_ground_truth_frozen below). "The
+            -- current case" = highest version at a position, see
+            -- main.py's _get_case().
+            version INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(stage, order_index, version)
         );
 
         -- case_assigned_at (issue #29): stamped server-side the moment a
@@ -233,8 +392,35 @@ def init_db():
             is_correct INTEGER,
             time_spent_seconds REAL,
             submitted_at REAL NOT NULL,
+            -- issue #96: the ground truth frozen at /submit time (same
+            -- transaction, same case row is_correct was computed
+            -- against), plus which case version it came from. /results
+            -- reads ONLY these columns -- before this, a GT edit after
+            -- answering published a self-contradictory record (audit
+            -- §3.2: ground_truth 4B vs submitted 4A vs correct:true).
+            ground_truth_category TEXT,
+            ground_truth_modifier_s INTEGER,
+            case_version INTEGER,
+            -- 1 only for rows backfilled by the migration from CURRENT
+            -- cases (snapshot of convenience, not of proof).
+            gt_backfilled INTEGER NOT NULL DEFAULT 0,
             UNIQUE(student_id, case_id, stage)
         );
+
+        -- issue #96, the enforcement half: editing a submitted case's
+        -- ground truth is ALWAYS a data-integrity mistake (it silently
+        -- falsifies already-published results); the legal change path
+        -- is INSERTing a new version row -- allowed precisely because
+        -- UNIQUE moved to (stage, order_index, version). ABORT rolls
+        -- back just the offending statement. This trigger is created
+        -- for fresh AND migrated databases alike (executescript below
+        -- runs on every start; IF NOT EXISTS keeps it idempotent).
+        CREATE TRIGGER IF NOT EXISTS cases_ground_truth_frozen
+        BEFORE UPDATE OF ground_truth_category, ground_truth_modifier_s ON cases
+        FOR EACH ROW WHEN EXISTS (SELECT 1 FROM submissions WHERE case_id = OLD.id)
+        BEGIN
+            SELECT RAISE(ABORT, 'ground truth frozen (issue #96): case has submissions -- insert a new version row');
+        END;
 
         -- Binds an unguessable, server-issued token to a student_id --
         -- the actual authorization mechanism (see main.py's /session and

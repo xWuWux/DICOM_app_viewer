@@ -205,7 +205,15 @@ def _get_or_create_progress(conn, student_id: str):
 
 
 def _get_case(conn, stage: str, order_index: int):
-    return conn.execute("SELECT * FROM cases WHERE stage = ? AND order_index = ?", (stage, order_index)).fetchone()
+    # issue #96: "the current case" at a position is its HIGHEST version
+    # row -- ground-truth changes arrive as new version rows, never as
+    # an UPDATE once submissions exist (cases_ground_truth_frozen
+    # trigger). With every position at version 1 this is exactly the
+    # query the pre-#96 code ran.
+    return conn.execute(
+        "SELECT * FROM cases WHERE stage = ? AND order_index = ? ORDER BY version DESC LIMIT 1",
+        (stage, order_index),
+    ).fetchone()
 
 
 def _advance_progress(conn, student_id: str, stage: str, order_index: int):
@@ -267,7 +275,13 @@ def get_case(token: str):
             )
             raise AppError(500, "SERVER_ERROR", "Internal server error")
 
-        total_in_stage = conn.execute("SELECT COUNT(*) FROM cases WHERE stage = ?", (progress["stage"],)).fetchone()[0]
+        total_in_stage = conn.execute(
+            # DISTINCT order_index, not COUNT(*): from issue #96 on, one
+            # position can hold several version rows, and what a student
+            # sees as "case 3 of 10" counts positions, not schema rows.
+            "SELECT COUNT(DISTINCT order_index) FROM cases WHERE stage = ?",
+            (progress["stage"],),
+        ).fetchone()[0]
 
         response = {
             "complete": False,
@@ -399,8 +413,9 @@ def submit(body: SubmitBody):
             conn.execute(
                 """INSERT INTO submissions
                    (student_id, case_id, stage, submitted_category, submitted_modifier_s,
-                    submitted_text, is_correct, time_spent_seconds, submitted_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    submitted_text, is_correct, time_spent_seconds, submitted_at,
+                    ground_truth_category, ground_truth_modifier_s, case_version)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     student_id,
                     body.case_id,
@@ -411,6 +426,15 @@ def submit(body: SubmitBody):
                     is_correct,
                     time_spent_seconds,
                     db.now(),
+                    # issue #96: freeze the ground truth -- and which
+                    # version row it came from -- into the same INSERT as
+                    # is_correct itself: snapshot and score derive from the
+                    # same `case` row, same transaction, so they can never
+                    # disagree later. gt_backfilled keeps its default 0:
+                    # this IS a proven snapshot.
+                    case["ground_truth_category"],
+                    case["ground_truth_modifier_s"],
+                    case["version"],
                 ),
             )
         except sqlite3.IntegrityError:
@@ -487,10 +511,15 @@ def results(token: str):
         if progress["stage"] != "complete":
             return {"complete": False}
 
+        # issue #96: reads ONLY the submission's own frozen snapshot --
+        # no JOIN to cases anymore. A later GT change takes the form of a
+        # new case version, which by construction cannot alter these rows;
+        # the audit sec-3.2 record (ground_truth 4B vs submitted 4A vs
+        # correct:true) is now impossible by the data model itself.
         rows = conn.execute(
-            """SELECT s.is_correct, c.ground_truth_category, s.submitted_category
-               FROM submissions s JOIN cases c ON c.id = s.case_id
-               WHERE s.student_id = ? AND s.stage = 'test'""",
+            """SELECT is_correct, ground_truth_category, submitted_category
+               FROM submissions
+               WHERE student_id = ? AND stage = 'test'""",
             (student_id,),
         ).fetchall()
 
