@@ -61,3 +61,4 @@ Dokumentacja/*.docx
 # estimates and procurement/legal risk commentary not meant to be public.
 Dokumentacja/AI_context_Documentation_DICOM.txt
 Dokumentacja/DICOM_Q&A.txt
+coverage.xml
