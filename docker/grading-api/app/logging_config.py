@@ -46,7 +46,15 @@ class _RequestIdFilter(logging.Filter):
     formatted string."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        record.request_id = request_id_var.get()
+        # issue #95: honor an explicit request_id already stamped onto the
+        # record via extra= -- the unhandled-exception handler runs
+        # OUTSIDE this middleware's contextvar scope (ServerErrorMiddleware
+        # sits outside the user middleware stack, see main.py) and passes
+        # the id it recovered from request.state this way; an unconditional
+        # overwrite here would silently stamp "-" back onto exactly the
+        # line that needs the correlation most.
+        if not hasattr(record, "request_id"):
+            record.request_id = request_id_var.get()
         return True
 
 
