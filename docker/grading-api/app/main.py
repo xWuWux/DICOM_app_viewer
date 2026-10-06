@@ -20,7 +20,6 @@ displaying the wrong ID isn't a security problem, only trusting it for
 grading actions was.
 """
 
-import os
 import secrets
 import sqlite3
 import time
@@ -34,6 +33,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import db
+from .config import COORDINATOR_KEY
 from .errors import AppError, app_error_handler, unhandled_exception_handler, validation_error_handler
 from .logging_config import configure_logging, get_logger, request_id_var
 
@@ -98,10 +98,11 @@ app.add_middleware(RequestIdMiddleware)
 # whoever mints links) knows -- required so POST /session can't just be
 # called directly by a student's own browser to mint a token for anyone
 # else's student_id, which would recreate the exact hole this closes.
-# Fails loudly at import time if unset, same philosophy as
-# docker-compose.yml's ORTHANC_PASSWORD -- never silently run with no
-# secret configured.
-COORDINATOR_KEY = os.environ["GRADING_COORDINATOR_KEY"]
+# Imported from app/config.py, which validates presence AND minimum
+# length at import time (issue #97) -- the compose ${VAR:?} guard alone
+# never covered a bare `docker run`/CI, and never checked the value at
+# all: an empty-string key used to start fine, letting anyone mint
+# tokens for any student_id.
 
 
 @app.get("/healthz")

@@ -13,7 +13,10 @@ import os
 # project) -- has to be set before `from app.main import app` below runs,
 # not inside a fixture (fixtures only apply once a test is already
 # executing, well after this module's own top-level import has happened).
-os.environ.setdefault("GRADING_COORDINATOR_KEY", "test-only-coordinator-key")
+# Length >= 32 (issue #97): app/config.py now enforces a minimum key
+# length for EVERY process importing the app, tests included -- no dev
+# exception, so this key has to satisfy the same rule production does.
+os.environ.setdefault("GRADING_COORDINATOR_KEY", "test-only-coordinator-key-0123456789abcdef")
 
 import pytest
 from fastapi.testclient import TestClient
