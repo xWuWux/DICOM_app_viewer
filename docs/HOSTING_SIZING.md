@@ -78,7 +78,7 @@ STILL OPEN:
 
 ## 8. Next steps
 - Owner answers section 7; load test (section 6); then price-able spec per topology with market research.
-- Related issues: #68, #69, #85, #89 (NFR/capacity), #105, #107, NEW-D #115, NEW-T #113.
+- Related issues: #122 (tracking issue: owner decision list + acceptance checklist lives there), #68, #69, #85, #89 (NFR/capacity), #105, #107, #115, #113.
 
 ## 9. Data architecture for 500 doctors (owner question, 2026-10-06)
 Answer: ALL responses of ALL 500 doctors go into ONE central database on the access node, never per VM/container/slot.
