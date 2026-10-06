@@ -98,7 +98,10 @@ def test_unhandled_500_log_line_and_response_keep_the_request_id(client, mint_to
     monkeypatch.setattr(main_module, "_get_or_create_progress", _boom)
 
     with TestClient(app, raise_server_exceptions=False) as non_raising_client:
-        resp = non_raising_client.get(f"/case?token={token}", headers={"X-Request-Id": "correlate-my-500"})
+        resp = non_raising_client.get(
+            "/case",
+            headers={"X-Grading-Token": token, "X-Request-Id": "correlate-my-500"},
+        )
 
     assert resp.status_code == 500
     assert resp.headers.get("x-request-id") == "correlate-my-500"
@@ -185,7 +188,7 @@ def test_422_never_logs_token_or_student_text(client, mint_token, caplog):
     from app.logging_config import _JsonFormatter
 
     token = mint_token("stu_422_leak")
-    case_id = client.get(f"/case?token={token}").json()["case_id"]
+    case_id = client.get("/case", headers={"X-Grading-Token": token}).json()["case_id"]
     answer_marker = "STUDENT-ANSWER-" + "y" * 20_000
 
     with caplog.at_level(logging.INFO):
