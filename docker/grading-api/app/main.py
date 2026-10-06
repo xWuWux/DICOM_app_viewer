@@ -133,10 +133,14 @@ class SessionBody(BaseModel):
 
 
 @app.post("/session")
-def create_session(body: SessionBody, x_coordinator_key: str = Header(...)):
+def create_session(body: SessionBody, x_coordinator_key: str | None = Header(default=None)):
     """Mint a fresh token bound to student_id, the only path that creates
     that binding. Called by scripts/create-session.py right after minting
     the Kasm session itself, not by anything running inside a session."""
+    if not x_coordinator_key:
+        # same taxonomy rule as the X-Grading-Token endpoints (CR on #121:
+        # auth failures answer 401 AUTH_*, never FastAPI's 422).
+        raise AppError(401, "AUTH_INVALID_COORDINATOR_KEY", "Missing X-Coordinator-Key header")
     if not secrets.compare_digest(x_coordinator_key, COORDINATOR_KEY):
         # app_error_handler logs every AppError generically (error_code,
         # status_code, path) -- no need to also log here, that would just
@@ -245,7 +249,7 @@ def _advance_progress(conn, student_id: str, stage: str, order_index: int):
 
 
 @app.get("/case")
-def get_case(x_grading_token: str = Header(alias="X-Grading-Token")):
+def get_case(x_grading_token: str | None = Header(default=None, alias="X-Grading-Token")):
     """issue #94: the token moved from ?token= to a header, everywhere.
 
     A query-string credential was reproduced verbatim by nginx's access
@@ -259,6 +263,11 @@ def get_case(x_grading_token: str = Header(alias="X-Grading-Token")):
     than deprecated (a #63 note for the changelog goes in with #100).
     POST /submit and /reset keep the token in the JSON body: a body is
     not logged by nginx, so they were never part of this leak."""
+    if not x_grading_token:
+        # CR on #121: a required Header() parameter makes FastAPI answer a
+        # missing header with 422 VALIDATION_ERROR -- clients and the
+        # error taxonomy (#74) expect auth failures as 401 AUTH_*.
+        raise AppError(401, "AUTH_INVALID_TOKEN", "Missing X-Grading-Token header")
     conn = db.get_connection()
     try:
         student_id = _resolve_token(conn, x_grading_token)
@@ -491,7 +500,10 @@ def reset(body: ResetBody):
 
 
 @app.get("/results")
-def results(x_grading_token: str = Header(alias="X-Grading-Token")):
+def results(x_grading_token: str | None = Header(default=None, alias="X-Grading-Token")):
+    if not x_grading_token:
+        # CR on #121: 401 AUTH_INVALID_TOKEN, not FastAPI's 422 (see /case).
+        raise AppError(401, "AUTH_INVALID_TOKEN", "Missing X-Grading-Token header")
     conn = db.get_connection()
     try:
         student_id = _resolve_token(conn, x_grading_token)

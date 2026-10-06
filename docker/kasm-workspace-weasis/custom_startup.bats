@@ -139,3 +139,12 @@ print(' '.join(urllib.parse.unquote(p) for p in uri.split('+')))
   [ "$status" -eq 0 ]
   [ ! -s "$WEASIS_ARGS_FILE" ]
 }
+
+@test "issue #94 CR: refuses to launch when GRADING_TOKEN leaves the URL-safe alphabet" {
+  export GRADING_TOKEN='evil"token\with-injectables'
+  run bash "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"URL-safe"* ]]
+  # nothing may have been launched with a rejected token
+  [ ! -s "$WEASIS_ARGS_FILE" ]
+}

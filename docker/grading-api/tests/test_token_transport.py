@@ -22,20 +22,32 @@ def _rendered(caplog):
 
 
 def test_query_string_token_is_rejected_and_never_logged(client, caplog):
-    """A GET /case carrying ONLY ?token=... must fail as 'header missing'
-    (422) -- and the sentinel query value must not resurface anywhere in
-    the log lines or the response body that failure produces."""
+    """A GET /case carrying ONLY ?token=... fails as 'header missing' --
+    401 AUTH_INVALID_TOKEN per the taxonomy (#74; CR on #121: a bare
+    required Header() would answer 422 VALIDATION_ERROR, which clients do
+    not speak) -- and the sentinel query value must not resurface anywhere
+    in the log lines or the response body that failure produces."""
     with caplog.at_level(logging.INFO):
         resp = client.get(f"/case?token={SENTINEL}")
-    assert resp.status_code == 422
-    assert resp.json() == {"error_code": "VALIDATION_ERROR", "message": "Invalid request"}
+    assert resp.status_code == 401
+    assert resp.json() == {"error_code": "AUTH_INVALID_TOKEN", "message": "Missing X-Grading-Token header"}
     assert SENTINEL not in resp.text
     assert SENTINEL not in _rendered(caplog)
 
 
 def test_results_query_string_token_is_rejected(client):
     resp = client.get(f"/results?token={SENTINEL}")
-    assert resp.status_code == 422
+    assert resp.status_code == 401
+
+
+def test_no_credential_at_all_is_401_auth_not_422_validation(client):
+    """CR #121 should-fix 1 pinned for BOTH GET endpoints: an unauthenticated
+    request -- no header, no query -- gets the auth answer (401
+    AUTH_INVALID_TOKEN), never FastAPI's parameter-validation 422."""
+    for path in ("/case", "/results"):
+        resp = client.get(path)
+        assert resp.status_code == 401, path
+        assert resp.json() == {"error_code": "AUTH_INVALID_TOKEN", "message": "Missing X-Grading-Token header"}
 
 
 def test_header_token_is_the_accepted_transport(client, mint_token):
@@ -60,4 +72,4 @@ def test_query_token_alone_never_authenticates(client, mint_token):
     auth surface: a VALID token presented query-only must not read data."""
     token = mint_token("stu_query_only")
     resp = client.get(f"/case?token={token}")
-    assert resp.status_code == 422
+    assert resp.status_code == 401

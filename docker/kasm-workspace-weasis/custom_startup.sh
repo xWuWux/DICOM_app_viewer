@@ -53,6 +53,15 @@ ORTHANC_URL="${ORTHANC_URL:?set ORTHANC_URL to the internal auth-proxy address}"
 # what closes that gap. Required, not defaulted: a session with no token
 # can't do anything useful against grading-api.
 GRADING_TOKEN="${GRADING_TOKEN:?set GRADING_TOKEN to the token minted by grading-api POST /session}"
+# CR #121 nit: the token is interpolated into a curl --config line wrapped
+# in double quotes; a value containing " or \ could close the quote and
+# inject further curl options. grading-api only ever mints token_urlsafe
+# (base64url) values, so anything else means corruption or tampering --
+# fail fast and loud instead of feeding curl a crafted config.
+if [[ ! "$GRADING_TOKEN" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "ERROR: GRADING_TOKEN contains characters outside the URL-safe alphabet ([A-Za-z0-9_-]) -- refusing to launch" >&2
+  exit 1
+fi
 
 # Best-effort: an unreachable grading-api shouldn't crash the whole
 # session start (matches create-session.py's own non-fatal-readiness-check

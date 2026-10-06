@@ -135,3 +135,11 @@ print(' '.join(urllib.parse.unquote(p) for p in uri.split('+')))
   # browser never transmits fragments, so it can't reach nginx logs.
   [[ "$url" == "http://ipcmc-viewer:8080/grading-panel.html?student_id=stu%201&session_id=sess_1#token=test-token-abc" ]]
 }
+
+@test "issue #94 CR: refuses to launch when GRADING_TOKEN leaves the URL-safe alphabet" {
+  export GRADING_TOKEN='evil"token\with-injectables'
+  run bash "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"URL-safe"* ]]
+  [ ! -s "$WEASIS_ARGS_FILE" ]
+}

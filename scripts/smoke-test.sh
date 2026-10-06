@@ -106,8 +106,6 @@ fi
 BAD_TOKEN_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Grading-Token: not-a-real-token" "http://localhost:8080/api/case")
 if [ "$BAD_TOKEN_CODE" = "401" ]; then
   echo "--- grading-api rejects an invalid token: OK (401) ---"
-elif [ "$BAD_TOKEN_CODE" = "422" ]; then
-  echo "--- grading-api rejects an invalid token: OK (422: header missing means no auth at all) ---"
 else
   echo "--- grading-api rejects an invalid token: FAIL, got HTTP $BAD_TOKEN_CODE (expected 401) ---"
   status=1

@@ -63,10 +63,14 @@ def test_session_requires_the_coordinator_key(client):
 
 def test_session_with_no_coordinator_key_header_is_rejected(client):
     resp = client.post("/session", json={"student_id": "stu_1", "session_id": "sess_1"})
-    # FastAPI's own required-header validation (422) fires before main.py's
-    # code ever runs -- still a hard rejection either way, which is what
-    # actually matters here.
-    assert resp.status_code in (401, 422)
+    # CR #121 taxonomy rule: a missing auth credential answers 401
+    # AUTH_INVALID_COORDINATOR_KEY, not FastAPI's parameter-validation 422
+    # (main.py guards the optional Header itself, before compare_digest).
+    assert resp.status_code == 401
+    assert resp.json() == {
+        "error_code": "AUTH_INVALID_COORDINATOR_KEY",
+        "message": "Missing X-Coordinator-Key header",
+    }
 
 
 def test_case_rejects_an_unknown_token(client):

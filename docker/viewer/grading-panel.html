@@ -111,6 +111,14 @@
   // it cannot appear in nginx access/error logs (see watermark.html).
   const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
   const token = hashParams.get("token") || "";
+  // CR #121: erase the fragment from the address bar once read -- the token
+  // would otherwise stay visible in the page URL, the window/tab title
+  // (both captured in screenshots), and session history. replaceState edits
+  // the current entry in place: no reload, no new history step; the token
+  // now lives only in this script's memory and the header it sends.
+  if (location.hash) {
+    history.replaceState(null, "", location.pathname + location.search);
+  }
 
   const rotator = document.getElementById("watermark-rotator");
   const grid = document.getElementById("watermark-grid");
