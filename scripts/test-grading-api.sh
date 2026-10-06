@@ -23,4 +23,8 @@ pip install --quiet -r requirements-dev.txt
 # measured claim with no gate behind it. --cov-fail-under=95 fails the
 # job below the floor (currently 100%); --cov-report=xml emits
 # coverage.xml for the CI artifact (see .github/workflows/ci.yml).
+# NOTE: extra args pass through to pytest, so running a single test file
+# (`./scripts/test-grading-api.sh tests/test_logging.py`) measures a
+# partial run against the FULL-app denominator and can fail the gate --
+# append `--no-cov` for those targeted local runs.
 pytest -q --cov=app --cov-report=term-missing --cov-report=xml --cov-fail-under=95 "$@"

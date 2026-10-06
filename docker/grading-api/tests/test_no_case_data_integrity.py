@@ -41,7 +41,9 @@ def test_submit_endpoint_returns_generic_500_when_progress_points_at_missing_cas
     token = mint_token("stu_missing_case_submit")
     # Create the progress row first (minting a token alone doesn't).
     client.get(f"/case?token={token}")
-    # Park progress at an assessment position that has no seeded case.
+    # Park progress at an assessment position that has no seeded case
+    # (the seed covers order_index 0 per stage only -- index 4 is empty
+    # by construction, no DELETE needed; CR #112 item 2).
     conn = db_module.get_connection()
     try:
         conn.execute(
@@ -51,7 +53,6 @@ def test_submit_endpoint_returns_generic_500_when_progress_points_at_missing_cas
         conn.commit()
     finally:
         conn.close()
-    _delete_case("assessment", 4)  # belt-and-braces: seed only covers index 0
 
     with caplog.at_level(logging.ERROR):
         resp = client.post("/submit", json={"token": token, "case_id": 999, "stage": "assessment", "category": "3"})
