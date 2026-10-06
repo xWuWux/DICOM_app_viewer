@@ -69,8 +69,20 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     # the client only ever sees a generic message. This is issue #62's
     # actual fix, generalized to every endpoint rather than patched once
     # at /healthz specifically.
-    logger.exception("unhandled_exception", extra={"path": request.url.path})
+    #
+    # issue #95: this handler is installed on Starlette's OUTER
+    # ServerErrorMiddleware (it's the handler registered for bare
+    # `Exception`), i.e. it runs *outside* RequestIdMiddleware -- the
+    # contextvar is already reset by the time this logs, so reading it
+    # directly produced request_id "-" on exactly the lines that need
+    # correlation most. request.state (backed by the shared ASGI scope
+    # dict) is still readable here; and since the failing response never
+    # travels back out through the middleware, this handler is also the
+    # one place that can still put X-Request-Id on a 500.
+    request_id = getattr(request.state, "request_id", "-")
+    logger.exception("unhandled_exception", extra={"path": request.url.path, "request_id": request_id})
     return JSONResponse(
         status_code=500,
         content={"error_code": "SERVER_ERROR", "message": "Internal server error"},
+        headers={"x-request-id": request_id},
     )

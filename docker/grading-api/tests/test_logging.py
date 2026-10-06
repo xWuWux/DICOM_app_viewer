@@ -11,7 +11,10 @@ import json
 import logging
 import os
 
+from fastapi.testclient import TestClient
+
 from app.logging_config import _JsonFormatter
+from app.main import app
 
 # ---- The JSON formatter itself, in isolation ----
 
@@ -77,6 +80,33 @@ def test_two_requests_get_different_request_ids(client):
 def test_a_supplied_request_id_is_honored(client):
     resp = client.get("/healthz", headers={"X-Request-Id": "test-fixed-id-123"})
     assert resp.headers["x-request-id"] == "test-fixed-id-123"
+
+
+def test_unhandled_500_log_line_and_response_keep_the_request_id(client, mint_token, monkeypatch, caplog):
+    """issue #95's regression test: the unhandled-exception handler lives
+    on Starlette's outer ServerErrorMiddleware, outside the middleware
+    that sets request_id -- before the fix, its log line (the single most
+    important line to correlate) came out with request_id "-" and the
+    500 response carried no X-Request-Id at all."""
+    from app import main as main_module
+
+    token = mint_token("stu_500_correlation")
+
+    def _boom(conn, student_id):
+        raise RuntimeError("unbuggable bug for issue #95")
+
+    monkeypatch.setattr(main_module, "_get_or_create_progress", _boom)
+
+    with TestClient(app, raise_server_exceptions=False) as non_raising_client:
+        resp = non_raising_client.get(f"/case?token={token}", headers={"X-Request-Id": "correlate-my-500"})
+
+    assert resp.status_code == 500
+    assert resp.headers.get("x-request-id") == "correlate-my-500"
+
+    error_records = [r for r in caplog.records if r.getMessage() == "unhandled_exception"]
+    assert len(error_records) == 1
+    assert error_records[0].request_id == "correlate-my-500"
+    assert error_records[0].request_id == resp.headers["x-request-id"]
 
 
 def test_access_log_line_carries_the_same_request_id_as_the_response(client, caplog):

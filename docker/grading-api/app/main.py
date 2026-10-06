@@ -67,6 +67,13 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+        # issue #95: mirror onto request.state too. Request.state is
+        # backed by scope["state"], shared with the Request the OUTER
+        # ServerErrorMiddleware later rebuilds for the unhandled-exception
+        # handler -- by then this contextvar's finally: below has already
+        # reset it, so scope state is the only channel the 500 handler
+        # still has the id through.
+        request.state.request_id = request_id
         token = request_id_var.set(request_id)
         start = time.monotonic()
         try:
