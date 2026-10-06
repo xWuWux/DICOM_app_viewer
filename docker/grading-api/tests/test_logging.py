@@ -141,6 +141,63 @@ def test_healthz_database_error_is_logged_with_full_traceback_server_side(client
 # ---- Secrets never end up in a log record ----
 
 
+def test_422_never_logs_token_or_student_text(client, mint_token, caplog):
+    """issue #93's regression test, both leak shapes at once:
+
+    (a) POST /submit missing case_id -- pydantic's error `input` for a
+        partially-valid body is the ENTIRE body, live session token
+        included; (b) an overlong `text` -- the error for that one field
+        still carried the whole ~20 KB answer in `input`.
+
+    Asserted against the *rendered* JSON line (what actually lands in
+    `docker logs`), not just the record's own attrs, and with a size
+    bound so a 422 storm can't produce unbounded log growth."""
+    from app.logging_config import _JsonFormatter
+
+    token = mint_token("stu_422_leak")
+    case_id = client.get(f"/case?token={token}").json()["case_id"]
+    answer_marker = "STUDENT-ANSWER-" + "y" * 20_000
+
+    with caplog.at_level(logging.INFO):
+        # (a) valid token + stage + text, missing case_id -> 422 whose
+        # exc.errors()[*]["input"] would be the whole body, token and all.
+        client.post("/submit", json={"token": token, "stage": "learning", "text": answer_marker})
+        # (b) well-formed body, overlong text -> 422 whose error `input`
+        # is the full answer string.
+        client.post("/submit", json={"token": token, "case_id": case_id, "stage": "learning", "text": answer_marker})
+
+    validation_records = [r for r in caplog.records if r.getMessage() == "validation_error"]
+    assert len(validation_records) == 2
+
+    for record in validation_records:
+        rendered = _JsonFormatter().format(record)
+        assert token not in rendered
+        assert "STUDENT-ANSWER-" not in rendered
+        assert len(rendered) < 2_000
+
+    # Diagnostics survive the sanitization: the operator can still see
+    # WHICH field was rejected and why.
+    errors = validation_records[0].errors
+    assert any("case_id" in loc for err in errors for loc in [err.get("loc", [])])
+    assert all("input" not in err and "ctx" not in err for err in errors)
+
+
+def test_sanitizer_truncates_loc_elements():
+    """CR #109 item 1: loc entries are field names, but nothing in this
+    function's contract guarantees callers only ever pass known schema
+    names (pydantic embeds value-internal paths for structured fields),
+    so each element is bounded like msg is. Unit-level on purpose -- the
+    current flat models never *emit* an oversized loc over HTTP
+    (top-level unknown fields are ignored, not reported), and the
+    sanitizer must not depend on that staying true."""
+    from app.errors import _sanitized_validation_errors
+
+    huge = "a" * 500
+    (out,) = _sanitized_validation_errors([{"loc": ["body", huge], "type": "extra_forbidden", "msg": "m" * 500}])
+    assert out["loc"] == ["body", "a" * 64]
+    assert out["msg"] == "m" * 200
+
+
 def test_no_log_record_ever_contains_the_coordinator_key_or_a_real_token(client, caplog):
     coordinator_key = os.environ["GRADING_COORDINATOR_KEY"]
 
