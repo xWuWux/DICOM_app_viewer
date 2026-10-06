@@ -5,6 +5,7 @@
 # Kasm workspace images (see their own Dockerfiles).
 -r requirements.txt
 pytest==8.3.3
+pytest-cov==7.1.0
 httpx==0.27.2
 ruff==0.16.8
 bandit==1.9.4
