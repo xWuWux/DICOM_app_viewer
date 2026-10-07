@@ -241,6 +241,15 @@ for a `student_id` also revokes whatever token existed before it — a
 coordinator re-minting a link they suspect leaked gets real revocation,
 not just a second valid link.
 
+Revocation also has an explicit endpoint (issue #104): `POST /session/revoke`,
+same coordinator key, taking exactly one of `token`/`student_id`. It exists for
+the case where the rest of session setup fails — the token must be minted
+*before* Kasm is asked for a session, because `request_kasm` injects its value
+into that container's environment, so a Kasm failure used to leave a live
+token with no session behind it. `create-session.py` calls it on every such
+failure; an unknown or already-revoked selector answers `200 revoked:false`
+rather than 404, because the caller uses it as an idempotent compensation step.
+
 ### Logging and error handling (issues #72, #74)
 
 Two foundational pieces added deliberately together, before working
@@ -910,7 +919,12 @@ in CI.
   token authorization (`docker/grading-api/tests/test_state_machine.py`,
   21 tests), driven through FastAPI's own `TestClient` against a fresh,
   isolated SQLite file per test — no Docker, no real stack, runs in well
-  under a second. These exist specifically to protect the invariants this
+  under a second. Since issue #104 the same runner also covers
+  `docker/grading-api/tests/test_session_revoke.py` (12 tests) for
+  `POST /session/revoke`: the coordinator gate, both selectors, an
+  already-gone token answering `200 revoked:false` rather than 404, and that
+  no rejection ever echoes the token it was handed. These exist specifically
+  to protect the invariants this
   project keeps stating in prose but never had automated coverage for:
   a token is required everywhere and only `POST /session` (coordinator-key
   gated) can mint one; an invalid, unknown, or expired token is rejected;
@@ -965,7 +979,15 @@ in CI.
 - `scripts/test-provision-guacamole-session.sh` (issue #53) — unit tests
   for `scripts/provision-guacamole-session.py` (3 tests), `subprocess.run`
   and `urllib.request.urlopen` both mocked, no Docker/real Guacamole
-  needed. Guards the two invariants that make per-session VNC auth
+  needed. pytest's discovery from that directory also runs
+  `scripts/tests/test_create_session.py` (issue #104, 38 tests): every
+  failure path between minting a grading token and Kasm answering has to
+  revoke it, the one path where revoking would be wrong (Kasm already
+  answered, so the token is a live session's credential) has to leave it
+  alone, no failure message may contain the token itself, and every request
+  has to leave on a verifying context (`--insecure` only when typed, private
+  CA appended via `--ca-bundle`, SIGTERM/SIGHUP compensating like Ctrl-C).
+  Guards the two invariants that make per-session VNC auth
   actually work: the container's `docker run` never gains a `-p`/
   `--publish` (the port must stay reachable only via `docker_network`),
   and the same `VNC_PASSWORD` the container gets is exactly what
@@ -983,7 +1005,12 @@ in CI.
   of the bug), and (the session-token fix's own regression check) that
   `POST /api/session` actually mints a usable token, that an invalid token
   is rejected with 401, and that `POST /api/session` itself is rejected
-  without the coordinator key.
+  without the coordinator key. Since issue #104 it also proves the revocation
+  path works **through this proxy** rather than only in-process: mint →
+  `POST /api/session/revoke` → the revoked token gets 401 at `/api/case`, and
+  `revoke` without the coordinator key is refused. That edge routing matters —
+  a revoke that 404s at nginx would leave `create-session.py` silently not
+  compensating while every unit test stayed green.
   **Tears the stack down with `docker compose down -v` when it's done** —
   don't run this against an environment with data you care about; it's
   meant for a disposable/CI environment.

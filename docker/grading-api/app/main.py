@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
 # the SAME commit that adds a CHANGELOG.md entry (the review contract for
 # this repo: no behavior-visible change lands without one), and the
 # matching git tag is cut at release time by the release owner.
-API_VERSION = "1.0.0"
+API_VERSION = "1.1.0"
 
 app = FastAPI(
     title="IP_CMC Grading API",

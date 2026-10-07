@@ -120,6 +120,45 @@ else
   status=1
 fi
 
+# issue #104: POST /api/session/revoke has to work THROUGH this nginx /api/
+# location, not just in-process -- unit tests cannot prove the edge routes it
+# (the mint does, so revoke must; if it 404s at the edge, create-session.py's
+# compensation silently stops compensating in production while CI stays green).
+# Deliberately a DIFFERENT student_id than CI_TEST_$$ above: POST /session
+# deletes whatever token that student_id already had, so reusing it here would
+# break the /case checks that ran before this block.
+# The token itself travels to curl over stdin, never argv (issue #94's rule).
+REVOKEN=$(curl -s -X POST "http://localhost:8080/api/session" \
+  -H "Content-Type: application/json" -H "X-Coordinator-Key: ${GRADING_COORDINATOR_KEY}" \
+  -d "{\"student_id\": \"CI_REVOKE_$$\", \"session_id\": \"CI_REVOKE_SESS_$$\"}" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null)
+REVOKE_CODE=$(printf '{"token":"%s"}' "$REVOKEN" | curl -s -o /dev/null -w "%{http_code}" -X POST \
+  "http://localhost:8080/api/session/revoke" -H "Content-Type: application/json" --data-binary @- \
+  -H "X-Coordinator-Key: ${GRADING_COORDINATOR_KEY}")
+if [ "$REVOKE_CODE" = "200" ]; then
+  echo "--- POST /api/session/revoke through the proxy: OK (200) ---"
+else
+  echo "--- POST /api/session/revoke through the proxy: FAIL, got HTTP ${REVOKE_CODE:-<none>} (expected 200) ---"
+  status=1
+fi
+
+AFTER_REVOKE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Grading-Token: ${REVOKEN}" "http://localhost:8080/api/case")
+if [ "$AFTER_REVOKE_CODE" = "401" ]; then
+  echo "--- a revoked token is rejected at /api/case: OK (401) ---"
+else
+  echo "--- a revoked token is rejected at /api/case: FAIL, got HTTP $AFTER_REVOKE_CODE (expected 401) ---"
+  status=1
+fi
+
+NO_KEY_REVOKE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://localhost:8080/api/session/revoke" \
+  -H "Content-Type: application/json" -d '{"student_id": "attacker"}')
+if [ "$NO_KEY_REVOKE_CODE" = "401" ] || [ "$NO_KEY_REVOKE_CODE" = "422" ]; then
+  echo "--- POST /api/session/revoke without a coordinator key is rejected: OK (HTTP $NO_KEY_REVOKE_CODE) ---"
+else
+  echo "--- POST /api/session/revoke without a coordinator key is rejected: FAIL, got HTTP $NO_KEY_REVOKE_CODE ---"
+  status=1
+fi
+
 # issue #100: the OpenAPI/docs surface must be closed at the app, so it
 # stays closed through this nginx /api/ proxy no matter what the edge
 # template does -- probe through the proxy, not around it.
