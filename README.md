@@ -920,10 +920,14 @@ in CI.
   21 tests), driven through FastAPI's own `TestClient` against a fresh,
   isolated SQLite file per test — no Docker, no real stack, runs in well
   under a second. Since issue #104 the same runner also covers
-  `docker/grading-api/tests/test_session_revoke.py` (12 tests) for
+  `docker/grading-api/tests/test_session_revoke.py` (16 tests) for
   `POST /session/revoke`: the coordinator gate, both selectors, an
-  already-gone token answering `200 revoked:false` rather than 404, and that
-  no rejection ever echoes the token it was handed. These exist specifically
+  already-gone token answering `200 revoked:false` rather than 404, that no
+  rejection ever echoes the token it was handed, that every successful
+  revocation leaves a `session_revoked` audit line naming the selector kind and
+  row count (never the credential, never even the `student_id`), and that a
+  trailing-newline `student_id` is rejected rather than waved through an
+  anchored-but-search-style pattern check. These exist specifically
   to protect the invariants this
   project keeps stating in prose but never had automated coverage for:
   a token is required everywhere and only `POST /session` (coordinator-key
@@ -980,7 +984,7 @@ in CI.
   for `scripts/provision-guacamole-session.py` (3 tests), `subprocess.run`
   and `urllib.request.urlopen` both mocked, no Docker/real Guacamole
   needed. pytest's discovery from that directory also runs
-  `scripts/tests/test_create_session.py` (issue #104, 38 tests): every
+  `scripts/tests/test_create_session.py` (issue #104, 43 tests): every
   failure path between minting a grading token and Kasm answering has to
   revoke it, the one path where revoking would be wrong (Kasm already
   answered, so the token is a live session's credential) has to leave it

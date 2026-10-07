@@ -56,6 +56,10 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   `revoked: false`, deliberately **not** 404, because the caller uses this as an
   idempotent compensation step and must not have to distinguish "someone got
   there first" from "never existed". Rejections never echo the submitted token.
+  Every revocation logs `session_revoked` server-side with the selector kind and
+  the row count — never the credential, never the `student_id` either — because a
+  coordinator-keyed security action that leaves no trace cannot be audited
+  (DoD 40).
   Additive endpoint, nothing existing changed → advertised API version
   `1.0.0` → `1.1.0`.
 - `scripts/create-session.py --ca-bundle` / `TLS_CA_BUNDLE` (issue #104) —
@@ -96,6 +100,10 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   student's session to tidy up a bookkeeping row. A signal inherited as ignored
   (`nohup`, `trap '' HUP`) is left ignored, so backgrounded runs keep surviving
   their terminal.
+  Review record (DoD 19/45): `docs/history/issue-104-review.md` — the CR on
+  PR #134 verbatim plus the two pre-PR review rounds, including their mutation
+  tables (which of these guarantees are actually pinned by a test, and which
+  tests were shown to fail when the guard was removed).
 
 ### Security hardening (no contract change for compliant clients)
 - API access logs are structured JSON with tokens/credentials scrubbed,

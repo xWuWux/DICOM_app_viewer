@@ -59,6 +59,16 @@ class _FakeResponse:
         return False
 
 
+def _raw_response(body):
+    """A 200 whose body is not JSON at all -- what viewer's own nginx answers
+    with when it, not grading-api/Kasm, is the thing that failed. Built on
+    _FakeResponse so the fake's read()/context-manager behaviour stays in one
+    place."""
+    resp = _FakeResponse({})
+    resp._body = body
+    return resp
+
+
 def _http_error(url, code=500, body=b"kasm is down"):
     return urllib.error.HTTPError(url, code, "Server Error", {}, io.BytesIO(body))
 
@@ -123,6 +133,17 @@ class _Kasm:
                 self.handler_state = "installed"
                 signal.raise_signal(signal.SIGTERM)
                 raise urllib.error.URLError("interrupted")
+            if self.kasm_mode == "read_timeout":
+                # The CR probe's exact case: the request went out, urlopen
+                # returned, and reading the body timed out -- a bare
+                # TimeoutError that api_call used to let through as a traceback.
+                raise TimeoutError("The read operation timed out")
+            if self.kasm_mode == "conn_reset":
+                raise ConnectionError("[Errno 104] Connection reset by peer")
+            if self.kasm_mode == "ssl_error":
+                raise ssl.SSLError("[SSL: WRONG_VERSION] version mismatch")
+            if self.kasm_mode == "non_json_200":
+                return _raw_response(b"<html><head>502 Bad Gateway</head></html>")
             if self.kasm_mode == "no_kasm_id":
                 return _FakeResponse({"user_id": "u1", "kasm_url": "/k/x", "filler": self.filler})
             return _FakeResponse({"kasm_id": "k1", "user_id": "u1", "kasm_url": "/k/x"})
@@ -133,6 +154,11 @@ class _Kasm:
                 # never reaches "running", so the polling loop gets to
                 # time.sleep() -- where the Ctrl-C test injects itself.
                 return _FakeResponse({"kasm": {"operational_status": "building"}, "operational_progress": 40})
+            if self.status_mode == "read_timeout":
+                # the non-fatal side of the same exception class: the readiness
+                # poll is best-effort, so this must degrade to polling-skipped,
+                # never to a traceback and never to a revocation.
+                raise TimeoutError("The read operation timed out")
             return _FakeResponse({"kasm": {"operational_status": "running"}})
         raise AssertionError(f"unexpected url {url}")
 
@@ -213,6 +239,37 @@ def test_connection_failure_to_kasm_revokes_too(env, monkeypatch):
     kasm = _Kasm(kasm_mode="connection_error")
     assert _run(monkeypatch, kasm) is not None
     assert kasm.called("/api/session/revoke") == [{"token": FAKE_TOKEN}]
+
+
+@pytest.mark.parametrize("kasm_mode", ["read_timeout", "conn_reset", "ssl_error", "non_json_200"])
+def test_raw_socket_and_json_failures_are_clean_and_still_revoke(env, monkeypatch, capsys, kasm_mode):
+    """CR should-fix on PR #134: api_call only mapped HTTPError/URLError, so a
+    TimeoutError while reading the response, a reset, an SSLError, or a 200
+    whose body is nginx's HTML all reached the operator as a naked Python
+    traceback with exit 1 -- after the compensation had already run correctly.
+    The compensation was never the problem; the message was."""
+    kasm = _Kasm(kasm_mode=kasm_mode)
+    exit_code = _run(monkeypatch, kasm)
+
+    assert isinstance(exit_code, SystemExit), f"{kasm_mode} leaked a traceback instead of exiting"
+    message = str(exit_code.code)
+    assert message.strip() == message and "\n" not in message.strip("\n"), f"not a one-line message: {message!r}"
+    assert "request_kasm" in message, f"message does not name the call that failed: {message!r}"
+    assert "Traceback" not in message and "Traceback" not in capsys.readouterr().err
+    assert kasm.called("/api/session/revoke") == [{"token": FAKE_TOKEN}]
+    assert FAKE_TOKEN not in message
+
+
+def test_read_timeout_during_the_readiness_poll_stays_non_fatal(env, monkeypatch, capsys):
+    """The same exception class on the best-effort poll must degrade the way the
+    other transport failures do: skip the polling, still print the link, revoke
+    nothing (Kasm answered -- this is a live session's credential)."""
+    kasm = _Kasm(status_mode="read_timeout")
+    assert _run(monkeypatch, kasm) is None
+    captured = capsys.readouterr()
+    assert "skipping readiness polling" in captured.err
+    assert json.loads(captured.out)["kasm_id"] == "k1"
+    assert kasm.called("/api/session/revoke") == []
 
 
 def test_unexpected_kasm_response_without_kasm_id_revokes(env, monkeypatch):

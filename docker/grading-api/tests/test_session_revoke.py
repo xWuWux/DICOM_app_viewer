@@ -19,9 +19,15 @@ Covers:
   (e) exactly one selector is required;
   (f) the token value never appears in any response body or in the log line
       for a rejected request (issue #93's leak class, applied to the new
-      endpoint that has a token in its payload by design).
+      endpoint that has a token in its payload by design);
+  (g) a successful revocation leaves a server-side audit line (DoD 40) that
+      names the selector and the row count -- never the token, never even the
+      student_id;
+  (h) a student_id with a trailing newline is rejected, not silently accepted
+      by an anchored-but-search-style regex.
 """
 
+import json
 import logging
 import os
 
@@ -165,3 +171,65 @@ def test_oversized_selector_rejected_without_reading_its_content(client):
     resp = _revoke(client, {"token": filler})
     assert resp.status_code == 400
     assert filler not in resp.text
+
+
+# ---- (g) audit trail for the action itself ----
+
+
+def _revoked_log_lines(caplog):
+    return [_JsonFormatter().format(r) for r in caplog.records if r.getMessage() == "session_revoked"]
+
+
+def test_successful_revoke_by_token_leaves_an_audit_line(client, mint_token, caplog):
+    """CR on PR #134 / DoD 40: revoking with the coordinator key used to leave
+    no server-side trace at all -- nothing to answer "who killed this student's
+    link, and when" with. The line names the selector kind and the row count."""
+    token = mint_token("STU_AUDIT_1")
+    with caplog.at_level(logging.INFO):
+        assert _revoke(client, {"token": token}).json()["revoked"] is True
+
+    lines = _revoked_log_lines(caplog)
+    assert lines, "a successful revocation must be logged"
+    payload = json.loads(lines[0])
+    assert payload["by"] == "token"
+    assert payload["count"] == 1
+    assert token not in lines[0], "the log line must never carry the credential it revoked"
+
+
+def test_revoke_by_student_id_logs_selector_not_identity(client, mint_token, caplog):
+    """student_id is deliberately absent too -- logging_config.py keeps those
+    pseudonymous IDs out of log lines as a standing rule, and a revocation is
+    no reason to break it (request_id is what correlates the line instead)."""
+    mint_token("STU_AUDIT_2")
+    with caplog.at_level(logging.INFO):
+        _revoke(client, {"student_id": "STU_AUDIT_2"})
+
+    lines = _revoked_log_lines(caplog)
+    assert lines
+    payload = json.loads(lines[0])
+    assert payload["by"] == "student_id" and payload["count"] == 1
+    assert "STU_AUDIT_2" not in lines[0]
+
+
+def test_a_revoked_nothing_is_logged_too(client, caplog):
+    """revoked:false is an operator typo in the making -- that attempt is
+    exactly what an audit trail is for, so count=0 must be on the record too
+    rather than the log existing only on success-by-luck."""
+    with caplog.at_level(logging.INFO):
+        _revoke(client, {"token": "never-" + "minted" + "-0123456789abcdef0123456789abcdef"})
+    lines = _revoked_log_lines(caplog)
+    assert lines and json.loads(lines[0])["count"] == 0
+
+
+# ---- (h) anchored pattern, not search semantics ----
+
+
+def test_trailing_newline_student_id_is_rejected(client):
+    """CR nit on PR #134: "abc\\n" is the classic input that an unanchored or
+    $-with-search check waves through -- Python's $ matches before a trailing
+    newline, so this endpoint relies on re.fullmatch, not on the anchor alone.
+    An accepted "abc\\n" would be a DELETE that matched nothing while answering
+    as if a selector had been honored."""
+    resp = _revoke(client, {"student_id": "abc" + "\n"})
+    assert resp.status_code == 400
+    assert resp.json()["error_code"] == "VALIDATION_REVOKE_SELECTOR"

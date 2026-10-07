@@ -188,6 +188,32 @@ def api_call(server: str, path: str, payload: dict, ctx: ssl.SSLContext = None, 
             raise ApiError(message, ambiguous=True) from e
         print(f"  (non-fatal) {message}", file=sys.stderr)
         return None
+    except (TimeoutError, ConnectionError, ssl.SSLError) as e:
+        # urlopen wraps the failures it knows about in URLError, but a
+        # socket-level timeout or reset raised while READING the response body
+        # arrives here raw -- the CR probe on PR #134 hit exactly this as a read
+        # timeout against request_kasm: the compensation had already run
+        # correctly, and the operator still got a naked Python traceback and
+        # exit 1. Same ambiguity as above (the request was sent; its outcome is
+        # unknown), so the message carries ambiguous=True and stays one line.
+        message = f"{label} connection error calling {path}: {type(e).__name__}: {e}"
+        if fatal:
+            raise ApiError(message, ambiguous=True) from e
+        print(f"  (non-fatal) {message}", file=sys.stderr)
+        return None
+    except ValueError as e:
+        # json.loads of a 200 whose body is not JSON at all -- the realistic
+        # shape is viewer's nginx answering with its own HTML error page. A
+        # bare json.JSONDecodeError traceback told the operator nothing about
+        # which call went wrong; and this is ambiguous too: the server did
+        # answer, but this script cannot tell what it said.
+        # str(JSONDecodeError) names a parse position, not the document; still
+        # capped, same rule as the HTTP error text above.
+        message = f"{label} returned a non-JSON body calling {path}: {str(e)[:_MAX_ERROR_BODY_CHARS]}"
+        if fatal:
+            raise ApiError(message, ambiguous=True) from e
+        print(f"  (non-fatal) {message}", file=sys.stderr)
+        return None
 
 
 def revoke_token(grading_api_url: str, coordinator_key: str, ctx: ssl.SSLContext, token: str,

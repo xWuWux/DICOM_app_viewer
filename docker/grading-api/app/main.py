@@ -230,13 +230,16 @@ def create_session(body: SessionBody, x_coordinator_key: str | None = Header(def
 
 
 class SessionRevokeBody(BaseModel):
-    """issue #104: deliberate `str | None` with NO pydantic constraints.
+    """issue #104: `str | None` with no pydantic constraints; the shape checks
+    are manual and their messages name the offending field, never its content.
 
-    FastAPI's 422 body for a constrained-field failure includes the rejected
-    `input` (errors.py's issue #93 comment is exactly about that leak class),
-    and the one thing this endpoint is handed in the common case is a live
-    session token. So the shape checks below are manual and their messages
-    name only the offending field, never its content.
+    This is defence in depth, not the primary control (CR on PR #134 asked for
+    the wording to say so): since issue #93 `validation_error_handler` answers a
+    generic body and logs only sanitized loc/type/msg triples, so a constrained
+    field would not leak a token today either. The reason to keep the checks
+    manual anyway is that this endpoint's payload is a live credential *by
+    design* -- the guarantee should not depend on a handler three layers away
+    continuing to sanitize everything, forever.
     """
 
     token: str | None = None
@@ -285,11 +288,21 @@ def revoke_session(body: SessionRevokeBody, x_coordinator_key: str | None = Head
             # output, and a non-matching value simply revokes nothing
             # (revoked=false), so there is nothing worth validating.
             cur = conn.execute("DELETE FROM sessions WHERE token = ?", (body.token,))
+            selector = "token"
         else:
             if len(body.student_id) > 128 or not re.fullmatch(_STUDENT_ID_PATTERN, body.student_id):
                 raise AppError(400, "VALIDATION_REVOKE_SELECTOR", "student_id is not a valid identifier")
             cur = conn.execute("DELETE FROM sessions WHERE student_id = ?", (body.student_id,))
+            selector = "student_id"
         conn.commit()
+        # Audit trail (CR on PR #134 about issue #104; DoD 40, ties to #98):
+        # revocation is a security-relevant action carried out with the coordinator key, and
+        # until now it left no server-side trace at all. Which selector was used
+        # and how many rows died is the whole point of the line -- the token
+        # value is never logged, same rule as every other line in this service
+        # (see logging_config.py's docstring; student_id is not logged here
+        # either, for the same pseudonymity reason).
+        logger.info("session_revoked", extra={"by": selector, "count": cur.rowcount})
         return {"revoked": cur.rowcount > 0, "count": cur.rowcount}
     finally:
         conn.close()
