@@ -36,7 +36,27 @@ fi
 # --config on stdin (bash process substitution + builtin printf) so it is
 # never in curl's argv (`ps`-invisible) and never in a query string
 # (nginx logs). Mirrors docker/kasm-workspace-weasis/custom_startup.sh.
-CASE_JSON=$(curl -fsS --config - "${VIEWER_URL}api/case" < <(printf 'header = "X-Grading-Token: %s"\n' "$GRADING_TOKEN")) || CASE_JSON='{"complete": true}'
+# issue #102: same fail-open removal as docker/kasm-workspace-weasis/
+# custom_startup.sh -- unreachable grading-api must never masquerade as
+# {"complete": true"}. 3 attempts, linear backoff, token-free error line;
+# empty CASE_JSON then falls through to the documented plain-launch path.
+# API_RETRY_BACKOFF is a test seam (integer seconds; BATS uses 0).
+API_ATTEMPTS=3
+API_RETRY_BACKOFF="${API_RETRY_BACKOFF:-2}"
+CASE_JSON=""
+api_ok=0
+for attempt in 1 2 3; do
+  if CASE_JSON=$(curl -fsS --config - "${VIEWER_URL}api/case" < <(printf 'header = "X-Grading-Token: %s"\n' "$GRADING_TOKEN") 2>/dev/null); then
+    api_ok=1
+    break
+  fi
+  if [ "$attempt" -lt "$API_ATTEMPTS" ]; then
+    sleep "$((attempt * API_RETRY_BACKOFF))"
+  fi
+done
+if [ "$api_ok" != "1" ]; then
+  echo "launch-session: ERROR grading-api unreachable at ${VIEWER_URL} after ${API_ATTEMPTS} attempts -- opening a study-less session; the case was NOT completed, use the panel's retry" >&2
+fi
 
 WEASIS_URI=$(python3 - "$CASE_JSON" "$ORTHANC_URL" <<'PYEOF'
 import json, sys, urllib.parse

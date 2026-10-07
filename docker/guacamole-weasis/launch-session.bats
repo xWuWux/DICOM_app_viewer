@@ -50,6 +50,9 @@ EOF
   export ORTHANC_URL="http://ipcmc-viewer:8043/"
   export GRADING_TOKEN="test-token-abc"
   unset STUDENT_ID SESSION_ID CURL_EXIT_CODE CURL_RESPONSE_JSON
+  # issue #102 retry loop: pin the backoff seam to 0 for fast tests
+  # (production keeps 2s/4s).
+  export API_RETRY_BACKOFF=0
 }
 
 @test "fails fast with a clear message when VIEWER_URL is unset" {
@@ -109,11 +112,20 @@ print(' '.join(urllib.parse.unquote(p) for p in uri.split('+')))
   [ ! -s "$WEASIS_ARGS_FILE" ]
 }
 
-@test "falls back to a plain launch when grading-api is unreachable" {
+@test "issue #102: unreachable grading-api retries 3x, logs loudly, never fakes complete" {
   export CURL_EXIT_CODE=7
   run bash "$SCRIPT"
   [ "$status" -eq 0 ]
   [ ! -s "$WEASIS_ARGS_FILE" ]
+  [[ "$output" == *"grading-api unreachable"* ]]
+  [[ "$output" == *"after 3 attempts"* ]]
+  [[ "$output" != *"test-token-abc"* ]]
+  local COUNTER="$BATS_TEST_TMPDIR/tries"
+  printf '#!/usr/bin/env bash\nprintf x >> "%s"\nexit 7\n' "$COUNTER" > "$STUB_DIR/curl"
+  chmod +x "$STUB_DIR/curl"
+  rm -f "$COUNTER"
+  run bash "$SCRIPT"
+  [ "$(wc -c < "$COUNTER")" -eq 3 ]
 }
 
 @test "opens the grading panel with student_id/session_id/token, correctly percent-encoded" {
