@@ -76,6 +76,7 @@ class _Kasm:
         self.status_mode = status_mode
         self.mint_mode = mint_mode
         self.filler = filler
+        self.handler_state = "never asked"
 
     def __call__(self, req, timeout=15, context=None):
         """`context` is recorded, not ignored: the happy-path test asserts
@@ -90,6 +91,8 @@ class _Kasm:
                 # The review nit #3 case: the request went out, the server may
                 # or may not have committed, and nothing here knows which.
                 raise urllib.error.URLError("timed out")
+            if self.mint_mode.startswith("http_"):
+                raise _http_error(url, code=int(self.mint_mode.split("_")[1]))
             if self.mint_mode == "no_token":
                 return _FakeResponse({"expires_at": 1})
             return _FakeResponse({"token": FAKE_TOKEN, "expires_at": 1})
@@ -105,13 +108,20 @@ class _Kasm:
             if self.kasm_mode == "connection_error":
                 raise urllib.error.URLError("connection refused")
             if self.kasm_mode == "sigterm_during_request":
-                # Exactly what main() sees when a CI cancellation lands
-                # mid-request: the installed handler raises KeyboardInterrupt at
-                # the interrupted point. Raised here rather than via os.kill so a
-                # future removal of the install call fails this test instead of
-                # killing the pytest process; the install + mapping themselves are
-                # pinned by the two tests below.
+                # The handler's own effect, raised at the interrupted point.
                 create_session._interrupt(signal.SIGTERM, None)
+            if self.kasm_mode == "raise_signal":
+                # The real thing: an actual signal delivered to this process,
+                # translated by whatever handler is installed at that moment.
+                # Delivered ONLY when our handler is actually in place --
+                # otherwise a removed install call would SIGTERM the pytest
+                # process itself, and a killed runner is a worse signal than a
+                # failed assertion.
+                if signal.getsignal(signal.SIGTERM) is not create_session._interrupt:
+                    self.handler_state = "not installed"
+                    return _FakeResponse({"kasm_id": "k1", "user_id": "u1", "kasm_url": "/k/x"})
+                self.handler_state = "installed"
+                signal.raise_signal(signal.SIGTERM)
                 raise urllib.error.URLError("interrupted")
             if self.kasm_mode == "no_kasm_id":
                 return _FakeResponse({"user_id": "u1", "kasm_url": "/k/x", "filler": self.filler})
@@ -317,6 +327,44 @@ def test_sigterm_handler_maps_to_keyboard_interrupt(env):
         create_session._interrupt(signal.SIGTERM, None)
 
 
+@pytest.mark.parametrize("sig_name", ["SIGTERM", "SIGHUP"])
+def test_both_signals_are_installed_and_really_delivered(env, sig_name):
+    """N4 + the reviewer's point (c): installing a handler is not the same as
+    the OS reaching it. raise_signal delivers for real, in-process, on the
+    pytest main thread -- the autouse fixture puts the previous handler back."""
+    sig = getattr(signal, sig_name, None)
+    if sig is None:
+        pytest.skip(f"{sig_name} does not exist on this platform")
+    signal.signal(sig, signal.SIG_DFL)
+    create_session.install_termination_handlers()
+    assert signal.getsignal(sig) is create_session._interrupt
+    with pytest.raises(KeyboardInterrupt):
+        signal.raise_signal(sig)
+
+
+def test_inherited_sig_ign_is_left_alone(env):
+    """Nit N1: `nohup` / `trap '' HUP` means "ignore HUP". Overriding it would
+    turn a run that used to outlive its terminal into one that aborts mid-way --
+    a regression introduced by adding the handler in the first place."""
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    create_session.install_termination_handlers()
+    assert signal.getsignal(signal.SIGHUP) == signal.SIG_IGN
+    assert signal.getsignal(signal.SIGTERM) == signal.SIG_IGN
+
+
+def test_compensate_runs_when_sigterm_lands_after_the_mint(env, monkeypatch, capsys):
+    """Real end-to-end of the handler: request_kasm delivers SIGTERM to this
+    process mid-request, the installed handler turns it into
+    KeyboardInterrupt at that point, and the minted token gets revoked.
+    Delivery is via raise_signal, so this proves wiring, not just mapping."""
+    kasm = _Kasm(kasm_mode="raise_signal")
+    exit_code = _run(monkeypatch, kasm)
+    assert kasm.handler_state == "installed", "main() must install the handlers before the first request"
+    assert isinstance(exit_code, SystemExit)
+    assert kasm.called("/api/session/revoke") == [{"token": FAKE_TOKEN}]
+
+
 def test_main_installs_the_handlers_before_minting(env, monkeypatch):
     """The mapping above is worthless if nothing installs it, and installing it
     after POST /session would be worthless too -- the window that matters is the
@@ -365,6 +413,23 @@ def test_mint_timeout_gets_the_same_ambiguous_hint(env, monkeypatch, capsys):
     assert kasm.called("/api/session/revoke") == []
 
 
+@pytest.mark.parametrize("mint_mode,expect_hint", [
+    ("http_401", False),   # nit N2: a definite refusal minted nothing
+    ("http_403", False),
+    ("http_422", False),
+    ("http_500", True),    # the server may have committed before it fell over
+])
+def test_ambiguous_hint_only_for_ambiguous_mint_failures(env, monkeypatch, capsys, mint_mode, expect_hint):
+    """A wrong coordinator key is the most common failure this script sees.
+    Answering it with a `!! go hunt for a token` hint would train operators to
+    ignore the hint when it is real."""
+    kasm = _Kasm(mint_mode=mint_mode)
+    assert _run(monkeypatch, kasm) is not None
+    hinted = "did not return a token" in capsys.readouterr().err
+    assert hinted is expect_hint
+    assert kasm.called("/api/session/revoke") == []
+
+
 def test_no_kasm_id_error_text_is_bounded(env, monkeypatch, capsys):
     """_MAX_ERROR_BODY_CHARS claims error text is capped; the one place that
     dumps a whole response body has to honour that claim (a fat 200 from
@@ -408,11 +473,27 @@ def test_ca_bundle_adds_to_the_system_store_instead_of_replacing_it(env, tmp_pat
 @pytest.mark.parametrize("url,should_warn", [
     ("http://localhost:8080/", False),      # the documented default deployment
     ("http://127.0.0.1:8080/", False),
+    ("http://127.0.0.2:8080/", False),      # nit N3: whole 127/8 is loopback
+    ("http://[::1]:8080/", False),
+    ("http://0.0.0.0:8080/", False),
     ("https://grading.example/", False),
+    ("HTTP://grading.internal/", True),      # nit N3: scheme case-insensitivity
     ("http://grading.internal/", True),
     ("http://10.0.0.5:8080/", True),
+    ("http://192.168.1.5:8080/", True),      # a private range is still not loopback
 ])
 def test_cleartext_coordinator_transport_warns_only_when_it_leaves_the_box(env, capsys, url, should_warn):
     create_session.warn_if_coordinator_key_travels_in_clear(url)
     warned = "GRADING_API_URL" in capsys.readouterr().err
     assert warned is should_warn
+
+
+def test_unusable_ca_bundle_is_a_clean_error_not_a_traceback(env, monkeypatch, tmp_path, capsys):
+    """Nit N6: the isfile check above it already answers with parser.error; a
+    file that exists but isn't PEM was still a naked ssl.SSLError."""
+    bogus = tmp_path / "not-a-ca.pem"
+    bogus.write_text("this is not a certificate\n")
+    exit_code = _run(monkeypatch, _Kasm(), "--ca-bundle", str(bogus))
+    assert exit_code is not None and exit_code.code == 2
+    assert "--ca-bundle" in capsys.readouterr().err
+    assert "Traceback" not in capsys.readouterr().err

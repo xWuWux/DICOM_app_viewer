@@ -44,6 +44,7 @@ Usage:
   # or the same thing without repeating the flag: export TLS_CA_BUNDLE=/etc/kasm/ca.pem
 """
 import argparse
+import ipaddress
 import json
 import os
 import signal
@@ -64,7 +65,16 @@ class ApiError(RuntimeError):
     """A fatal API failure. Raised rather than sys.exit'd straight from
     api_call(), because exiting there would jump straight over main()'s
     compensation block and leave the minted token live -- which is the exact
-    bug this script's issue #104 fix is about."""
+    bug this script's issue #104 fix is about.
+
+    `ambiguous` records whether the server's answer is actually known: a 4xx
+    came back, so the request was refused and nothing was created; a timeout,
+    a refused connection or a 5xx says nothing about what the server did with
+    it. main()'s ambiguous-mint hint is gated on this (review nit N2)."""
+
+    def __init__(self, message: str, ambiguous: bool = False):
+        super().__init__(message)
+        self.ambiguous = ambiguous
 
 
 def _interrupt(signum, frame):
@@ -85,12 +95,20 @@ def install_termination_handlers() -> None:
     """Only ever called from main() -- importing this module must never install
     handlers as a side effect (a test or a future import would inherit them).
     ValueError from a non-main thread is deliberately swallowed: no handler is
-    better than a crash for a caller that cannot have one."""
+    better than a crash for a caller that cannot have one.
+
+    An inherited SIG_IGN is left exactly as it is (review nit N1): that is what
+    `nohup` and `trap '' HUP` mean, and overriding it would turn a run that used
+    to survive its terminal closing into one that aborts mid-flight. Ignoring a
+    signal is its caller's deliberate choice; terminating on one is the default
+    this handler exists to improve on."""
     for name in ("SIGTERM", "SIGHUP"):
         sig = getattr(signal, name, None)
         if sig is None:
             continue
         try:
+            if signal.getsignal(sig) == signal.SIG_IGN:
+                continue
             signal.signal(sig, _interrupt)
         except ValueError:
             pass
@@ -126,6 +144,10 @@ def build_ssl_context(ca_bundle: str = None, insecure: bool = False) -> ssl.SSLC
     # unless someone types --insecure.
     ctx = ssl.create_default_context()
     if ca_bundle:
+        # ssl.SSLError here is left to propagate: main() turns it into
+        # parser.error, the same shape as the --ca-bundle isfile check above it
+        # (review nit N6). It can never carry a secret -- no request has been
+        # made and no token exists at this point.
         ctx.load_verify_locations(cafile=ca_bundle)
     return ctx
 
@@ -145,7 +167,10 @@ def api_call(server: str, path: str, payload: dict, ctx: ssl.SSLContext = None, 
     except urllib.error.HTTPError as e:
         message = f"{label} error calling {path}: {e.code} {e.read().decode()[:_MAX_ERROR_BODY_CHARS]}"
         if fatal:
-            raise ApiError(message) from e
+            # A 4xx is a definite refusal -- nothing was created. A 5xx is not:
+            # the server may have committed before it fell over, which is
+            # exactly what the ambiguous-mint hint is for (review nit N2).
+            raise ApiError(message, ambiguous=e.code >= 500) from e
         print(f"  (non-fatal) {message}", file=sys.stderr)
         return None
     except urllib.error.URLError as e:
@@ -158,7 +183,9 @@ def api_call(server: str, path: str, payload: dict, ctx: ssl.SSLContext = None, 
                     "the CA that signed this instance's certificate rather than adding --insecure.")
         message = f"{label} connection error calling {path}: {reason}{hint}"
         if fatal:
-            raise ApiError(message) from e
+            # Never got an answer at all: the request may or may not have been
+            # handled. Ambiguous by definition.
+            raise ApiError(message, ambiguous=True) from e
         print(f"  (non-fatal) {message}", file=sys.stderr)
         return None
 
@@ -215,11 +242,23 @@ def warn_if_coordinator_key_travels_in_clear(grading_api_url: str) -> None:
     there would break every existing invocation; non-loopback http has never
     been a documented setup, so nobody relying on it gets broken by the noise
     either. (review nit on issue #104, CR w4:p1.)"""
-    if not grading_api_url.startswith("http://"):
+    parsed = urllib.parse.urlparse(grading_api_url)
+    # No .lower() needed: urlparse normalizes the scheme to lowercase by
+    # definition, so HTTP:// is covered (pinned by the parametrized test).
+    if parsed.scheme != "http":
         return
-    host = urllib.parse.urlparse(grading_api_url).hostname or ""
-    if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0", "", "::"):
+    host = parsed.hostname or ""
+    if host in ("localhost", "", "0.0.0.0", "::"):
+        # 0.0.0.0/:: are not loopback strictly speaking, but as a destination
+        # from this host they mean "this box", and warning there would be noise
+        # on the documented default setup.
         return
+    try:
+        if ipaddress.ip_address(host).is_loopback:
+            return
+    except ValueError:
+        # a hostname, not a literal -- judged below
+        pass
     print(
         f"WARNING: GRADING_API_URL is plain http to {host!r} -- GRADING_COORDINATOR_KEY and "
         "every minted session token cross the network unencrypted. Put grading-api behind TLS "
@@ -260,7 +299,14 @@ def main():
     grading_api_url = os.environ.get("GRADING_API_URL", "http://localhost:8080/")
 
     session_id = args.session_id or str(int(time.time()))
-    ctx = build_ssl_context(args.ca_bundle, args.insecure)
+    try:
+        ctx = build_ssl_context(args.ca_bundle, args.insecure)
+    except ssl.SSLError as e:
+        # Same shape as the isfile check above: a bad --ca-bundle is an
+        # operator typo, not a traceback (review nit N6). Nothing has been sent
+        # and no token exists yet, so this message can carry the file path
+        # safely.
+        parser.error(f"--ca-bundle: {args.ca_bundle} is not a usable PEM CA bundle ({e.strerror or e})")
     install_termination_handlers()
     warn_if_coordinator_key_travels_in_clear(grading_api_url)
 
@@ -271,7 +317,7 @@ def main():
     kasm_id = None
     mint_attempted = False
 
-    def compensate():
+    def compensate(exc):
         """Undo whatever was already created. Only reachable from the failure
         path, so it is deliberately cheap and never raises."""
         if grading_token and not kasm_id:
@@ -281,7 +327,7 @@ def main():
             # there would break a session the student may be joining.
             revoke_token(grading_api_url, coordinator_key, ctx, grading_token,
                          args.student_id, session_id)
-        elif mint_attempted and not grading_token:
+        elif mint_attempted and not grading_token and getattr(exc, "ambiguous", True):
             # The mint request went out and its outcome is unknown: POST /session
             # deletes that student_id's previous token before inserting a new one,
             # so either the student just lost a live link, or a token exists whose
@@ -289,6 +335,11 @@ def main():
             # in the first case (it would finish destroying a session nothing
             # failed to create), so this stays a loud hint for a human with the
             # context this script does not have.
+            #
+            # Gated on the failure being ambiguous (review nit N2): a 401/403 from
+            # the coordinator gate is the most common error this script sees and is
+            # a definite "nothing was minted" -- printing a `!!` token-hunting hint
+            # for it would train the operator to ignore the hint.
             print(
                 f"  !! grading-api POST /session for {args.student_id}/{session_id} did not "
                 "return a token, so this script cannot undo it. Check whether a token exists "
@@ -319,7 +370,7 @@ def main():
             # that returns the token alongside an error field would then be
             # dumped straight into the terminal/log (issue #93's leak class,
             # applied to this side of the protocol).
-            raise ApiError("grading-api POST /session returned no token")
+            raise ApiError("grading-api POST /session returned no token", ambiguous=True)
 
         # user_id is intentionally omitted: per Kasm's docs, request_kasm creates
         # a throwaway/anonymous user when it's left out -- exactly what we want
@@ -403,7 +454,7 @@ def main():
         # BaseException, not Exception: the failure that used to orphan a token
         # includes Ctrl-C during the Kasm call, which raises KeyboardInterrupt
         # and would sail straight past an `except Exception`.
-        compensate()
+        compensate(exc)
         if isinstance(exc, ApiError):
             sys.exit(str(exc))
         if isinstance(exc, KeyboardInterrupt):
