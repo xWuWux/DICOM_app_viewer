@@ -46,7 +46,7 @@ from app import main as main_module
 
 
 def _case_id(client, token):
-    return client.get(f"/case?token={token}").json()["case_id"]
+    return client.get("/case", headers={"X-Grading-Token": token}).json()["case_id"]
 
 
 # ---- Session tokens: the actual authorization mechanism ----
@@ -63,14 +63,18 @@ def test_session_requires_the_coordinator_key(client):
 
 def test_session_with_no_coordinator_key_header_is_rejected(client):
     resp = client.post("/session", json={"student_id": "stu_1", "session_id": "sess_1"})
-    # FastAPI's own required-header validation (422) fires before main.py's
-    # code ever runs -- still a hard rejection either way, which is what
-    # actually matters here.
-    assert resp.status_code in (401, 422)
+    # CR #121 taxonomy rule: a missing auth credential answers 401
+    # AUTH_INVALID_COORDINATOR_KEY, not FastAPI's parameter-validation 422
+    # (main.py guards the optional Header itself, before compare_digest).
+    assert resp.status_code == 401
+    assert resp.json() == {
+        "error_code": "AUTH_INVALID_COORDINATOR_KEY",
+        "message": "Missing X-Coordinator-Key header",
+    }
 
 
 def test_case_rejects_an_unknown_token(client):
-    resp = client.get("/case?token=this-token-was-never-minted")
+    resp = client.get("/case", headers={"X-Grading-Token": "this-token-was-never-minted"})
     assert resp.status_code == 401
 
 
@@ -85,18 +89,18 @@ def test_case_rejects_an_expired_token(client, mint_token):
     finally:
         conn.close()
 
-    resp = client.get(f"/case?token={token}")
+    resp = client.get("/case", headers={"X-Grading-Token": token})
     assert resp.status_code == 401
 
 
 def test_minting_a_new_token_revokes_the_previous_one_for_that_student(client, mint_token):
     old_token = mint_token("stu_3")
-    assert client.get(f"/case?token={old_token}").status_code == 200
+    assert client.get("/case", headers={"X-Grading-Token": old_token}).status_code == 200
 
     new_token = mint_token("stu_3")
     assert new_token != old_token
-    assert client.get(f"/case?token={old_token}").status_code == 401
-    assert client.get(f"/case?token={new_token}").status_code == 200
+    assert client.get("/case", headers={"X-Grading-Token": old_token}).status_code == 401
+    assert client.get("/case", headers={"X-Grading-Token": new_token}).status_code == 200
 
 
 def test_two_students_get_independent_tokens_and_state(client, mint_token):
@@ -117,8 +121,8 @@ def test_two_students_get_independent_tokens_and_state(client, mint_token):
         },
     )
 
-    assert client.get(f"/case?token={token_a}").json()["stage"] == "assessment"
-    assert client.get(f"/case?token={token_b}").json()["stage"] == "learning"
+    assert client.get("/case", headers={"X-Grading-Token": token_a}).json()["stage"] == "assessment"
+    assert client.get("/case", headers={"X-Grading-Token": token_b}).json()["stage"] == "learning"
 
 
 # ---- The 3-stage state machine itself (all via a minted token) ----
@@ -126,7 +130,7 @@ def test_two_students_get_independent_tokens_and_state(client, mint_token):
 
 def test_fresh_student_starts_at_learning_stage(client, mint_token):
     token = mint_token("stu_fresh")
-    resp = client.get(f"/case?token={token}")
+    resp = client.get("/case", headers={"X-Grading-Token": token})
     assert resp.status_code == 200
     data = resp.json()
     assert data["complete"] is False
@@ -194,7 +198,7 @@ def test_case_response_never_leaks_ground_truth_or_reference_report(client, mint
     token = mint_token("stu_leak_check")
     seen_stages = []
     while True:
-        data = client.get(f"/case?token={token}").json()
+        data = client.get("/case", headers={"X-Grading-Token": token}).json()
         if data.get("complete"):
             break
         seen_stages.append(data["stage"])
@@ -250,7 +254,7 @@ def test_learning_submit_advances_to_assessment_stage(client, mint_token):
             "time_spent_seconds": 1,
         },
     )
-    data = client.get(f"/case?token={token}").json()
+    data = client.get("/case", headers={"X-Grading-Token": token}).json()
     assert data["stage"] == "assessment"
     assert data["position"] == 1
     assert data["category_options"]  # dropdown options present now
@@ -353,13 +357,13 @@ def test_completing_all_stages_marks_complete(client, mint_token):
             body["modifier_s"] = False
         client.post("/submit", json=body)
 
-    data = client.get(f"/case?token={token}").json()
+    data = client.get("/case", headers={"X-Grading-Token": token}).json()
     assert data == {"complete": True}
 
 
 def test_results_before_completion(client, mint_token):
     token = mint_token("stu_8")
-    resp = client.get(f"/results?token={token}")
+    resp = client.get("/results", headers={"X-Grading-Token": token})
     assert resp.json() == {"complete": False}
 
 
@@ -375,7 +379,7 @@ def test_results_after_completion_reports_accuracy(client, mint_token):
             body["modifier_s"] = stage == "test"
         client.post("/submit", json=body)
 
-    data = client.get(f"/results?token={token}").json()
+    data = client.get("/results", headers={"X-Grading-Token": token}).json()
     assert data["complete"] is True
     assert data["test_total"] == 1
     assert data["test_correct"] == 1
@@ -474,7 +478,7 @@ def test_submit_a_later_case_in_the_same_stage_returns_409_and_leaves_progress_u
 
     # Progress must not have advanced, and neither case's submission should
     # exist -- the rejected request must leave no trace at all.
-    data = client.get(f"/case?token={token}").json()
+    data = client.get("/case", headers={"X-Grading-Token": token}).json()
     assert data["case_id"] == real_case_id
     assert data["position"] == 1
 
@@ -709,7 +713,7 @@ def test_reset_clears_progress_and_submissions(client, mint_token):
         "/submit",
         json={"token": token, "case_id": case_id, "stage": "learning", "text": "x", "time_spent_seconds": 1},
     )
-    assert client.get(f"/case?token={token}").json()["stage"] == "assessment"
+    assert client.get("/case", headers={"X-Grading-Token": token}).json()["stage"] == "assessment"
 
     resp = client.post("/reset", json={"token": token})
     assert resp.status_code == 200
@@ -717,7 +721,7 @@ def test_reset_clears_progress_and_submissions(client, mint_token):
 
     # Back to a fresh learning-stage case, as if this student had never
     # submitted anything.
-    data = client.get(f"/case?token={token}").json()
+    data = client.get("/case", headers={"X-Grading-Token": token}).json()
     assert data["stage"] == "learning"
     assert data["position"] == 1
 
@@ -769,14 +773,14 @@ def test_reset_is_blocked_during_test_stage(client, mint_token):
             body["modifier_s"] = False
         client.post("/submit", json=body)
 
-    assert client.get(f"/case?token={token}").json()["stage"] == "test"
+    assert client.get("/case", headers={"X-Grading-Token": token}).json()["stage"] == "test"
 
     resp = client.post("/reset", json={"token": token})
     assert resp.status_code == 403
 
     # Still exactly where it was -- the blocked attempt didn't partially
     # apply (e.g. clearing submissions but not progress, or vice versa).
-    data = client.get(f"/case?token={token}").json()
+    data = client.get("/case", headers={"X-Grading-Token": token}).json()
     assert data["stage"] == "test"
     assert data["position"] == 1
 
@@ -798,12 +802,12 @@ def test_reset_still_allowed_after_completion(client, mint_token):
             body["modifier_s"] = False
         client.post("/submit", json=body)
 
-    assert client.get(f"/case?token={token}").json() == {"complete": True}
+    assert client.get("/case", headers={"X-Grading-Token": token}).json() == {"complete": True}
 
     resp = client.post("/reset", json={"token": token})
     assert resp.status_code == 200
     assert resp.json() == {"reset": True}
-    assert client.get(f"/case?token={token}").json()["stage"] == "learning"
+    assert client.get("/case", headers={"X-Grading-Token": token}).json()["stage"] == "learning"
 
 
 def test_healthz_ok(client):
@@ -1049,4 +1053,4 @@ def test_submit_rolls_back_the_submission_if_advance_progress_fails(client, mint
         "not 409 DUPLICATE_SUBMISSION -- that stuck-forever state is "
         "exactly the bug issue #60 reports"
     )
-    assert client.get(f"/case?token={token}").json()["stage"] == "assessment"
+    assert client.get("/case", headers={"X-Grading-Token": token}).json()["stage"] == "assessment"

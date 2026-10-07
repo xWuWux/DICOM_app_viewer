@@ -36,7 +36,7 @@ def _walk_to_complete(client, token):
         ("assessment", {"category": "3", "modifier_s": False}),
         ("test", {"category": "4A", "modifier_s": True}),
     ):
-        case = client.get(f"/case?token={token}").json()
+        case = client.get("/case", headers={"X-Grading-Token": token}).json()
         assert case["complete"] is False and case["stage"] == expected_stage
         resp = client.post("/submit", json={"token": token, "case_id": case["case_id"], "stage": case["stage"], **body})
         assert resp.status_code == 200, resp.text
@@ -118,7 +118,7 @@ def test_results_never_move_after_legal_gt_change(client, mint_token):
     keep the old version's GT; accuracy and breakdown are byte-stable."""
     token = mint_token("stu_stable")
     _walk_to_complete(client, token)
-    before = client.get(f"/results?token={token}").json()
+    before = client.get("/results", headers={"X-Grading-Token": token}).json()
     assert before["accuracy"] == 1.0
 
     conn = db_module.get_connection()
@@ -142,7 +142,7 @@ def test_results_never_move_after_legal_gt_change(client, mint_token):
     finally:
         conn.close()
 
-    after = client.get(f"/results?token={token}").json()
+    after = client.get("/results", headers={"X-Grading-Token": token}).json()
     assert after == before
     # property: no row may show a disagreement while claiming correctness
     for row in after["breakdown"]:
@@ -278,7 +278,7 @@ def test_migrated_db_results_served_from_snapshot(tmp_path, monkeypatch):
     from app.main import app
 
     with TestClient(app) as tc:
-        results = tc.get("/results?token=tok-old").json()
+        results = tc.get("/results", headers={"X-Grading-Token": "tok-old"}).json()
     assert results == {
         "complete": True,
         "test_total": 1,
@@ -373,7 +373,7 @@ def test_after_cases_migration_submission_writes_work_raw_and_via_api(tmp_path, 
     from app.main import app
 
     with TestClient(app) as tc:
-        case = tc.get("/case?token=tok-api").json()
+        case = tc.get("/case", headers={"X-Grading-Token": "tok-api"}).json()
         assert case["complete"] is False and case["stage"] == "test"
         resp = tc.post(
             "/submit",
@@ -387,7 +387,7 @@ def test_after_cases_migration_submission_writes_work_raw_and_via_api(tmp_path, 
         )
         # (b) /submit itself -- THE endpoint the blocker killed -- now 200
         assert resp.status_code == 200, resp.text
-        results = tc.get("/results?token=tok-api").json()
+        results = tc.get("/results", headers={"X-Grading-Token": "tok-api"}).json()
         assert results["complete"] is True and results["test_correct"] == 1
 
     # (d) the frozen-GT trigger still fires on the migrated database
@@ -474,7 +474,7 @@ def test_new_case_version_mid_stage_gives_defined_409(client, mint_token):
     against a ground truth they never saw. The retried submit snapshots
     the NEW version's GT."""
     token = mint_token("stu_mid")
-    case = client.get(f"/case?token={token}").json()
+    case = client.get("/case", headers={"X-Grading-Token": token}).json()
     assert case["complete"] is False
 
     conn = sqlite3.connect(db_module.DB_PATH)
@@ -502,7 +502,7 @@ def test_new_case_version_mid_stage_gives_defined_409(client, mint_token):
     assert resp.json()["error_code"] == "VALIDATION_CASE_MISMATCH"
 
     # client refetches: the position now resolves to the NEW version
-    case2 = client.get(f"/case?token={token}").json()
+    case2 = client.get("/case", headers={"X-Grading-Token": token}).json()
     assert case2["case_id"] != case["case_id"]
     resp2 = client.post(
         "/submit",

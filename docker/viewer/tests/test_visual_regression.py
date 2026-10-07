@@ -88,7 +88,7 @@ def _mint_token(student_id: str, session_id: str) -> str:
 def _open(page, base_url: str, path: str, token: str, student_id: str, session_id: str):
     page.clock.set_fixed_time(FROZEN_TIME)
     page.set_viewport_size(VIEWPORT)
-    page.goto(f"{base_url}/{path}?student_id={student_id}&session_id={session_id}&token={token}")
+    page.goto(f"{base_url}/{path}?student_id={student_id}&session_id={session_id}#token={token}")
     page.wait_for_selector("#grading-panel button", timeout=15000)
 
 

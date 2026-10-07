@@ -85,10 +85,11 @@ SESSION_ID = os.environ.get("SESSION_ID", "UNKNOWN_SESSION")
 # leave exactly this much room on the right, where this window sits.
 PANEL_WIDTH = int(os.environ.get("GRADING_PANEL_WIDTH", "420"))
 
-_query = urllib.parse.urlencode(
-    {"token": GRADING_TOKEN, "student_id": STUDENT_ID, "session_id": SESSION_ID}
-)
-PANEL_URL = urllib.parse.urljoin(VIEWER_URL, "grading-panel.html") + "?" + _query
+# issue #94: the token rides the URL FRAGMENT (never transmitted to the
+# server, absent from every nginx log); the page reads it from
+# location.hash. Non-credential params stay in the query.
+_query = urllib.parse.urlencode({"student_id": STUDENT_ID, "session_id": SESSION_ID})
+PANEL_URL = urllib.parse.urljoin(VIEWER_URL, "grading-panel.html") + "?" + _query + "#token=" + urllib.parse.quote(GRADING_TOKEN, safe="")
 # Same-origin check for the navigation lockdown below -- anything the page
 # itself fetches (grading-api via /api/) is an XHR, not a navigation, so
 # this only ever has to match top-level page loads.
