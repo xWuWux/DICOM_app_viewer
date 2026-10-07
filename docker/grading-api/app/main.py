@@ -51,7 +51,29 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="IP_CMC Grading API", lifespan=lifespan)
+# issue #100, hard-coded and deliberately WITHOUT a dev/docs opt-out
+# (same philosophy as config.py's "no dev exception" for the coordinator
+# key): an env flag you can forget to unset in production is one forgotten
+# variable away from re-exposing an internal grading contract to the
+# public internet edge (nginx proxies /api/ straight here -- /api/docs
+# was live until this line). The contract surface that IS published is
+# the code + tests + CHANGELOG.md. Need the schema? app.openapi() builds
+# the same dict in-process regardless of openapi_url:
+#   python -c "from app.main import app; import json; print(json.dumps(app.openapi()))"
+# Version: single source of truth is API_VERSION below; it is bumped in
+# the SAME commit that adds a CHANGELOG.md entry (the review contract for
+# this repo: no behavior-visible change lands without one), and the
+# matching git tag is cut at release time by the release owner.
+API_VERSION = "1.0.0"
+
+app = FastAPI(
+    title="IP_CMC Grading API",
+    version=API_VERSION,
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 app.add_exception_handler(AppError, app_error_handler)
 app.add_exception_handler(RequestValidationError, validation_error_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)

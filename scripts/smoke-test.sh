@@ -120,6 +120,19 @@ else
   status=1
 fi
 
+# issue #100: the OpenAPI/docs surface must be closed at the app, so it
+# stays closed through this nginx /api/ proxy no matter what the edge
+# template does -- probe through the proxy, not around it.
+for closed_path in docs redoc openapi.json; do
+  code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/api/${closed_path}")
+  if [ "$code" = "404" ]; then
+    echo "--- /api/${closed_path} closed through the proxy: OK (404) ---"
+  else
+    echo "--- /api/${closed_path} closed through the proxy: FAIL, got HTTP $code (expected 404) ---"
+    status=1
+  fi
+done
+
 # Regression check for a real bug (issue #4): the auth-injecting proxy used
 # to forward nginx's $host to Orthanc, which strips the port even when the
 # original request had one. Orthanc's DICOMweb plugin embeds whatever Host
