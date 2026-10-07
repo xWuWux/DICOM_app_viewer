@@ -73,9 +73,7 @@ def test_second_writer_waits_for_the_first_commit(client):
         positive = {}
         control = {}
         t0 = time.monotonic()
-        positive_thread = threading.Thread(
-            target=_writer_result, args=(positive, "waiter_positive")
-        )
+        positive_thread = threading.Thread(target=_writer_result, args=(positive, "waiter_positive"))
         positive_thread.start()
 
         # give the positive writer time to actually reach the lock
