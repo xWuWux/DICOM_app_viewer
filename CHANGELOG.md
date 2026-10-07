@@ -49,6 +49,28 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   is consulted. Error responses and log lines never echo the rejected
   value.
 
+### Added
+- `POST /session/revoke` (issue #104) — coordinator-gated like `POST /session`.
+  Takes exactly one of `token`/`student_id` and answers
+  `200 {"revoked": bool, "count": n}`; an unknown or already-revoked selector is
+  `revoked: false`, deliberately **not** 404, because the caller uses this as an
+  idempotent compensation step and must not have to distinguish "someone got
+  there first" from "never existed". Rejections never echo the submitted token.
+  Every revocation logs `session_revoked` server-side with the selector kind and
+  the row count — never the credential, never the `student_id` either — because a
+  coordinator-keyed security action that leaves no trace cannot be audited
+  (DoD 40).
+  Additive endpoint, nothing existing changed → advertised API version
+  `1.0.0` → `1.1.0`.
+- `scripts/create-session.py --ca-bundle` / `TLS_CA_BUNDLE` (issue #104) —
+  appends the named CA to the system trust store; verification stays on. The
+  flag is added to the store rather than replacing it, because Kasm's gateway
+  and `viewer`'s `/api/` proxy routinely have two different issuers.
+  `--insecure` still works for a self-signed lab instance, now warns on every
+  run, and is refused together with `--ca-bundle` instead of silently winning.
+  **No change for invocations that never passed `--insecure`**: verifying was
+  already their effective behavior.
+
 ### Changed
 - Submitting against a stage that does not match the student's assigned
   case answers `409 VALIDATION_CASE_MISMATCH` — previously `400`. The
@@ -64,6 +86,24 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   silently substitutes a fake "complete" payload (issue #102).
 - `/docs`, `/redoc`, `/openapi.json` disabled app-side; API version made
   explicit (`1.0.0`) instead of FastAPI's stock default (issue #100).
+
+### Fixed
+- A failed `scripts/create-session.py` run no longer leaves a live grading token
+  behind (issue #104). The token has to be minted before `request_kasm` — its
+  value is injected into that container's environment by that very call — so any
+  failure in the Kasm step used to orphan it, usable until its TTL expired. It
+  now revokes through `POST /api/session/revoke` on every failure before Kasm
+  answers (HTTP error, refused connection, a 200 without `kasm_id`, Ctrl-C,
+  SIGTERM, SIGHUP), and prints the undo instructions by `student_id`/`session_id`
+  rather than the credential. Once Kasm has answered it does **not** revoke: the
+  token is then a live session's credential, and killing it would break a
+  student's session to tidy up a bookkeeping row. A signal inherited as ignored
+  (`nohup`, `trap '' HUP`) is left ignored, so backgrounded runs keep surviving
+  their terminal.
+  Review record (DoD 19/45): `docs/history/issue-104-review.md` — the CR on
+  PR #134 verbatim plus the two pre-PR review rounds, including their mutation
+  tables (which of these guarantees are actually pinned by a test, and which
+  tests were shown to fail when the guard was removed).
 
 ### Security hardening (no contract change for compliant clients)
 - API access logs are structured JSON with tokens/credentials scrubbed,
