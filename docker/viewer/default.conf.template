@@ -1,6 +1,20 @@
 # Rate limiting zone (issue #4: missing rate limiting)
 limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
 
+# issue #94: an args-free access-log format. The default combined format
+# logs $request (the raw request LINE, query string included) -- any
+# credential or PHI ever passed in a query string was therefore copied
+# into access.log verbatim (audit-confirmed with a live session token,
+# issues #63/#94). Since grading-api now takes its token as a header and
+# no /api/ endpoint needs query parameters, the API's log line records
+# only the path. Orthanc's proxy server block keeps default logging:
+# its GETs carry legitimate non-secret query parameters that are useful
+# in logs and nothing credential-like (Basic Auth is a HEADER, and nginx
+# never logs headers).
+log_format api_no_args '$remote_addr - $remote_user [$time_local] '
+                       '"$request_method $uri $server_protocol" $status '
+                       '$request_length "$http_referer"';
+
 server {
     listen 8080;
     server_name _;
@@ -43,6 +57,36 @@ server {
         # Rate limiting (issue #4: missing rate limiting)
         limit_req zone=api_limit burst=20 nodelay;
         limit_req_status 429;
+
+        # issue #93/#94: reject oversized bodies at the edge before they
+        # reach (and get logged-by) the app. 64k, not the suggested 32k:
+        # /submit legitimately carries a max_length=10_000-char free-text
+        # answer, which is ~30 KB of ASCII but up to ~40 KB of 4-byte
+        # UTF-8 once JSON-escaped -- 32k would 413 real submissions.
+        # Everything above 64k is noise or an attack, and neither gets
+        # proxied, answered verbosely, or logged in body form.
+        client_max_body_size 64k;
+
+        # issue #94, belt-and-braces: NO /api/ request may carry a query
+        # string at all. Empirically (test-log-leak.sh against the real
+        # image): `set $args ''` keeps the query out of the UPSTREAM URL
+        # and the args-free access format keeps it out of access.log --
+        # but nginx's error.log embeds the client's raw request line in
+        # its "request:" field for every upstream failure, and that
+        # field is not formatable. So a query-carrying request is
+        # refused here, before proxying: it generates no upstream
+        # attempt, hence no error line, and the access line it does
+        # produce uses the args-free format. No legitimate request is
+        # affected -- /api/case and /api/results take the token as a
+        # header and nothing under /api/ reads query parameters; if
+        # that ever changes, this block and `set $args` must change
+        # with it.
+        if ($args) {
+            return 422;
+        }
+        set $args '';
+
+        access_log /var/log/nginx/access.log api_no_args;
 
         proxy_pass http://grading-api:8000/;
         proxy_set_header Host $host;

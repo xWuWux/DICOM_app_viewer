@@ -22,8 +22,21 @@ SESSION_ID="${SESSION_ID:-$(date +%s)}"
 VIEWER_URL="${VIEWER_URL:?set VIEWER_URL to the internal viewer address}"
 ORTHANC_URL="${ORTHANC_URL:?set ORTHANC_URL to the internal auth-proxy address}"
 GRADING_TOKEN="${GRADING_TOKEN:?set GRADING_TOKEN to the token minted by grading-api POST /session}"
+# CR #121 nit: the token is interpolated into a curl --config line wrapped
+# in double quotes; a value containing " or \\ could close the quote and
+# inject further curl options. grading-api only ever mints token_urlsafe
+# (base64url) values, so anything else means corruption or tampering --
+# fail fast and loud instead of feeding curl a crafted config.
+if [[ ! "$GRADING_TOKEN" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "ERROR: GRADING_TOKEN contains characters outside the URL-safe alphabet ([A-Za-z0-9_-]) -- refusing to launch" >&2
+  exit 1
+fi
 
-CASE_JSON=$(curl -fsS "${VIEWER_URL}api/case?token=${GRADING_TOKEN}") || CASE_JSON='{"complete": true}'
+# issue #94: the token rides an X-Grading-Token HEADER, fed to curl via
+# --config on stdin (bash process substitution + builtin printf) so it is
+# never in curl's argv (`ps`-invisible) and never in a query string
+# (nginx logs). Mirrors docker/kasm-workspace-weasis/custom_startup.sh.
+CASE_JSON=$(curl -fsS --config - "${VIEWER_URL}api/case" < <(printf 'header = "X-Grading-Token: %s"\n' "$GRADING_TOKEN")) || CASE_JSON='{"complete": true}'
 
 WEASIS_URI=$(python3 - "$CASE_JSON" "$ORTHANC_URL" <<'PYEOF'
 import json, sys, urllib.parse
@@ -70,7 +83,7 @@ PYEOF
 # separate, still-necessary fix.
 export WEBKIT_FORCE_SANDBOX=0
 BROWSER_BIN="${BROWSER_BIN:-epiphany}"
-GRADING_PANEL_URL="${VIEWER_URL}grading-panel.html?student_id=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$STUDENT_ID")&session_id=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$SESSION_ID")&token=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$GRADING_TOKEN")"
+GRADING_PANEL_URL="${VIEWER_URL}grading-panel.html?student_id=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$STUDENT_ID")&session_id=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$SESSION_ID")#token=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$GRADING_TOKEN")"
 "$BROWSER_BIN" "$GRADING_PANEL_URL" &
 
 WEASIS_BIN="${WEASIS_BIN:-/opt/weasis/bin/Weasis}"

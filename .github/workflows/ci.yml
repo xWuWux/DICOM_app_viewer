@@ -16,7 +16,8 @@ name: CI
 # Every script here (scripts/lint.sh, build-test.sh, security-scan.sh,
 # test-grading-api.sh, test-shell-scripts.sh, smoke-test.sh,
 # test-guacamole-integration.sh, test-visual-regression.sh,
-# test-copy-lockdown.sh) is runnable identically on a local machine -- this
+# test-copy-lockdown.sh, test-log-leak.sh) is runnable identically on a
+# local machine -- this
 # file only handles installing each stage's prerequisites, never
 # duplicates the check logic itself.
 
@@ -82,6 +83,12 @@ jobs:
           python-version: "3.12"
       - name: Unit test grading-api's state machine (issue #8)
         run: ./scripts/test-grading-api.sh
+      - name: Upload coverage report (issue #101)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grading-api-coverage
+          path: docker/grading-api/coverage.xml
 
   shell-test:
     runs-on: ubuntu-latest
@@ -152,10 +159,18 @@ jobs:
       - name: Copy-mechanism lockdown test (Weasis export/import/send/Q-R, KasmVNC rich-clipboard DLP)
         run: ./scripts/test-copy-lockdown.sh
 
+  log-leak-test:
+    runs-on: ubuntu-latest
+    needs: [unit-test, shell-test, provision-guacamole-session-test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sentinel log-leak test (no credential/PHI value in any nginx log path, issue #94/#93)
+        run: ./scripts/test-log-leak.sh
+
   # ---- Success ----
   ci-success:
     runs-on: ubuntu-latest
-    needs: [smoke-test, guacamole-integration-test, visual-regression-test, copy-lockdown-test]
+    needs: [smoke-test, guacamole-integration-test, visual-regression-test, copy-lockdown-test, log-leak-test]
     if: always()
     steps:
       - name: Confirm every stage passed

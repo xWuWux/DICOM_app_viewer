@@ -36,4 +36,7 @@ RESPONSE=$(curl -sSf -X POST "${GRADING_API_URL%/}/api/session" \
 TOKEN=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin)['token'])")
 
 echo "Open this link in your browser:"
-echo "${GRADING_API_URL%/}/?student_id=${STUDENT_ID}&session_id=${SESSION_ID}&token=${TOKEN}"
+# issue #94: the token rides the URL FRAGMENT (#token=...), which the
+# browser never transmits -- unlike ?token=, it can never land in nginx
+# access.log/error.log; watermark.html reads it from location.hash.
+echo "${GRADING_API_URL%/}/?student_id=${STUDENT_ID}&session_id=${SESSION_ID}#token=${TOKEN}"

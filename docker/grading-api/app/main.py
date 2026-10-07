@@ -20,7 +20,6 @@ displaying the wrong ID isn't a security problem, only trusting it for
 grading actions was.
 """
 
-import os
 import secrets
 import sqlite3
 import time
@@ -34,6 +33,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import db
+from .config import COORDINATOR_KEY
 from .errors import AppError, app_error_handler, unhandled_exception_handler, validation_error_handler
 from .logging_config import configure_logging, get_logger, request_id_var
 
@@ -67,6 +67,13 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+        # issue #95: mirror onto request.state too. Request.state is
+        # backed by scope["state"], shared with the Request the OUTER
+        # ServerErrorMiddleware later rebuilds for the unhandled-exception
+        # handler -- by then this contextvar's finally: below has already
+        # reset it, so scope state is the only channel the 500 handler
+        # still has the id through.
+        request.state.request_id = request_id
         token = request_id_var.set(request_id)
         start = time.monotonic()
         try:
@@ -98,10 +105,11 @@ app.add_middleware(RequestIdMiddleware)
 # whoever mints links) knows -- required so POST /session can't just be
 # called directly by a student's own browser to mint a token for anyone
 # else's student_id, which would recreate the exact hole this closes.
-# Fails loudly at import time if unset, same philosophy as
-# docker-compose.yml's ORTHANC_PASSWORD -- never silently run with no
-# secret configured.
-COORDINATOR_KEY = os.environ["GRADING_COORDINATOR_KEY"]
+# Imported from app/config.py, which validates presence AND minimum
+# length at import time (issue #97) -- the compose ${VAR:?} guard alone
+# never covered a bare `docker run`/CI, and never checked the value at
+# all: an empty-string key used to start fine, letting anyone mint
+# tokens for any student_id.
 
 
 @app.get("/healthz")
@@ -133,10 +141,14 @@ class SessionBody(BaseModel):
 
 
 @app.post("/session")
-def create_session(body: SessionBody, x_coordinator_key: str = Header(...)):
+def create_session(body: SessionBody, x_coordinator_key: str | None = Header(default=None)):
     """Mint a fresh token bound to student_id, the only path that creates
     that binding. Called by scripts/create-session.py right after minting
     the Kasm session itself, not by anything running inside a session."""
+    if not x_coordinator_key:
+        # same taxonomy rule as the X-Grading-Token endpoints (CR on #121:
+        # auth failures answer 401 AUTH_*, never FastAPI's 422).
+        raise AppError(401, "AUTH_INVALID_COORDINATOR_KEY", "Missing X-Coordinator-Key header")
     if not secrets.compare_digest(x_coordinator_key, COORDINATOR_KEY):
         # app_error_handler logs every AppError generically (error_code,
         # status_code, path) -- no need to also log here, that would just
@@ -204,7 +216,15 @@ def _get_or_create_progress(conn, student_id: str):
 
 
 def _get_case(conn, stage: str, order_index: int):
-    return conn.execute("SELECT * FROM cases WHERE stage = ? AND order_index = ?", (stage, order_index)).fetchone()
+    # issue #96: "the current case" at a position is its HIGHEST version
+    # row -- ground-truth changes arrive as new version rows, never as
+    # an UPDATE once submissions exist (cases_ground_truth_frozen
+    # trigger). With every position at version 1 this is exactly the
+    # query the pre-#96 code ran.
+    return conn.execute(
+        "SELECT * FROM cases WHERE stage = ? AND order_index = ? ORDER BY version DESC LIMIT 1",
+        (stage, order_index),
+    ).fetchone()
 
 
 def _advance_progress(conn, student_id: str, stage: str, order_index: int):
@@ -245,10 +265,28 @@ def _advance_progress(conn, student_id: str, stage: str, order_index: int):
 
 
 @app.get("/case")
-def get_case(token: str):
+def get_case(x_grading_token: str | None = Header(default=None, alias="X-Grading-Token")):
+    """issue #94: the token moved from ?token= to a header, everywhere.
+
+    A query-string credential was reproduced verbatim by nginx's access
+    log AND its error log (upstream URL) -- two log files holding live
+    session tokens per request (audit-confirmed on the running viewer
+    container; issues #63/#94). Headers appear in neither. Every client
+    of these two GET endpoints is first-party (watermark.html,
+    grading-panel.html, custom_startup.sh, the tests) -- there are no
+    external integrations to keep query-compatibility for, and tokens
+    are hours-lived, so query acceptance is removed outright rather
+    than deprecated (a #63 note for the changelog goes in with #100).
+    POST /submit and /reset keep the token in the JSON body: a body is
+    not logged by nginx, so they were never part of this leak."""
+    if not x_grading_token:
+        # CR on #121: a required Header() parameter makes FastAPI answer a
+        # missing header with 422 VALIDATION_ERROR -- clients and the
+        # error taxonomy (#74) expect auth failures as 401 AUTH_*.
+        raise AppError(401, "AUTH_INVALID_TOKEN", "Missing X-Grading-Token header")
     conn = db.get_connection()
     try:
-        student_id = _resolve_token(conn, token)
+        student_id = _resolve_token(conn, x_grading_token)
         progress = _get_or_create_progress(conn, student_id)
         if progress["stage"] == "complete":
             return {"complete": True}
@@ -266,7 +304,13 @@ def get_case(token: str):
             )
             raise AppError(500, "SERVER_ERROR", "Internal server error")
 
-        total_in_stage = conn.execute("SELECT COUNT(*) FROM cases WHERE stage = ?", (progress["stage"],)).fetchone()[0]
+        total_in_stage = conn.execute(
+            # DISTINCT order_index, not COUNT(*): from issue #96 on, one
+            # position can hold several version rows, and what a student
+            # sees as "case 3 of 10" counts positions, not schema rows.
+            "SELECT COUNT(DISTINCT order_index) FROM cases WHERE stage = ?",
+            (progress["stage"],),
+        ).fetchone()[0]
 
         response = {
             "complete": False,
@@ -398,8 +442,9 @@ def submit(body: SubmitBody):
             conn.execute(
                 """INSERT INTO submissions
                    (student_id, case_id, stage, submitted_category, submitted_modifier_s,
-                    submitted_text, is_correct, time_spent_seconds, submitted_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    submitted_text, is_correct, time_spent_seconds, submitted_at,
+                    ground_truth_category, ground_truth_modifier_s, case_version)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     student_id,
                     body.case_id,
@@ -410,6 +455,15 @@ def submit(body: SubmitBody):
                     is_correct,
                     time_spent_seconds,
                     db.now(),
+                    # issue #96: freeze the ground truth -- and which
+                    # version row it came from -- into the same INSERT as
+                    # is_correct itself: snapshot and score derive from the
+                    # same `case` row, same transaction, so they can never
+                    # disagree later. gt_backfilled keeps its default 0:
+                    # this IS a proven snapshot.
+                    case["ground_truth_category"],
+                    case["ground_truth_modifier_s"],
+                    case["version"],
                 ),
             )
         except sqlite3.IntegrityError:
@@ -478,18 +532,26 @@ def reset(body: ResetBody):
 
 
 @app.get("/results")
-def results(token: str):
+def results(x_grading_token: str | None = Header(default=None, alias="X-Grading-Token")):
+    if not x_grading_token:
+        # CR on #121: 401 AUTH_INVALID_TOKEN, not FastAPI's 422 (see /case).
+        raise AppError(401, "AUTH_INVALID_TOKEN", "Missing X-Grading-Token header")
     conn = db.get_connection()
     try:
-        student_id = _resolve_token(conn, token)
+        student_id = _resolve_token(conn, x_grading_token)
         progress = _get_or_create_progress(conn, student_id)
         if progress["stage"] != "complete":
             return {"complete": False}
 
+        # issue #96: reads ONLY the submission's own frozen snapshot --
+        # no JOIN to cases anymore. A later GT change takes the form of a
+        # new case version, which by construction cannot alter these rows;
+        # the audit sec-3.2 record (ground_truth 4B vs submitted 4A vs
+        # correct:true) is now impossible by the data model itself.
         rows = conn.execute(
-            """SELECT s.is_correct, c.ground_truth_category, s.submitted_category
-               FROM submissions s JOIN cases c ON c.id = s.case_id
-               WHERE s.student_id = ? AND s.stage = 'test'""",
+            """SELECT is_correct, ground_truth_category, submitted_category
+               FROM submissions
+               WHERE student_id = ? AND stage = 'test'""",
             (student_id,),
         ).fetchall()
 

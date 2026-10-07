@@ -65,6 +65,14 @@ of this section that only set `ORTHANC_PASSWORD` hit
 `docker compose up`, which cascaded into `load-sample-studies.sh` failing
 too (nothing was actually running yet).
 
+> **BREAKING (issue #97):** `GRADING_COORDINATOR_KEY` must now be at least
+> 32 characters, contain no leading/trailing whitespace, and be set in
+> every launch path (not just compose) — grading-api exits at startup
+> otherwise with a `CONFIGURATION ERROR` naming the variable. Deployments
+> that used a shorter key stop starting until it's regenerated
+> (`openssl rand -hex 32`). `GRADING_TOKEN_TTL_SECONDS`, if set, must be
+> an integer between 1 and 604800 (7 days).
+
 ```
 ┌──────────────┐      ┌───────────────────────┐      ┌─────────────┐
 │  Your browser│ ───► │ viewer (nginx:8080)   │ ───► │  orthanc    │
@@ -95,7 +103,7 @@ mint a token first:
 This mints a `grading-api` session token (gated by `GRADING_COORDINATOR_KEY`
 from `.env`, the same mechanism `scripts/create-session.py` uses for real
 Kasm sessions) and prints a ready-to-open link, e.g.
-`http://localhost:8080/?student_id=STU_LOCAL_TEST&session_id=sess_.../&token=...`.
+`http://localhost:8080/?student_id=STU_LOCAL_TEST&session_id=sess_...#token=...` (issue #94: the token is a URL *fragment* -- the browser never transmits it, so it can't reach nginx logs).
 Open that link — you should see the watermarked viewer wrapper
 (`watermark.html`, the Chrome-flow page) with a rotating
 `STUDENT_ID | SESSION_ID | timestamp` overlay, loading Orthanc Explorer 2
@@ -111,7 +119,7 @@ knows which origin to iframe.
 
 Want to see the Weasis-flow page (`grading-panel.html`) locally instead?
 Take the same link `mint-local-link.sh` printed and swap the path:
-`http://localhost:8080/grading-panel.html?student_id=...&session_id=...&token=...`
+`http://localhost:8080/grading-panel.html?student_id=...&session_id=...#token=...`
 renders it the same way, minus Weasis itself (that only runs inside a
 Kasm/XFCE session, or the Xvfb-based dev technique described further down)
 — useful for iterating on the grading UI in isolation.
@@ -253,7 +261,13 @@ ad hoc `HTTPException(code, "free-text string")`.
   transitions/submissions recorded. Deliberately never logs: the raw
   session token, `GRADING_COORDINATOR_KEY`, or student free-text answers
   — regression-tested directly (`tests/test_logging.py`), not just
-  documented as an intention. `httpx`'s own logger is explicitly quieted
+  documented as an intention. Since issue #94 the token is also absent
+  from *every URL by design*: `GET /api/case`/`GET /api/results` take it
+  as the `X-Grading-Token` header, browser pages receive it as a URL
+  fragment (never transmitted), launcher scripts pass it to curl via a
+  stdin-fed header (never in `ps`), and nginx rejects any query string
+  under `/api/` outright — end-to-end verified by
+  `scripts/test-log-leak.sh` (sentinel greps over real container logs). `httpx`'s own logger is explicitly quieted
   (found empirically while writing that test: it logs full request URLs,
   including query-string tokens, at INFO level — test-harness-only today,
   but silenced at the source rather than relied on to stay irrelevant),
@@ -911,8 +925,11 @@ in CI.
     with bash's own generic `VIEWER_URL: unbound variable` instead of a
     message actually pointing at the problem — now guarded the same way.
     Both suites also gained a `GRADING_TOKEN` seam and an assertion the
-    Weasis suite's `curl` call authenticates with `?token=`, never the old
-    `?student_id=` (the session-token fix's own regression coverage here).
+    Weasis suite's `curl` call authenticates with the session token
+    (since issue #94 via a stdin-fed `X-Grading-Token` header — asserted
+    present in the stdin header AND absent from curl's argv), never the
+    old bare `?student_id=` (the session-token fix's own regression
+    coverage here).
   - `docker/kasm-workspace-weasis/watchdog.bats` (4 tests): since the
     script under test is a deliberate infinite loop, every test bounds it
     with `timeout` rather than waiting for it to exit on its own. **Found
