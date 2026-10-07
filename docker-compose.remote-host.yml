@@ -32,7 +32,12 @@
 
 services:
   orthanc:
-    image: orthancteam/orthanc:latest
+    # issue #50: must equal docker-compose.yml's pinned orthanc exactly
+    # (tag + digest) -- the lint stage diffs the two. Full rationale and
+    # the manual bump procedure live in the comment at docker-compose.yml
+    # (orthancteam calendar tag 26.9.1 == Orthanc 1.13.0; the digest is the
+    # multi-arch manifest-list, linux/amd64 + linux/arm64).
+    image: orthancteam/orthanc:26.9.1@sha256:d2705f2c56547e55ce9bc2250fd22d05d326493b3f3d9fa191ecb7db8ca6b5a2
     container_name: ipcmc-orthanc
     restart: unless-stopped
     environment:
