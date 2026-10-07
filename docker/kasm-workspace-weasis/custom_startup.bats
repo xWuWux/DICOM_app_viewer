@@ -54,6 +54,9 @@ EOF
   export ORTHANC_URL="http://ipcmc-viewer:8043/"
   export GRADING_TOKEN="test-token-abc"
   unset STUDENT_ID SESSION_ID CURL_EXIT_CODE CURL_RESPONSE_JSON
+  # issue #102 added a retry loop with sleeps; tests pin the seam to 0 so
+  # failure-path cases stay fast (production keeps the 2s/4s backoff).
+  export API_RETRY_BACKOFF=0
 }
 
 @test "fails fast with a clear message when VIEWER_URL is unset" {
@@ -119,11 +122,26 @@ print(' '.join(urllib.parse.unquote(p) for p in uri.split('+')))
   [ ! -s "$WEASIS_ARGS_FILE" ]  # empty: no argv captured, i.e. launched with none
 }
 
-@test "falls back to a plain launch when grading-api is unreachable" {
+@test "issue #102: unreachable grading-api retries 3x, logs loudly, never fakes complete" {
   export CURL_EXIT_CODE=7  # curl's own exit code for "couldn't connect"
   run bash "$SCRIPT"
+  # session still starts (study-less desktop beats a blank one)...
   [ "$status" -eq 0 ]
+  # ...but NOT by claiming completion: no weasis:// study URI was built...
   [ ! -s "$WEASIS_ARGS_FILE" ]
+  # ...a token-free error hit the startup log...
+  [[ "$output" == *"grading-api unreachable"* ]]
+  [[ "$output" == *"after 3 attempts"* ]]
+  [[ "$output" != *"test-token-abc"* ]]  # the log line never carries the token
+  # ...and the lookup really was retried, 3 separate attempts.
+  # (stub overwrites CURL_ARGS_FILE per call, so count invocations via a
+  # counter stub instead: prepend one that never "succeeds")
+  local COUNTER="$BATS_TEST_TMPDIR/tries"
+  printf '#!/usr/bin/env bash\nprintf x >> "%s"\nexit 7\n' "$COUNTER" > "$STUB_DIR/curl"
+  chmod +x "$STUB_DIR/curl"
+  rm -f "$COUNTER"
+  run bash "$SCRIPT"
+  [ "$(wc -c < "$COUNTER")" -eq 3 ]
 }
 
 @test "falls back to a plain launch when the case response has no study UID" {

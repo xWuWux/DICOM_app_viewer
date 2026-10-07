@@ -63,16 +63,42 @@ if [[ ! "$GRADING_TOKEN" =~ ^[A-Za-z0-9_-]+$ ]]; then
   exit 1
 fi
 
-# Best-effort: an unreachable grading-api shouldn't crash the whole
-# session start (matches create-session.py's own non-fatal-readiness-check
-# philosophy) -- falls through to "no case" below, which still launches a
-# usable (just study-less) Weasis session instead of nothing at all.
+# issue #102: the previous one-liner `|| CASE_JSON='{"complete": true}'`
+# conflated "no case assigned" with "grading-api unreachable": a network
+# or API failure silently took the done-branch, with no retry and no log
+# line -- an exam session could be lost without a trace (fail-open). Now:
+#  3 attempts with linear backoff (2s, 4s -- container-start races and
+#  nginx reloads are the common transient causes); on exhaustion CASE_JSON
+#  stays EMPTY (never a fake complete: empty already means "don't open a
+#  study" downstream, while {"complete":true} asserts a state we cannot
+#  have verified), a token-free error line goes to the startup log, and
+#  the student still sees the panel's own "Błąd ładowania ... Spróbuj
+#  ponownie" screen. A plain Weasis session launches either way -- better
+#  a study-less desktop than a blank one, but never a lying one.
+# API_RETRY_BACKOFF is a test seam (integer seconds; BATS uses 0).
 # issue #94: the token travels in a request HEADER, fed to curl through
 # --config on stdin (a <(...) process substitution -- bash forks its own
 # subshell for the builtin printf, nothing execs with the token in its
 # argv), so it is invisible both to `ps` and to every nginx log: query
 # strings were reproduced in access.log AND error.log, argv in ps.
-CASE_JSON=$(curl -fsS --config - "${VIEWER_URL}api/case" < <(printf 'header = "X-Grading-Token: %s"\n' "$GRADING_TOKEN")) || CASE_JSON='{"complete": true}'
+API_ATTEMPTS=3
+API_RETRY_BACKOFF="${API_RETRY_BACKOFF:-2}"
+CASE_JSON=""
+api_ok=0
+for attempt in 1 2 3; do
+  if CASE_JSON=$(curl -fsS --config - "${VIEWER_URL}api/case" < <(printf 'header = "X-Grading-Token: %s"\n' "$GRADING_TOKEN") 2>/dev/null); then
+    api_ok=1
+    break
+  fi
+  if [ "$attempt" -lt "$API_ATTEMPTS" ]; then
+    sleep "$((attempt * API_RETRY_BACKOFF))"
+  fi
+done
+if [ "$api_ok" != "1" ]; then
+  # Deliberately NO token, no response body -- this line can land in Kasm
+  # session logs; the URL is the internal service address, not a secret.
+  echo "custom_startup: ERROR grading-api unreachable at ${VIEWER_URL} after ${API_ATTEMPTS} attempts -- opening a study-less session; the case was NOT completed, use the panel's retry" >&2
+fi
 
 # One python3 script (not a shell one-liner) since this needs real JSON
 # parsing plus per-token percent-encoding -- same reasoning as the Chrome
