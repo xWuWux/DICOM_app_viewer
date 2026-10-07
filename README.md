@@ -573,17 +573,32 @@ image_id (from its edit URL in the admin UI), and the same
 KASM_SERVER=https://your-kasm-host \
 KASM_API_KEY=... KASM_API_KEY_SECRET=... KASM_IMAGE_ID=... \
 GRADING_COORDINATOR_KEY=... \
-python3 scripts/create-session.py --student-id STU_12345 --insecure  # drop --insecure with a real cert
+python3 scripts/create-session.py --student-id STU_12345 \
+  --ca-bundle /etc/kasm/ca.pem   # or --insecure, but only for a self-signed lab box
 ```
 `GRADING_API_URL` (default `http://localhost:8080/`) points at wherever
 `viewer`'s `/api/` proxy is reachable from — override it if this script
 runs somewhere other than the Docker host itself (e.g. the separate-Proxmox
 setup, `docs/PROXMOX_DEPLOYMENT.md`).
 
-`--insecure` should only ever appear against a self-signed local/dev Kasm
-instance — see `docs/PROXMOX_DEPLOYMENT.md`'s "Transport security" section
-for exactly how to replace it with a real certificate (and why the
-separate-host setup needs more than just that) before any real deployment.
+**TLS is verified by default** (issue #104): no flag means certificate *and*
+hostname verification against your system trust store. A private CA gets
+`--ca-bundle /path/to/ca.pem` (or `TLS_CA_BUNDLE` in the environment) — that
+is the flag to reach for when a call fails with a certificate error, not
+`--insecure`, which turns verification off for every request the script makes
+including the ones carrying `KASM_API_KEY_SECRET`. `--insecure` remains only
+for a self-signed local/dev Kasm instance; it prints a warning on every run,
+and typing it together with `--ca-bundle` is rejected outright rather than
+silently overriding the CA you thought was in use. See
+`docs/PROXMOX_DEPLOYMENT.md`'s "Transport security" section for how to get a
+real certificate (and why the separate-host setup needs more than just that).
+
+**A failed run undoes itself** (issue #104): the grading token has to be
+minted *before* the Kasm call, because its value is injected into that
+container's environment, so a Kasm failure used to leave a live token with no
+session behind it. `create-session.py` now calls `POST /api/session/revoke`
+whenever it fails before Kasm answered — and deliberately does *not* revoke
+once Kasm answered, because by then a real session holds that token.
 
 Prints a ready-to-share `link` — no login required, it's pre-authenticated
 via a session token Kasm generates. The script also tries a readiness

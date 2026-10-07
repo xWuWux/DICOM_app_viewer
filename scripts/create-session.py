@@ -23,11 +23,25 @@ proxy -- GRADING_API_URL, default assumes this script runs on the same
 Docker host as the stack (see README.md's own "everything on one host"
 assumption); point it elsewhere for the separate-Proxmox-host deployment.
 
+Issue #104, in one paragraph: the token used to be minted first and then
+abandoned if the Kasm call failed, leaving a live, usable credential with no
+session attached to it, and `--insecure` swapped in
+`ssl._create_unverified_context()`, which silently disabled verification for
+whatever credentials this script sends. Both are fixed here: TLS is verified
+by default (`--ca-bundle` for a private CA; `--insecure` remains only as an
+explicit, loudly-warned-about escape hatch for a self-signed lab box) and any
+failure after the mint revokes that token again through POST
+/api/session/revoke before exiting.
+
 Usage:
   KASM_SERVER=https://localhost \
   KASM_API_KEY=... KASM_API_KEY_SECRET=... KASM_IMAGE_ID=... \
   GRADING_COORDINATOR_KEY=... \
   python3 scripts/create-session.py --student-id STU_12345
+
+  # Kasm on a private CA (a certbot LE chain needs neither of these):
+  python3 scripts/create-session.py --student-id STU_12345 --ca-bundle /etc/kasm/ca.pem
+  # or the same thing without repeating the flag: export TLS_CA_BUNDLE=/etc/kasm/ca.pem
 """
 import argparse
 import json
@@ -38,9 +52,48 @@ import time
 import urllib.request
 import urllib.error
 
+# Never longer than this (issue #104's compensation must not become another
+# unbounded-error-text path, the class of bug fixed in #93/#62 for the server
+# side of the same protocol).
+_MAX_ERROR_BODY_CHARS = 500
 
-def api_call(server: str, path: str, payload: dict, insecure: bool = False, fatal: bool = True,
-             headers: dict = None, label: str = "Kasm API") -> dict:
+
+class ApiError(RuntimeError):
+    """A fatal API failure. Raised rather than sys.exit'd straight from
+    api_call(), because exiting there would jump straight over main()'s
+    compensation block and leave the minted token live -- which is the exact
+    bug this script's issue #104 fix is about."""
+
+
+def build_ssl_context(ca_bundle: str = None, insecure: bool = False) -> ssl.SSLContext:
+    """One context for both endpoints (grading-api and Kasm), built once.
+
+    Verification is ON by default and there is deliberately no env var that
+    turns it off -- `--insecure` has to be typed. Issue #104's TLS half is
+    about the default, not about removing the escape hatch: Kasm's own
+    installer ships a self-signed certificate (docs/PROXMOX_DEPLOYMENT.md's
+    "Transport security"), so an operator following LOCAL_SETUP_GUIDE.md
+    needs a way to get to a real cert gradually; what must not be possible is
+    *defaulting* into no verification.
+    """
+    if insecure:
+        ctx = ssl._create_unverified_context()
+        print(
+            "WARNING: --insecure -- TLS certificate and hostname verification are DISABLED for "
+            "every request this script makes, including KASM_API_KEY_SECRET and GRADING_TOKEN. "
+            "Only acceptable against a self-signed lab certificate you control; for a private CA, "
+            "use --ca-bundle /path/to/ca.pem instead. See docs/PROXMOX_DEPLOYMENT.md.",
+            file=sys.stderr,
+        )
+        return ctx
+    # cafile=None is ssl.create_default_context()'s "use the system trust
+    # store" case; check_hostname/CERT_REQUIRED are that call's defaults, i.e.
+    # verification is what you get unless someone types --insecure.
+    return ssl.create_default_context(cafile=ca_bundle)
+
+
+def api_call(server: str, path: str, payload: dict, ctx: ssl.SSLContext = None, fatal: bool = True,
+             headers: dict = None, label: str = "API") -> dict:
     url = f"{server.rstrip('/')}{path}"
     data = json.dumps(payload).encode()
     req = urllib.request.Request(
@@ -48,16 +101,64 @@ def api_call(server: str, path: str, payload: dict, insecure: bool = False, fata
         headers={"Content-Type": "application/json", **(headers or {})},
         method="POST",
     )
-    ctx = ssl._create_unverified_context() if insecure else None
     try:
         with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        message = f"{label} error calling {path}: {e.code} {e.read().decode()}"
+        message = f"{label} error calling {path}: {e.code} {e.read().decode()[:_MAX_ERROR_BODY_CHARS]}"
         if fatal:
-            sys.exit(message)
+            raise ApiError(message) from e
         print(f"  (non-fatal) {message}", file=sys.stderr)
         return None
+    except urllib.error.URLError as e:
+        reason = getattr(e, "reason", e)
+        hint = ""
+        if "CERTIFICATE_VERIFY" in str(reason).upper() or isinstance(reason, ssl.SSLCertVerificationError):
+            # The temptation this addresses is typing --insecure to make the
+            # error go away; say what the actual fix is instead (issue #104).
+            hint = (" -- certificate verification failed: point --ca-bundle (or TLS_CA_BUNDLE) at "
+                    "the CA that signed this instance's certificate rather than adding --insecure.")
+        message = f"{label} connection error calling {path}: {reason}{hint}"
+        if fatal:
+            raise ApiError(message) from e
+        print(f"  (non-fatal) {message}", file=sys.stderr)
+        return None
+
+
+def revoke_token(grading_api_url: str, coordinator_key: str, ctx: ssl.SSLContext, token: str,
+                 student_id: str, session_id: str) -> None:
+    """Undo a minted token (see docker/grading-api/app/main.py's POST
+    /session/revoke). Best-effort by necessity -- if this call also fails,
+    the mint we are trying to undo already happened, so all that is left is
+    telling the operator precisely how to undo it by hand.
+
+    Never prints the token itself: this script's own output goes into shell
+    history, CI logs and chat paste-aways, and 2026-09-22 already produced
+    one incident where long-lived credentials ended up in a committed
+    transcript (see .gitignore's transcript exclusions). A leaked session
+    token is the same class of leak as a leaked Kasm key, just scoped to one
+    student. student_id/session_id are printed instead -- they identify the
+    row to fix without being a credential."""
+    try:
+        resp = api_call(
+            grading_api_url, "/api/session/revoke", {"token": token}, ctx,
+            headers={"X-Coordinator-Key": coordinator_key},
+            fatal=False, label="grading-api",
+        )
+    except Exception as e:  # noqa: BLE001 -- compensation must never mask the original failure
+        resp = None
+        print(f"  (non-fatal) grading-api revoke raised: {e}", file=sys.stderr)
+    if resp and resp.get("revoked"):
+        print(f"  (compensated) revoked the grading-api token for {student_id}/{session_id}",
+              file=sys.stderr)
+        return
+    print(
+        f"  !! grading-api token for {student_id}/{session_id} was NOT revoked and stays usable "
+        "until it expires. Undo it now by minting a link for that same student_id (POST /session "
+        "deletes any token that student_id already had), or call POST /api/session/revoke with "
+        '{"student_id": "' + student_id + '"}.',
+        file=sys.stderr,
+    )
 
 
 def main():
@@ -65,10 +166,24 @@ def main():
     parser.add_argument("--student-id", required=True)
     parser.add_argument("--session-id", default=None, help="defaults to a timestamp")
     parser.add_argument(
+        "--ca-bundle", default=os.environ.get("TLS_CA_BUNDLE") or None,
+        help="PEM file with the CA that signed Kasm's / grading-api's certificate "
+             "(env TLS_CA_BUNDLE). Verification is on with or without it.",
+    )
+    parser.add_argument(
         "--insecure", action="store_true",
-        help="skip TLS verification (e.g. Kasm's self-signed install cert)",
+        help="skip TLS verification (e.g. Kasm's self-signed install cert). Verify nothing, "
+             "trust anyone -- prefer --ca-bundle.",
     )
     args = parser.parse_args()
+
+    if args.insecure and args.ca_bundle:
+        # --insecure would silently win and the operator would believe their
+        # CA was in use. Fail loudly instead (same philosophy as
+        # docker/grading-api/app/config.py, issue #97).
+        parser.error("--insecure and --ca-bundle contradict each other; pick --ca-bundle")
+    if args.ca_bundle and not os.path.isfile(args.ca_bundle):
+        parser.error(f"--ca-bundle: no such file: {args.ca_bundle}")
 
     server = os.environ["KASM_SERVER"]
     api_key = os.environ["KASM_API_KEY"]
@@ -78,87 +193,130 @@ def main():
     grading_api_url = os.environ.get("GRADING_API_URL", "http://localhost:8080/")
 
     session_id = args.session_id or str(int(time.time()))
+    ctx = build_ssl_context(args.ca_bundle, args.insecure)
 
-    # The only place a grading-api token gets minted (see that service's
-    # POST /session) -- fatal on failure, not best-effort like the Kasm
-    # readiness poll below: a session without a token can't do anything
-    # useful once it's open, so there's no point handing out a link for one.
-    session_created = api_call(
-        grading_api_url, "/api/session",
-        {"student_id": args.student_id, "session_id": session_id},
-        args.insecure,
-        headers={"X-Coordinator-Key": coordinator_key},
-        label="grading-api",
-    )
-    grading_token = session_created["token"]
+    # Issue #104: these two stay None until they actually exist, and main()'s
+    # except-block below reads their current values to decide what still has
+    # to be undone.
+    grading_token = None
+    kasm_id = None
 
-    # user_id is intentionally omitted: per Kasm's docs, request_kasm creates
-    # a throwaway/anonymous user when it's left out -- exactly what we want
-    # for a one-off per-student link, no pre-provisioned Kasm user needed.
-    # STUDENT_ID/SESSION_ID land in the container's environment purely for
-    # display (the watermark text) -- GRADING_TOKEN is what custom_startup.sh
-    # actually uses to talk to grading-api now, never the raw student_id.
-    # ORTHANC_URL/VIEWER_URL already have correct defaults baked into the
-    # image itself (see docker/kasm-workspace/Dockerfile) so they're not
-    # overridden here.
-    request_payload = {
-        "api_key": api_key,
-        "api_key_secret": api_key_secret,
-        "image_id": image_id,
-        "environment": {
-            "STUDENT_ID": args.student_id,
-            "SESSION_ID": session_id,
-            "GRADING_TOKEN": grading_token,
-        },
-    }
+    def compensate():
+        """Undo whatever was already created. Only reachable from the failure
+        path, so it is deliberately cheap and never raises."""
+        if grading_token and not kasm_id:
+            # No Kasm session ever took possession of this token, so revoking
+            # is both safe and the whole point. Once kasm_id exists the token
+            # is already inside a real container's environment -- revoking
+            # there would break a session the student may be joining.
+            revoke_token(grading_api_url, coordinator_key, ctx, grading_token,
+                         args.student_id, session_id)
 
-    created = api_call(server, "/api/public/request_kasm", request_payload, args.insecure)
-    kasm_id = created.get("kasm_id")
-    user_id = created.get("user_id")
-    if not kasm_id:
-        sys.exit(f"Unexpected response from request_kasm: {json.dumps(created, indent=2)}")
-
-    # The link is already usable at this point (Kasm shows its own "starting"
-    # screen while the container boots) -- this loop is just a best-effort
-    # readiness confirmation, not a gate on handing out the link. A scoped
-    # API key commonly lacks the separate "impersonate another user"
-    # permission get_kasm_status needs for an anonymous/other user_id, so
-    # failures here are expected and non-fatal.
-    kasm = None
-    for _ in range(30):
-        status = api_call(
-            server,
-            "/api/public/get_kasm_status",
-            {
-                "api_key": api_key,
-                "api_key_secret": api_key_secret,
-                "kasm_id": kasm_id,
-                "user_id": user_id,
-            },
-            args.insecure,
-            fatal=False,
+    try:
+        # The only place a grading-api token gets minted (see that service's
+        # POST /session) -- fatal on failure, not best-effort like the Kasm
+        # readiness poll below: a session without a token can't do anything
+        # useful once it's open, so there's no point handing out a link for one.
+        session_created = api_call(
+            grading_api_url, "/api/session",
+            {"student_id": args.student_id, "session_id": session_id},
+            ctx,
+            headers={"X-Coordinator-Key": coordinator_key},
+            label="grading-api",
         )
-        if status is None:
-            print("  (skipping readiness polling)", file=sys.stderr)
-            break
-        kasm = status.get("kasm")
-        if kasm and kasm.get("operational_status") == "running":
-            break
-        progress = status.get("operational_progress")
-        print(f"  ...{status.get('operational_status', 'starting')} ({progress}%)" if progress is not None
-              else f"  ...{status.get('operational_status', 'starting')}", file=sys.stderr)
-        time.sleep(2)
+        grading_token = session_created.get("token")
+        if not grading_token:
+            # Raised rather than indexed as session_created["token"]: an
+            # unexpected response shape used to raise a naked KeyError, whose
+            # traceback printed the whole response body -- and a future shape
+            # that returns the token alongside an error field would then be
+            # dumped straight into the terminal/log (issue #93's leak class,
+            # applied to this side of the protocol).
+            raise ApiError("grading-api POST /session returned no token")
 
-    link = f"{server.rstrip('/')}{created['kasm_url']}"
+        # user_id is intentionally omitted: per Kasm's docs, request_kasm creates
+        # a throwaway/anonymous user when it's left out -- exactly what we want
+        # for a one-off per-student link, no pre-provisioned Kasm user needed.
+        # STUDENT_ID/SESSION_ID land in the container's environment purely for
+        # display (the watermark text) -- GRADING_TOKEN is what custom_startup.sh
+        # actually uses to talk to grading-api now, never the raw student_id.
+        # ORTHANC_URL/VIEWER_URL already have correct defaults baked into the
+        # image itself (see docker/kasm-workspace/Dockerfile) so they're not
+        # overridden here.
+        #
+        # This is also why the order cannot simply be inverted to "Kasm first,
+        # then token" (issue #104's first acceptance-criteria branch): the
+        # token's value has to exist before request_kasm, because it is handed
+        # to the container as environment on that very call. The compensation
+        # branch of that criterion is what revoke_token() above implements.
+        request_payload = {
+            "api_key": api_key,
+            "api_key_secret": api_key_secret,
+            "image_id": image_id,
+            "environment": {
+                "STUDENT_ID": args.student_id,
+                "SESSION_ID": session_id,
+                "GRADING_TOKEN": grading_token,
+            },
+        }
 
-    print(json.dumps({
-        "student_id": args.student_id,
-        "session_id": session_id,
-        "kasm_id": kasm_id,
-        "user_id": user_id,
-        "ready": bool(kasm and kasm.get("operational_status") == "running"),
-        "link": link,
-    }, indent=2))
+        created = api_call(server, "/api/public/request_kasm", request_payload, ctx)
+        kasm_id = created.get("kasm_id")
+        user_id = created.get("user_id")
+        if not kasm_id:
+            raise ApiError(f"Unexpected response from request_kasm: {json.dumps(created, indent=2)}")
+
+        # The link is already usable at this point (Kasm shows its own "starting"
+        # screen while the container boots) -- this loop is just a best-effort
+        # readiness confirmation, not a gate on handing out the link. A scoped
+        # API key commonly lacks the separate "impersonate another user"
+        # permission get_kasm_status needs for an anonymous/other user_id, so
+        # failures here are expected and non-fatal.
+        kasm = None
+        for _ in range(30):
+            status = api_call(
+                server,
+                "/api/public/get_kasm_status",
+                {
+                    "api_key": api_key,
+                    "api_key_secret": api_key_secret,
+                    "kasm_id": kasm_id,
+                    "user_id": user_id,
+                },
+                ctx,
+                fatal=False,
+            )
+            if status is None:
+                print("  (skipping readiness polling)", file=sys.stderr)
+                break
+            kasm = status.get("kasm")
+            if kasm and kasm.get("operational_status") == "running":
+                break
+            progress = status.get("operational_progress")
+            print(f"  ...{status.get('operational_status', 'starting')} ({progress}%)" if progress is not None
+                  else f"  ...{status.get('operational_status', 'starting')}", file=sys.stderr)
+            time.sleep(2)
+
+        link = f"{server.rstrip('/')}{created['kasm_url']}"
+
+        print(json.dumps({
+            "student_id": args.student_id,
+            "session_id": session_id,
+            "kasm_id": kasm_id,
+            "user_id": user_id,
+            "ready": bool(kasm and kasm.get("operational_status") == "running"),
+            "link": link,
+        }, indent=2))
+    except BaseException as exc:
+        # BaseException, not Exception: the failure that used to orphan a token
+        # includes Ctrl-C during the Kasm call, which raises KeyboardInterrupt
+        # and would sail straight past an `except Exception`.
+        compensate()
+        if isinstance(exc, ApiError):
+            sys.exit(str(exc))
+        if isinstance(exc, KeyboardInterrupt):
+            sys.exit("interrupted")
+        raise
 
 
 if __name__ == "__main__":
