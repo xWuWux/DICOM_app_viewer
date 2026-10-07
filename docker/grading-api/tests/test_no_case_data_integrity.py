@@ -23,11 +23,11 @@ def _delete_case(student_stage: str, order_index: int) -> None:
 
 def test_case_endpoint_returns_generic_500_when_progress_points_at_missing_case(client, mint_token, caplog):
     token = mint_token("stu_missing_case_get")
-    assert client.get(f"/case?token={token}").json()["complete"] is False
+    assert client.get("/case", headers={"X-Grading-Token": token}).json()["complete"] is False
     _delete_case("learning", 0)  # the case progress is standing on
 
     with caplog.at_level(logging.ERROR):
-        resp = client.get(f"/case?token={token}")
+        resp = client.get("/case", headers={"X-Grading-Token": token})
 
     assert resp.status_code == 500
     assert resp.json() == {"error_code": "SERVER_ERROR", "message": "Internal server error"}
@@ -40,7 +40,7 @@ def test_case_endpoint_returns_generic_500_when_progress_points_at_missing_case(
 def test_submit_endpoint_returns_generic_500_when_progress_points_at_missing_case(client, mint_token, caplog):
     token = mint_token("stu_missing_case_submit")
     # Create the progress row first (minting a token alone doesn't).
-    client.get(f"/case?token={token}")
+    client.get("/case", headers={"X-Grading-Token": token})
     # Park progress at an assessment position that has no seeded case
     # (the seed covers order_index 0 per stage only -- index 4 is empty
     # by construction, no DELETE needed; CR #112 item 2).
