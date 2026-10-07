@@ -11,6 +11,11 @@
 #
 # Base: Kasm's official Chrome-only workspace (lightest option — we don't need
 # a full desktop since the viewer is a web page).
+# This Chrome-based flow is LEGACY (owner decision 2026-10-06, issue #50): it
+# intentionally stays on kasmweb/chrome:1.16.0 while the Weasis flow
+# (docker/kasm-workspace-weasis/, kasmweb/core-ubuntu-noble:1.19.0) is the
+# target. The version difference between the two images is an accepted,
+# documented exception, not drift to be "fixed" by bumping this one.
 FROM kasmweb/chrome:1.16.0
 
 USER root

@@ -25,7 +25,7 @@ import sqlite3
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import FastAPI, Header, Request
 from fastapi.exceptions import RequestValidationError
@@ -158,8 +158,21 @@ def healthz():
 
 
 class SessionBody(BaseModel):
-    student_id: str
-    session_id: str
+    # issue #99: these were unbounded str. An oversized or markup-bearing
+    # value that passed the coordinator gate would live forever in the
+    # sessions table and in every forensic watermark drawn for the session
+    # (the panel/watermark render student_id into DOM text). Real IDs --
+    # Moodle logins, Kasm session ids, mint-local-link's STU_LOCAL_TEST --
+    # are ASCII-alphanumeric with . _ - @ ; the pattern rejects markup,
+    # whitespace and control characters outright, the length bound rejects
+    # payload stuffing. 128 (not 64) because the visual-regression harness
+    # legitimately mints long per-test ids (VR_<testname>_<variant>).
+    # Pydantic's pattern-failure message names the pattern, never the
+    # submitted value (test_input_validation.py pins that -- echoing IDs
+    # in errors would reintroduce the #93 leak class through the
+    # 200-char-truncated log sanitizer).
+    student_id: str = Field(max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._@-]*$")
+    session_id: str = Field(max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._@-]*$")
 
 
 @app.post("/session")
@@ -353,20 +366,20 @@ def get_case(x_grading_token: str | None = Header(default=None, alias="X-Grading
 class SubmitBody(BaseModel):
     token: str
     case_id: int
-    # Longest real value is "assessment" (10 chars) -- generous margin over
-    # that, just enough to reject an oversized/garbage payload before it
-    # reaches the DB, not to encode any real business rule (db.STAGES is
-    # still the actual source of truth for which stages exist).
-    stage: str = Field(max_length=20)
+    # issue #99: Literal instead of str+max_length. db.STAGES remains the
+    # conceptual source of truth -- test_input_validation.py asserts the
+    # Literal members match db.STAGES/db.CATEGORY_LABELS so the two
+    # can't drift silently. A bad stage used to sail past Pydantic (only
+    # bounded to 20 chars) and die later as a 409 stage-mismatch -- now
+    # it's a schema-level 422 before any state is consulted.
+    stage: Literal["learning", "assessment", "test"]
     # Free-text learning-stage impression -- genuinely open-ended prose, so
     # bounded generously rather than tightly, just to reject unbounded
     # payloads (never trusted for grading either way -- learning is
     # self-assessment only, see this module's docstring).
     text: Optional[str] = Field(default=None, max_length=10_000)
-    # Longest real value is "4A"/"4X" (2 chars) -- same margin-not-business-
-    # rule reasoning as stage above; db.CATEGORY_LABELS is still what
-    # actually validates a category as correct/incorrect.
-    category: Optional[str] = Field(default=None, max_length=10)
+    # Lung-RADS closed vocabulary -- issue #99 Literal (same db-sync test).
+    category: Optional[Literal["0", "1", "2", "3", "4A", "4B", "4X"]] = None
     modifier_s: Optional[bool] = None
     # No time_spent_seconds field (issue #29): this data feeds a scientific
     # publication, so time-on-task is computed server-side in submit()

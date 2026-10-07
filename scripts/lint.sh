@@ -27,6 +27,15 @@ docker compose -f docker-compose.yml config >/dev/null || status=1
 docker compose -f docker-compose.remote-host.yml config >/dev/null || status=1
 docker compose -f docker-compose.yml -f docker-compose.guacamole.yml config >/dev/null || status=1
 
+echo "--- Weasis pin sync (issue #50): both Dockerfiles must carry the same version + sha256 ---"
+weasis_pin() { grep -hE '^ARG WEASIS_(VERSION|SHA256)=' "$1" | sort; }
+kasm_pin="$(weasis_pin docker/kasm-workspace-weasis/Dockerfile)"
+guac_pin="$(weasis_pin docker/guacamole-weasis/Dockerfile)"
+if [ -z "$kasm_pin" ] || [ "$kasm_pin" != "$guac_pin" ]; then
+  echo "FAIL: WEASIS_VERSION/WEASIS_SHA256 missing or differ between docker/kasm-workspace-weasis and docker/guacamole-weasis" >&2
+  status=1
+fi
+
 echo "--- ruff check + format --check (docker/grading-api) ---"
 if command -v ruff >/dev/null 2>&1; then
   ruff check docker/grading-api || status=1
