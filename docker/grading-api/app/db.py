@@ -377,7 +377,16 @@ def init_db():
             -- current case" = highest version at a position, see
             -- main.py's _get_case().
             version INTEGER NOT NULL DEFAULT 1,
-            UNIQUE(stage, order_index, version)
+            UNIQUE(stage, order_index, version),
+            -- issue #99: closed vocabularies enforced one level below the
+            -- API too, so manual SQL seeding can't silently invent a
+            -- stage/category the state machine and scoring never learned.
+            -- Fresh-install scope ONLY on purpose: adding CHECKs to an
+            -- existing database requires a table rebuild, and we do not
+            -- rewrite a live graded DB for a constraint the API already
+            -- enforces (main.py Literals cover every deployment shape).
+            CHECK (stage IN ('learning', 'assessment', 'test')),
+            CHECK (ground_truth_category IN ('0', '1', '2', '3', '4A', '4B', '4X'))
         );
 
         -- case_assigned_at (issue #29): stamped server-side the moment a
@@ -394,7 +403,10 @@ def init_db():
             student_id TEXT PRIMARY KEY,
             stage TEXT NOT NULL,
             case_order_index INTEGER NOT NULL,
-            case_assigned_at REAL NOT NULL
+            case_assigned_at REAL NOT NULL,
+            -- issue #99, see cases CHECK: fresh-install scope, API-side
+            -- Literal covers existing databases.
+            CHECK (stage IN ('learning', 'assessment', 'test', 'complete'))
         );
 
         -- UNIQUE(student_id, case_id, stage) (issue #28): /submit's own
@@ -435,7 +447,14 @@ def init_db():
             -- 1 only for rows backfilled by the migration from CURRENT
             -- cases (snapshot of convenience, not of proof).
             gt_backfilled INTEGER NOT NULL DEFAULT 0,
-            UNIQUE(student_id, case_id, stage)
+            UNIQUE(student_id, case_id, stage),
+            -- issue #99, see cases CHECK: fresh-install scope only.
+            -- submitted_category/ground_truth_category stay NULL-able
+            -- (learning stage has neither; pre-#96 backfill rows may
+            -- legitimately lack a snapshot) -- CHECK permits NULL.
+            CHECK (stage IN ('learning', 'assessment', 'test')),
+            CHECK (submitted_category IS NULL OR submitted_category IN ('0', '1', '2', '3', '4A', '4B', '4X')),
+            CHECK (ground_truth_category IS NULL OR ground_truth_category IN ('0', '1', '2', '3', '4A', '4B', '4X'))
         );
 
         -- issue #96, the enforcement half: editing a SUBMITTED case in any
