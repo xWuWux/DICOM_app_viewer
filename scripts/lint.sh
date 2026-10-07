@@ -27,6 +27,41 @@ docker compose -f docker-compose.yml config >/dev/null || status=1
 docker compose -f docker-compose.remote-host.yml config >/dev/null || status=1
 docker compose -f docker-compose.yml -f docker-compose.guacamole.yml config >/dev/null || status=1
 
+echo "--- pinned external images: tag + immutable digest (issue #50) ---"
+# Every `image:` line in the two DEPLOYMENT compose files must pin
+# `name:tag@sha256:<64 hex>`. Today only orthanc is image-based
+# (grading-api/viewer are build:) -- if a future external image appears it
+# is covered by the same rule with no exemption list, by design.
+# `:latest` as the tag is rejected even with a digest: a mutable tag on a
+# graded-cohort service invites "but WHICH build did cohort X run" disputes.
+# The orthanc pin must be byte-identical across both files (drift between
+# local-dev and remote-host deployments is its own silent-upgrade bug).
+pin_ok=1
+while IFS= read -r line; do
+  stripped=${line#*: }
+  case "$stripped" in
+    *"@sha256:"*)
+      case "$stripped" in
+        *":latest@"*)
+          echo "image tagged :latest even though digest-pinned: $stripped" >&2
+          pin_ok=0 ;;
+      esac ;;
+    *)
+      echo "UNPINNED image (needs name:tag@sha256:<digest>): $stripped" >&2
+      pin_ok=0 ;;
+  esac
+done < <(grep -hE '^[[:space:]]*image:[[:space:]]' docker-compose.yml docker-compose.remote-host.yml)
+
+orthanc_main=$(grep -E '^[[:space:]]*image:[[:space:]]*orthancteam/orthanc:' docker-compose.yml | tr -d '[:space:]')
+orthanc_remote=$(grep -E '^[[:space:]]*image:[[:space:]]*orthancteam/orthanc:' docker-compose.remote-host.yml | tr -d '[:space:]')
+if [ "$orthanc_main" != "$orthanc_remote" ]; then
+  echo "orthanc pin differs between docker-compose.yml and docker-compose.remote-host.yml:" >&2
+  echo "  $orthanc_main" >&2
+  echo "  $orthanc_remote" >&2
+  pin_ok=0
+fi
+[ "$pin_ok" -eq 1 ] || status=1
+
 echo "--- ruff check + format --check (docker/grading-api) ---"
 if command -v ruff >/dev/null 2>&1; then
   ruff check docker/grading-api || status=1
