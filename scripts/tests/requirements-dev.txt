@@ -2,7 +2,7 @@
 # script under test (../provision-guacamole-session.py) itself has no
 # third-party dependencies at all (stdlib only), so this is genuinely all
 # that's needed.
-pytest==8.3.3
+pytest==9.0.3
 # Test-only dependency for test_copy_lockdown.py -- parses the two
 # kasmvnc.yaml files' data_loss_prevention.clipboard.allow_mimetypes key.
 # Neither shipped image installs a YAML library itself (kasmvnc.yaml is
