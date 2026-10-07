@@ -83,6 +83,12 @@ jobs:
           python-version: "3.12"
       - name: Unit test grading-api's state machine (issue #8)
         run: ./scripts/test-grading-api.sh
+      - name: Upload coverage report (issue #101)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grading-api-coverage
+          path: docker/grading-api/coverage.xml
 
   shell-test:
     runs-on: ubuntu-latest
