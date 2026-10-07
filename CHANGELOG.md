@@ -88,6 +88,15 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   explicit (`1.0.0`) instead of FastAPI's stock default (issue #100).
 
 ### Fixed
+- Errors from `scripts/create-session.py`'s Kasm calls name Kasm again. When
+  `api_call` grew a `label` for the two services it talks to, its default became
+  the generic `"API"` and neither `request_kasm` nor `get_kasm_status` passed
+  one, so a Kasm failure degraded from "Kasm API error calling
+  /api/public/request_kasm" to "API error calling ..." (nit 1 of PR #134's
+  review). `label` is now required and keyword-only, so a call site that omits
+  it fails as a `TypeError` in the suite instead of printing a vaguer line in
+  front of an operator. No `API_VERSION` change: this is operator-facing text in
+  a launcher script, not the REST contract.
 - A failed `scripts/create-session.py` run no longer leaves a live grading token
   behind (issue #104). The token has to be minted before `request_kasm` — its
   value is injected into that container's environment by that very call — so any
