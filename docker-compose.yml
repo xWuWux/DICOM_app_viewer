@@ -1,7 +1,21 @@
 
 services:
   orthanc:
-    image: orthancteam/orthanc:latest
+    # issue #50: exact tag AND immutable digest (the multi-arch manifest-list
+    # digest -- linux/amd64 + linux/arm64, verified with
+    # `docker buildx imagetools inspect orthancteam/orthanc:26.9.1`).
+    # orthancteam versions are calendar-style: 26.9.1 bundles Orthanc 1.13.0
+    # (verified via `docker run --rm --entrypoint Orthanc
+    # orthancteam/orthanc:26.9.1 --version`). :latest must never come back --
+    # a silent upstream retag would swap the DICOM server under a graded
+    # cohort mid-run. scripts/lint.sh fails if this line and
+    # docker-compose.remote-host.yml's orthanc image disagree.
+    # BUMP PROCEDURE (deliberately manual): pick the tag, resolve its digest
+    # with `docker buildx imagetools inspect --format '{{.Manifest.Digest}}'
+    # orthancteam/orthanc:<tag>`, update BOTH compose files to the same
+    # tag@digest, then ./scripts/smoke-test.sh (it exercises Orthanc + the
+    # DICOMweb/plugins config this app depends on) before merging.
+    image: orthancteam/orthanc:26.9.1@sha256:d2705f2c56547e55ce9bc2250fd22d05d326493b3f3d9fa191ecb7db8ca6b5a2
     container_name: ipcmc-orthanc
     restart: unless-stopped
     environment:

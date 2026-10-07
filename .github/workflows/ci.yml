@@ -168,15 +168,33 @@ jobs:
         run: ./scripts/test-log-leak.sh
 
   # ---- Success ----
+  # issue #124: this job is the single status a reviewer looks at, so it must
+  # depend on EVERY job and accept ONLY "success". The previous version listed
+  # just the stage-5 jobs and checked for 'failure'/'cancelled': when an earlier
+  # stage failed, its dependents became "skipped" -- neither word -- and the gate
+  # stayed green over a red pipeline (PR #121). "skipped" is therefore NOT an
+  # accepted state here: every job is unconditional in this workflow, so a skip
+  # can only mean an ancestor failed or was cancelled. The logic lives in
+  # scripts/ci-gate.py (unit-tested by scripts/ci-gate.bats, runnable locally).
+  # When adding a job to this workflow, add it to `needs` below.
   ci-success:
     runs-on: ubuntu-latest
-    needs: [smoke-test, guacamole-integration-test, visual-regression-test, copy-lockdown-test, log-leak-test]
+    needs:
+      - lint
+      - build-test
+      - security-scan
+      - unit-test
+      - shell-test
+      - provision-guacamole-session-test
+      - smoke-test
+      - guacamole-integration-test
+      - visual-regression-test
+      - copy-lockdown-test
+      - log-leak-test
     if: always()
     steps:
-      - name: Confirm every stage passed
-        run: |
-          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" || "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
-            echo "One or more pipeline stages failed -- see above."
-            exit 1
-          fi
-          echo "All stages passed -- ready for code review and merge."
+      - uses: actions/checkout@v4
+      - name: Confirm every job succeeded
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python3 scripts/ci-gate.py
