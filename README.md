@@ -583,8 +583,10 @@ setup, `docs/PROXMOX_DEPLOYMENT.md`).
 
 **TLS is verified by default** (issue #104): no flag means certificate *and*
 hostname verification against your system trust store. A private CA gets
-`--ca-bundle /path/to/ca.pem` (or `TLS_CA_BUNDLE` in the environment) — that
-is the flag to reach for when a call fails with a certificate error, not
+`--ca-bundle /path/to/ca.pem` (or `TLS_CA_BUNDLE` in the environment), which is
+**added to** your system trust store rather than replacing it — Kasm's gateway
+and `viewer`'s `/api/` proxy routinely have two different issuers. That is
+the flag to reach for when a call fails with a certificate error, not
 `--insecure`, which turns verification off for every request the script makes
 including the ones carrying `KASM_API_KEY_SECRET`. `--insecure` remains only
 for a self-signed local/dev Kasm instance; it prints a warning on every run,
@@ -598,7 +600,11 @@ minted *before* the Kasm call, because its value is injected into that
 container's environment, so a Kasm failure used to leave a live token with no
 session behind it. `create-session.py` now calls `POST /api/session/revoke`
 whenever it fails before Kasm answered — and deliberately does *not* revoke
-once Kasm answered, because by then a real session holds that token.
+once Kasm answered, because by then a real session holds that token. Ctrl-C,
+SIGTERM (a cancelled CI job) and a closed terminal all trigger the same undo.
+What no handler can catch — `SIGKILL`, an interpreter crash — falls back
+to the token's own expiry, `GRADING_TOKEN_TTL_SECONDS` (capped at 7 days by
+`docker/grading-api/app/config.py`), which is why that cap exists.
 
 Prints a ready-to-share `link` — no login required, it's pre-authenticated
 via a session token Kasm generates. The script also tries a readiness

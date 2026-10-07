@@ -46,11 +46,13 @@ Usage:
 import argparse
 import json
 import os
+import signal
 import ssl
 import sys
 import time
 import urllib.request
 import urllib.error
+import urllib.parse
 
 # Never longer than this (issue #104's compensation must not become another
 # unbounded-error-text path, the class of bug fixed in #93/#62 for the server
@@ -63,6 +65,35 @@ class ApiError(RuntimeError):
     api_call(), because exiting there would jump straight over main()'s
     compensation block and leave the minted token live -- which is the exact
     bug this script's issue #104 fix is about."""
+
+
+def _interrupt(signum, frame):
+    """SIGTERM/SIGHUP -> KeyboardInterrupt, so the compensation in main()
+    actually runs (review nit on issue #104, CR w4:p1). The default action for
+    both is "die silently", which orphaned a token exactly like Ctrl-C did --
+    CI job cancellation and a closed terminal are the ordinary ways this script
+    gets killed in practice, not Ctrl-C.
+
+    SIGKILL and os._exit() stay uncoverable; the token's own TTL
+    (GRADING_TOKEN_TTL_SECONDS, capped at 7 days by app/config.py) is the
+    backstop, which is why README.md names the TTL rather than this handler as
+    the last line of defense."""
+    raise KeyboardInterrupt()
+
+
+def install_termination_handlers() -> None:
+    """Only ever called from main() -- importing this module must never install
+    handlers as a side effect (a test or a future import would inherit them).
+    ValueError from a non-main thread is deliberately swallowed: no handler is
+    better than a crash for a caller that cannot have one."""
+    for name in ("SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is None:
+            continue
+        try:
+            signal.signal(sig, _interrupt)
+        except ValueError:
+            pass
 
 
 def build_ssl_context(ca_bundle: str = None, insecure: bool = False) -> ssl.SSLContext:
@@ -86,10 +117,17 @@ def build_ssl_context(ca_bundle: str = None, insecure: bool = False) -> ssl.SSLC
             file=sys.stderr,
         )
         return ctx
-    # cafile=None is ssl.create_default_context()'s "use the system trust
-    # store" case; check_hostname/CERT_REQUIRED are that call's defaults, i.e.
-    # verification is what you get unless someone types --insecure.
-    return ssl.create_default_context(cafile=ca_bundle)
+    # Appended to the system trust store, NOT used instead of it: Kasm and the
+    # grading-api proxy are routinely two different CAs (a private one for the
+    # Kasm gateway, LE for the viewer), and `create_default_context(cafile=...)`
+    # would replace the whole store and break the other host -- a footgun
+    # review nit caught on issue #104. check_hostname/CERT_REQUIRED are
+    # create_default_context()'s defaults, i.e. verification is what you get
+    # unless someone types --insecure.
+    ctx = ssl.create_default_context()
+    if ca_bundle:
+        ctx.load_verify_locations(cafile=ca_bundle)
+    return ctx
 
 
 def api_call(server: str, path: str, payload: dict, ctx: ssl.SSLContext = None, fatal: bool = True,
@@ -145,9 +183,14 @@ def revoke_token(grading_api_url: str, coordinator_key: str, ctx: ssl.SSLContext
             headers={"X-Coordinator-Key": coordinator_key},
             fatal=False, label="grading-api",
         )
-    except Exception as e:  # noqa: BLE001 -- compensation must never mask the original failure
+    except BaseException as e:  # noqa: BLE001 -- see below
+        # BaseException, not Exception: a second Ctrl-C landing *during* the
+        # compensation call used to escape this function with a traceback and
+        # the token still live -- i.e. the one path this function exists to
+        # handle. Swallowing it costs the operator a stuck Ctrl-C for up to one
+        # 15s request; the alternative is a silent orphan.
         resp = None
-        print(f"  (non-fatal) grading-api revoke raised: {e}", file=sys.stderr)
+        print(f"  (non-fatal) grading-api revoke raised: {e!r}", file=sys.stderr)
     if resp and resp.get("revoked"):
         print(f"  (compensated) revoked the grading-api token for {student_id}/{session_id}",
               file=sys.stderr)
@@ -157,6 +200,30 @@ def revoke_token(grading_api_url: str, coordinator_key: str, ctx: ssl.SSLContext
         "until it expires. Undo it now by minting a link for that same student_id (POST /session "
         "deletes any token that student_id already had), or call POST /api/session/revoke with "
         '{"student_id": "' + student_id + '"}.',
+        file=sys.stderr,
+    )
+
+
+def warn_if_coordinator_key_travels_in_clear(grading_api_url: str) -> None:
+    """The shared secret that mints (and now revokes) every student's token is
+    sent as a header. Over http:// to a loopback address that never leaves the
+    box; over http:// to anything else it crosses a network in clear text and
+    anyone on path can mint tokens for any student_id.
+
+    Warning, not refusal, because the documented default deployment IS
+    http://localhost:8080/ (README.md, LOCAL_SETUP_GUIDE.md) and refusing
+    there would break every existing invocation; non-loopback http has never
+    been a documented setup, so nobody relying on it gets broken by the noise
+    either. (review nit on issue #104, CR w4:p1.)"""
+    if not grading_api_url.startswith("http://"):
+        return
+    host = urllib.parse.urlparse(grading_api_url).hostname or ""
+    if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0", "", "::"):
+        return
+    print(
+        f"WARNING: GRADING_API_URL is plain http to {host!r} -- GRADING_COORDINATOR_KEY and "
+        "every minted session token cross the network unencrypted. Put grading-api behind TLS "
+        "(https://) or keep it loopback-only.",
         file=sys.stderr,
     )
 
@@ -194,12 +261,15 @@ def main():
 
     session_id = args.session_id or str(int(time.time()))
     ctx = build_ssl_context(args.ca_bundle, args.insecure)
+    install_termination_handlers()
+    warn_if_coordinator_key_travels_in_clear(grading_api_url)
 
     # Issue #104: these two stay None until they actually exist, and main()'s
     # except-block below reads their current values to decide what still has
     # to be undone.
     grading_token = None
     kasm_id = None
+    mint_attempted = False
 
     def compensate():
         """Undo whatever was already created. Only reachable from the failure
@@ -211,12 +281,29 @@ def main():
             # there would break a session the student may be joining.
             revoke_token(grading_api_url, coordinator_key, ctx, grading_token,
                          args.student_id, session_id)
+        elif mint_attempted and not grading_token:
+            # The mint request went out and its outcome is unknown: POST /session
+            # deletes that student_id's previous token before inserting a new one,
+            # so either the student just lost a live link, or a token exists whose
+            # value nobody holds. Revoking by student_id from here would be wrong
+            # in the first case (it would finish destroying a session nothing
+            # failed to create), so this stays a loud hint for a human with the
+            # context this script does not have.
+            print(
+                f"  !! grading-api POST /session for {args.student_id}/{session_id} did not "
+                "return a token, so this script cannot undo it. Check whether a token exists "
+                'and revoke it: POST /api/session/revoke {"student_id": "' + args.student_id + '"}.',
+                file=sys.stderr,
+            )
 
     try:
         # The only place a grading-api token gets minted (see that service's
         # POST /session) -- fatal on failure, not best-effort like the Kasm
         # readiness poll below: a session without a token can't do anything
         # useful once it's open, so there's no point handing out a link for one.
+        # Set before the call, not after: the whole point is that a mint whose
+        # response never made it back is exactly the case that needs flagging.
+        mint_attempted = True
         session_created = api_call(
             grading_api_url, "/api/session",
             {"student_id": args.student_id, "session_id": session_id},
@@ -264,7 +351,12 @@ def main():
         kasm_id = created.get("kasm_id")
         user_id = created.get("user_id")
         if not kasm_id:
-            raise ApiError(f"Unexpected response from request_kasm: {json.dumps(created, indent=2)}")
+            raise ApiError(
+                "Unexpected response from request_kasm: "
+                # Same cap as api_call's own error text: a fat 200 body must not
+                # reach a terminal / CI log / shell history in full.
+                + json.dumps(created)[:_MAX_ERROR_BODY_CHARS]
+            )
 
         # The link is already usable at this point (Kasm shows its own "starting"
         # screen while the container boots) -- this loop is just a best-effort

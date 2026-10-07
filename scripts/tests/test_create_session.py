@@ -17,7 +17,9 @@ import importlib.util
 import io
 import json
 import os
+import signal
 import ssl
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -66,11 +68,14 @@ class _Kasm:
     actually called. `kasm_mode`/`revoke_mode` are what individual tests
     flip to steer a run down a failure path."""
 
-    def __init__(self, kasm_mode="ok", revoke_mode="ok", status_mode="running"):
+    def __init__(self, kasm_mode="ok", revoke_mode="ok", status_mode="running",
+                 mint_mode="ok", filler=""):
         self.calls = []
         self.kasm_mode = kasm_mode
         self.revoke_mode = revoke_mode
         self.status_mode = status_mode
+        self.mint_mode = mint_mode
+        self.filler = filler
 
     def __call__(self, req, timeout=15, context=None):
         """`context` is recorded, not ignored: the happy-path test asserts
@@ -81,18 +86,35 @@ class _Kasm:
         payload = json.loads(req.data.decode()) if req.data else {}
         self.calls.append((url, payload, dict(req.headers), context))
         if url.endswith("/api/session"):
+            if self.mint_mode == "timeout":
+                # The review nit #3 case: the request went out, the server may
+                # or may not have committed, and nothing here knows which.
+                raise urllib.error.URLError("timed out")
+            if self.mint_mode == "no_token":
+                return _FakeResponse({"expires_at": 1})
             return _FakeResponse({"token": FAKE_TOKEN, "expires_at": 1})
         if url.endswith("/api/session/revoke"):
             if self.revoke_mode == "http_error":
                 raise _http_error(url)
+            if self.revoke_mode == "interrupt":
+                raise KeyboardInterrupt()
             return _FakeResponse({"revoked": self.revoke_mode == "ok", "count": 1 if self.revoke_mode == "ok" else 0})
         if url.endswith("/api/public/request_kasm"):
             if self.kasm_mode == "http_error":
                 raise _http_error(url)
             if self.kasm_mode == "connection_error":
                 raise urllib.error.URLError("connection refused")
+            if self.kasm_mode == "sigterm_during_request":
+                # Exactly what main() sees when a CI cancellation lands
+                # mid-request: the installed handler raises KeyboardInterrupt at
+                # the interrupted point. Raised here rather than via os.kill so a
+                # future removal of the install call fails this test instead of
+                # killing the pytest process; the install + mapping themselves are
+                # pinned by the two tests below.
+                create_session._interrupt(signal.SIGTERM, None)
+                raise urllib.error.URLError("interrupted")
             if self.kasm_mode == "no_kasm_id":
-                return _FakeResponse({"user_id": "u1", "kasm_url": "/k/x"})
+                return _FakeResponse({"user_id": "u1", "kasm_url": "/k/x", "filler": self.filler})
             return _FakeResponse({"kasm_id": "k1", "user_id": "u1", "kasm_url": "/k/x"})
         if url.endswith("/api/public/get_kasm_status"):
             if self.status_mode == "http_error":
@@ -128,13 +150,16 @@ def env(monkeypatch):
 
 
 def _run(monkeypatch, kasm, *extra_argv):
-    """Runs main() against the canned backend. Returns the SystemExit raised
-    by a failing run, or None when the run completed and printed its link."""
+    """Runs main() against the canned backend. Returns whatever escaped it --
+    normally a SystemExit, but BaseException is caught deliberately: an
+    exception leaking out of main() is itself the bug some tests below are
+    looking for (compensation skipped), and it should fail an assertion here
+    rather than abort the whole pytest session."""
     monkeypatch.setattr(sys, "argv", ["create-session.py", "--student-id", "STU_TEST", *extra_argv])
     with patch.object(urllib.request, "urlopen", side_effect=kasm):
         try:
             create_session.main()
-        except SystemExit as exc:
+        except BaseException as exc:
             return exc
     return None
 
@@ -259,3 +284,135 @@ def test_insecure_and_ca_bundle_are_mutually_exclusive(env, monkeypatch, capsys)
 def test_missing_ca_bundle_fails_before_any_request(env, monkeypatch, tmp_path):
     exit_code = _run(monkeypatch, _Kasm(), "--ca-bundle", str(tmp_path / "absent.pem"))
     assert exit_code is not None and exit_code.code == 2
+
+
+# ---- review nits (CR w4:p1): what can kill the process besides Ctrl-C ----
+
+
+@pytest.fixture(autouse=True)
+def _restore_signals():
+    """main() installs real signal handlers; without this they'd leak into
+    every later test in the session (and into pytest's own Ctrl-C handling)."""
+    saved = {s: signal.getsignal(s) for s in (signal.SIGTERM, getattr(signal, "SIGHUP", signal.SIGTERM))}
+    yield
+    for sig, handler in saved.items():
+        signal.signal(sig, handler)
+
+
+def test_sigterm_triggers_the_same_compensation_as_ctrl_c(env, monkeypatch):
+    """CI job cancellation and a closed terminal are how this script actually
+    gets killed in practice. Before the review nit was fixed, SIGTERM took the
+    default action -- process gone, token alive, nothing printed."""
+    kasm = _Kasm(kasm_mode="sigterm_during_request")
+    exit_code = _run(monkeypatch, kasm)
+    assert exit_code is not None
+    assert exit_code.code == "interrupted"
+    assert kasm.called("/api/session/revoke") == [{"token": FAKE_TOKEN}]
+
+
+def test_sigterm_handler_maps_to_keyboard_interrupt(env):
+    create_session.install_termination_handlers()
+    assert signal.getsignal(signal.SIGTERM) is create_session._interrupt
+    with pytest.raises(KeyboardInterrupt):
+        create_session._interrupt(signal.SIGTERM, None)
+
+
+def test_main_installs_the_handlers_before_minting(env, monkeypatch):
+    """The mapping above is worthless if nothing installs it, and installing it
+    after POST /session would be worthless too -- the window that matters is the
+    mint-then-Kasm one. A spy, so removing the call fails a test instead of
+    killing the test runner with a real SIGTERM."""
+    kasm = _Kasm()
+    seen = {}
+
+    def spy():
+        seen["requests_already_made"] = len(kasm.calls)
+
+    monkeypatch.setattr(create_session, "install_termination_handlers", spy)
+    _run(monkeypatch, kasm)
+    assert seen == {"requests_already_made": 0}, "handlers must be installed once, before any request"
+
+
+def test_ctrl_c_during_the_revoke_call_still_reports(env, monkeypatch, capsys):
+    """The second Ctrl-C is the one that used to escape the compensation with a
+    traceback and the token still live -- so the outcome here must still be a
+    clean SystemExit plus the manual-undo hint, not a leaked KeyboardInterrupt."""
+    kasm = _Kasm(kasm_mode="http_error", revoke_mode="interrupt")
+    exit_code = _run(monkeypatch, kasm)
+    assert isinstance(exit_code, SystemExit), f"compensation leaked {exit_code!r}"
+    err = capsys.readouterr().err
+    assert "NOT revoked" in err
+    assert FAKE_TOKEN not in err
+
+
+def test_ambiguous_mint_hinted_but_never_auto_revoked(env, monkeypatch, capsys):
+    """POST /session answered with something that carries no token. The mint
+    may or may not have committed, and it deletes that student_id's previous
+    token either way -- so revoking by student_id from here could destroy a
+    live session nothing failed to create. Hint, don't act."""
+    kasm = _Kasm(mint_mode="no_token")
+    assert _run(monkeypatch, kasm) is not None
+    err = capsys.readouterr().err
+    assert "did not return a token" in err and "STU_TEST" in err
+    assert kasm.called("/api/session/revoke") == []
+    assert FAKE_TOKEN not in err
+
+
+def test_mint_timeout_gets_the_same_ambiguous_hint(env, monkeypatch, capsys):
+    kasm = _Kasm(mint_mode="timeout")
+    assert _run(monkeypatch, kasm) is not None
+    assert "did not return a token" in capsys.readouterr().err
+    assert kasm.called("/api/session/revoke") == []
+
+
+def test_no_kasm_id_error_text_is_bounded(env, monkeypatch, capsys):
+    """_MAX_ERROR_BODY_CHARS claims error text is capped; the one place that
+    dumps a whole response body has to honour that claim (a fat 200 from
+    request_kasm would otherwise go to the terminal/log in full)."""
+    kasm = _Kasm(kasm_mode="no_kasm_id", filler="x" * 4000)
+    exit_code = _run(monkeypatch, kasm)
+    err = capsys.readouterr().err
+    assert exit_code is not None
+    assert len(str(exit_code.code)) < 600, "error text grew past the declared cap"
+    assert err.count("x") <= create_session._MAX_ERROR_BODY_CHARS
+
+
+# ---- the one-context-for-two-hosts nit ----
+
+
+def test_ca_bundle_adds_to_the_system_store_instead_of_replacing_it(env, tmp_path):
+    """Kasm's gateway and grading-api's proxy are routinely two different CAs.
+    create_default_context(cafile=...) would replace the whole store and break
+    the other host, which is a silently-broken-deployment footgun."""
+    ca_file = ssl.get_default_verify_paths().cafile
+    if not ca_file or not os.path.isfile(ca_file):
+        pytest.skip("no system CA bundle on this box to use as a fixture")
+    private_ca = tmp_path / "private-ca.pem"
+    subprocess.run(
+        ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+         "-subj", "/CN=IP_CMC test private CA", "-keyout", str(tmp_path / "k.pem"),
+         "-out", str(private_ca)],
+        check=True, capture_output=True,
+    )
+    base = create_session.build_ssl_context()
+    ctx = create_session.build_ssl_context(str(private_ca))
+    subjects = {c["subject"][0][0][1] for c in ctx.get_ca_certs()}
+    assert "IP_CMC test private CA" in subjects, "--ca-bundle must be trusted"
+    assert len(ctx.get_ca_certs()) > len(base.get_ca_certs()), "system store must stay loaded too"
+    assert ctx.verify_mode is ssl.CERT_REQUIRED and ctx.check_hostname is True
+
+
+# ---- the cleartext-coordinator-key nit ----
+
+
+@pytest.mark.parametrize("url,should_warn", [
+    ("http://localhost:8080/", False),      # the documented default deployment
+    ("http://127.0.0.1:8080/", False),
+    ("https://grading.example/", False),
+    ("http://grading.internal/", True),
+    ("http://10.0.0.5:8080/", True),
+])
+def test_cleartext_coordinator_transport_warns_only_when_it_leaves_the_box(env, capsys, url, should_warn):
+    create_session.warn_if_coordinator_key_travels_in_clear(url)
+    warned = "GRADING_API_URL" in capsys.readouterr().err
+    assert warned is should_warn
