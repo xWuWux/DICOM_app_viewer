@@ -98,7 +98,10 @@ def test_unhandled_500_log_line_and_response_keep_the_request_id(client, mint_to
     monkeypatch.setattr(main_module, "_get_or_create_progress", _boom)
 
     with TestClient(app, raise_server_exceptions=False) as non_raising_client:
-        resp = non_raising_client.get(f"/case?token={token}", headers={"X-Request-Id": "correlate-my-500"})
+        resp = non_raising_client.get(
+            "/case",
+            headers={"X-Grading-Token": token, "X-Request-Id": "correlate-my-500"},
+        )
 
     assert resp.status_code == 500
     assert resp.headers.get("x-request-id") == "correlate-my-500"
@@ -125,7 +128,7 @@ def test_access_log_line_carries_the_same_request_id_as_the_response(client, cap
 
 def test_auth_failure_is_logged_with_its_error_code(client, caplog):
     with caplog.at_level(logging.WARNING):
-        client.get("/case?token=not-a-real-token")
+        client.get("/case", headers={"X-Grading-Token": "not-a-real-token"})
     app_error_records = [r for r in caplog.records if r.getMessage() == "app_error"]
     assert len(app_error_records) == 1
     assert app_error_records[0].error_code == "AUTH_INVALID_TOKEN"
@@ -134,7 +137,7 @@ def test_auth_failure_is_logged_with_its_error_code(client, caplog):
 
 def test_stage_advance_is_logged(client, mint_token, caplog):
     token = mint_token("stu_log_stage_advance")
-    case_id = client.get(f"/case?token={token}").json()["case_id"]
+    case_id = client.get("/case", headers={"X-Grading-Token": token}).json()["case_id"]
     with caplog.at_level(logging.INFO):
         client.post("/submit", json={"token": token, "case_id": case_id, "stage": "learning", "text": "x"})
     stage_records = [r for r in caplog.records if r.getMessage() == "stage_advanced"]
@@ -185,7 +188,7 @@ def test_422_never_logs_token_or_student_text(client, mint_token, caplog):
     from app.logging_config import _JsonFormatter
 
     token = mint_token("stu_422_leak")
-    case_id = client.get(f"/case?token={token}").json()["case_id"]
+    case_id = client.get("/case", headers={"X-Grading-Token": token}).json()["case_id"]
     answer_marker = "STUDENT-ANSWER-" + "y" * 20_000
 
     with caplog.at_level(logging.INFO):
@@ -238,12 +241,12 @@ def test_no_log_record_ever_contains_the_coordinator_key_or_a_real_token(client,
             headers={"X-Coordinator-Key": coordinator_key},
         )
         token = resp.json()["token"]
-        client.get(f"/case?token={token}")
+        client.get("/case", headers={"X-Grading-Token": token})
         client.post(
             "/submit",
             json={
                 "token": token,
-                "case_id": client.get(f"/case?token={token}").json()["case_id"],
+                "case_id": client.get("/case", headers={"X-Grading-Token": token}).json()["case_id"],
                 "stage": "learning",
                 "text": "a student's free-text answer",
             },

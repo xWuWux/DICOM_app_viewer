@@ -31,6 +31,7 @@ EOF
   cat > "$STUB_DIR/curl" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$CURL_ARGS_FILE"
+cat > "${CURL_STDIN_FILE:-/dev/null}"
 if [ -n "${CURL_EXIT_CODE:-}" ] && [ "$CURL_EXIT_CODE" != "0" ]; then
   exit "$CURL_EXIT_CODE"
 fi
@@ -44,10 +45,14 @@ EOF
   export WEASIS_ARGS_FILE="$BATS_TEST_TMPDIR/weasis-args.txt"
   export BROWSER_ARGS_FILE="$BATS_TEST_TMPDIR/browser-args.txt"
   export CURL_ARGS_FILE="$BATS_TEST_TMPDIR/curl-args.txt"
+  export CURL_STDIN_FILE="$BATS_TEST_TMPDIR/curl-stdin.txt"
   export VIEWER_URL="http://ipcmc-viewer:8080/"
   export ORTHANC_URL="http://ipcmc-viewer:8043/"
   export GRADING_TOKEN="test-token-abc"
   unset STUDENT_ID SESSION_ID CURL_EXIT_CODE CURL_RESPONSE_JSON
+  # issue #102 retry loop: pin the backoff seam to 0 for fast tests
+  # (production keeps 2s/4s).
+  export API_RETRY_BACKOFF=0
 }
 
 @test "fails fast with a clear message when VIEWER_URL is unset" {
@@ -75,7 +80,12 @@ EOF
   export CURL_RESPONSE_JSON='{"complete": true}'
   run bash "$SCRIPT"
   [ "$status" -eq 0 ]
-  grep -qF -- "api/case?token=test-token-abc" "$CURL_ARGS_FILE"
+  # issue #94: the token travels as an X-Grading-Token header fed via
+  # --config on stdin -- present in the stdin header, absent from argv
+  # (ps-invisible), absent from the URL (no query-string leak into logs).
+  grep -qF -- 'header = "X-Grading-Token: test-token-abc"' "$CURL_STDIN_FILE"
+  ! grep -qF -- "test-token-abc" "$CURL_ARGS_FILE"
+  grep -qF -- "api/case" "$CURL_ARGS_FILE"
   ! grep -q -- "student_id=" "$CURL_ARGS_FILE"
 }
 
@@ -102,11 +112,20 @@ print(' '.join(urllib.parse.unquote(p) for p in uri.split('+')))
   [ ! -s "$WEASIS_ARGS_FILE" ]
 }
 
-@test "falls back to a plain launch when grading-api is unreachable" {
+@test "issue #102: unreachable grading-api retries 3x, logs loudly, never fakes complete" {
   export CURL_EXIT_CODE=7
   run bash "$SCRIPT"
   [ "$status" -eq 0 ]
   [ ! -s "$WEASIS_ARGS_FILE" ]
+  [[ "$output" == *"grading-api unreachable"* ]]
+  [[ "$output" == *"after 3 attempts"* ]]
+  [[ "$output" != *"test-token-abc"* ]]
+  local COUNTER="$BATS_TEST_TMPDIR/tries"
+  printf '#!/usr/bin/env bash\nprintf x >> "%s"\nexit 7\n' "$COUNTER" > "$STUB_DIR/curl"
+  chmod +x "$STUB_DIR/curl"
+  rm -f "$COUNTER"
+  run bash "$SCRIPT"
+  [ "$(wc -c < "$COUNTER")" -eq 3 ]
 }
 
 @test "opens the grading panel with student_id/session_id/token, correctly percent-encoded" {
@@ -124,5 +143,15 @@ print(' '.join(urllib.parse.unquote(p) for p in uri.split('+')))
     sleep 0.1
   done
   url=$(cat "$BROWSER_ARGS_FILE")
-  [[ "$url" == "http://ipcmc-viewer:8080/grading-panel.html?student_id=stu%201&session_id=sess_1&token=test-token-abc" ]]
+  # issue #94: the token sits in the URL FRAGMENT (#token=...) -- the
+  # browser never transmits fragments, so it can't reach nginx logs.
+  [[ "$url" == "http://ipcmc-viewer:8080/grading-panel.html?student_id=stu%201&session_id=sess_1#token=test-token-abc" ]]
+}
+
+@test "issue #94 CR: refuses to launch when GRADING_TOKEN leaves the URL-safe alphabet" {
+  export GRADING_TOKEN='evil"token\with-injectables'
+  run bash "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"URL-safe"* ]]
+  [ ! -s "$WEASIS_ARGS_FILE" ]
 }
