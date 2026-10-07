@@ -104,6 +104,24 @@ def get_connection():
     # makes the stricter (and slower) FULL setting unnecessary.
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
+    # issue #70: WAL lets readers run alongside ONE writer, but two
+    # simultaneous writers still collide (SUBMIT-heavy moments: a whole
+    # cohort clicking through cases at the same time). Make the lock wait
+    # EXPLICIT. CPython's sqlite3.connect(timeout=5.0) default already
+    # installs busy_timeout=5000 under the hood -- which is exactly the
+    # problem: the guarantee this app's 500s-free operation relies on was
+    # an invisible stdlib default, one `connect(..., timeout=0)` refactor
+    # away from turning every lock collision into an immediate
+    # OperationalError -> spurious student-facing 500. Explicit PRAGMA =
+    # visible contract (db.get_connection().execute("PRAGMA
+    # busy_timeout") reads back 5000 regardless of connect kwargs) +
+    # test_db_busy_timeout.py pins the actual wait-under-contention
+    # behavior, with a negative control proving the test could see the
+    # difference. 5s stays: normal submit transactions are single-digit
+    # milliseconds, so five seconds is pure headroom -- while a much
+    # larger value would just convert a wedged external lockholder into
+    # hung requests instead of a visible (and loggable) busy error.
+    conn.execute("PRAGMA busy_timeout = 5000")
     return conn
 
 
