@@ -61,3 +61,8 @@ Dokumentacja/*.docx
 # estimates and procurement/legal risk commentary not meant to be public.
 Dokumentacja/AI_context_Documentation_DICOM.txt
 Dokumentacja/DICOM_Q&A.txt
+
+# pytest-cov artifacts (issue #101)
+.coverage
+.coverage.*
+coverage.xml
