@@ -103,7 +103,10 @@ issue #54.
   uses `--insecure` specifically to bypass it). A self-signed cert that
   nothing validates is one MITM away from meaningless — fine for local dev,
   **not acceptable once this is reachable from outside a network you fully
-  control.** See 5b.
+  control.** See 5b. Since issue #104 the script verifies certificates by
+  default and warns loudly whenever it has been told not to, so running
+  unverified is now a decision someone typed rather than the default
+  behavior an operator stumbles into.)
 - **Kasm host ↔ this repo's own ports** (`8042`/`8043`/`8080`, whether the
   same-Docker-host setup or this document's separate-host one): **plain
   HTTP**, always. On the same-host setup this never leaves the Docker
@@ -160,7 +163,10 @@ sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/kasm-cert.sh
 Once this is in place, drop `--insecure` from every real `create-session.py`
 invocation (it should only ever appear against a self-signed local/dev
 Kasm instance, never here) and use the real `https://<your-kasm-hostname>`
-as `KASM_SERVER`.
+as `KASM_SERVER`. Verification needs no extra flag to switch on — it is what
+you get by default (issue #104); the only reason to pass anything here is a
+private/internal CA, which wants `--ca-bundle /path/to/ca.pem` (or
+`TLS_CA_BUNDLE`), not `--insecure`.
 
 ### 5c. Encrypting the Kasm-host ↔ Orthanc/viewer link (WireGuard)
 

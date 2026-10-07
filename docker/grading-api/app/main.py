@@ -18,8 +18,16 @@ session_id are never trusted as credentials again from here on -- they're
 only ever used for display (the watermark text), which is fine since
 displaying the wrong ID isn't a security problem, only trusting it for
 grading actions was.
+
+Revocation (issue #104): POST /session/revoke (coordinator-only) deletes a
+token before its TTL expires. It exists so the coordinator can undo a token
+it already minted when the rest of the session setup fails -- see
+scripts/create-session.py, which mints the token before asking Kasm for a
+session (Kasm needs the token as container environment, so the order can't
+simply be inverted) and now revokes that token whenever that Kasm call fails.
 """
 
+import re
 import secrets
 import sqlite3
 import time
@@ -64,7 +72,7 @@ async def lifespan(app: FastAPI):
 # the SAME commit that adds a CHANGELOG.md entry (the review contract for
 # this repo: no behavior-visible change lands without one), and the
 # matching git tag is cut at release time by the release owner.
-API_VERSION = "1.0.0"
+API_VERSION = "1.1.0"
 
 app = FastAPI(
     title="IP_CMC Grading API",
@@ -157,6 +165,13 @@ def healthz():
             conn.close()
 
 
+# issue #99: one pattern for every student_id this service accepts, so
+# POST /session and POST /session/revoke can never drift apart (a looser
+# revoke pattern would make "kill this student's link" a way to smuggle
+# markup/whitespace past the checks the mint path enforces).
+_STUDENT_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._@-]*$"
+
+
 class SessionBody(BaseModel):
     # issue #99: these were unbounded str. An oversized or markup-bearing
     # value that passed the coordinator gate would live forever in the
@@ -171,7 +186,7 @@ class SessionBody(BaseModel):
     # submitted value (test_input_validation.py pins that -- echoing IDs
     # in errors would reintroduce the #93 leak class through the
     # 200-char-truncated log sanitizer).
-    student_id: str = Field(max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._@-]*$")
+    student_id: str = Field(max_length=128, pattern=_STUDENT_ID_PATTERN)
     session_id: str = Field(max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._@-]*$")
 
 
@@ -210,6 +225,85 @@ def create_session(body: SessionBody, x_coordinator_key: str | None = Header(def
         )
         conn.commit()
         return {"token": token, "expires_at": expires_at}
+    finally:
+        conn.close()
+
+
+class SessionRevokeBody(BaseModel):
+    """issue #104: `str | None` with no pydantic constraints; the shape checks
+    are manual and their messages name the offending field, never its content.
+
+    This is defence in depth, not the primary control (CR on PR #134 asked for
+    the wording to say so): since issue #93 `validation_error_handler` answers a
+    generic body and logs only sanitized loc/type/msg triples, so a constrained
+    field would not leak a token today either. The reason to keep the checks
+    manual anyway is that this endpoint's payload is a live credential *by
+    design* -- the guarantee should not depend on a handler three layers away
+    continuing to sanitize everything, forever.
+    """
+
+    token: str | None = None
+    student_id: str | None = None
+
+
+@app.post("/session/revoke")
+def revoke_session(body: SessionRevokeBody, x_coordinator_key: str | None = Header(default=None)):
+    """Delete a live token instead of waiting out its TTL — the compensation
+    POST /session has no equivalent of.
+
+    Called by scripts/create-session.py when the Kasm half of a session
+    fails after the token was already minted (issue #104: the token has to
+    be minted first, because its value is injected into the Kasm container's
+    environment by request_kasm, so the failure order is token-then-Kasm and
+    the orphan token used to be left live and usable). Coordinator-only for
+    the same reason POST /session is: an endpoint that revokes tokens is
+    exactly as dangerous in the wrong hands as one that mints them.
+
+    Selectors: `token` for the caller that holds it, `student_id` as the
+    operator's escape hatch ("kill whatever link this student has") and for
+    the case where the mint response was never parsed and the token value is
+    lost. Revoking an already-gone/expired/unknown token answers 200 with
+    revoked=false rather than 404: this endpoint is a compensation step, and
+    a caller compensating for its own failed request must not have to
+    distinguish "someone revoked it first" from "it never existed".
+    """
+    if not x_coordinator_key:
+        raise AppError(401, "AUTH_INVALID_COORDINATOR_KEY", "Missing X-Coordinator-Key header")
+    if not secrets.compare_digest(x_coordinator_key, COORDINATOR_KEY):
+        raise AppError(401, "AUTH_INVALID_COORDINATOR_KEY", "Invalid coordinator key")
+
+    if (body.token is None) == (body.student_id is None):
+        raise AppError(400, "VALIDATION_REVOKE_SELECTOR", "Provide exactly one of token/student_id")
+
+    # Two explicit statements rather than a built-up WHERE clause: both are
+    # parameterized anyway, but this keeps bandit's B608 (and every future
+    # reader's "is that f-string user input?" pause) out of a security-
+    # critical DELETE.
+    conn = db.get_connection()
+    try:
+        if body.token is not None:
+            if len(body.token) > 128:
+                raise AppError(400, "VALIDATION_REVOKE_SELECTOR", "token exceeds 128 characters")
+            # No pattern on the token: it's opaque secrets.token_urlsafe
+            # output, and a non-matching value simply revokes nothing
+            # (revoked=false), so there is nothing worth validating.
+            cur = conn.execute("DELETE FROM sessions WHERE token = ?", (body.token,))
+            selector = "token"
+        else:
+            if len(body.student_id) > 128 or not re.fullmatch(_STUDENT_ID_PATTERN, body.student_id):
+                raise AppError(400, "VALIDATION_REVOKE_SELECTOR", "student_id is not a valid identifier")
+            cur = conn.execute("DELETE FROM sessions WHERE student_id = ?", (body.student_id,))
+            selector = "student_id"
+        conn.commit()
+        # Audit trail (CR on PR #134 about issue #104; DoD 40, ties to #98):
+        # revocation is a security-relevant action carried out with the coordinator key, and
+        # until now it left no server-side trace at all. Which selector was used
+        # and how many rows died is the whole point of the line -- the token
+        # value is never logged, same rule as every other line in this service
+        # (see logging_config.py's docstring; student_id is not logged here
+        # either, for the same pseudonymity reason).
+        logger.info("session_revoked", extra={"by": selector, "count": cur.rowcount})
+        return {"revoked": cur.rowcount > 0, "count": cur.rowcount}
     finally:
         conn.close()
 

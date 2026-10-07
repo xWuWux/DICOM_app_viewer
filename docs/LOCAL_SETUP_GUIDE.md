@@ -213,7 +213,10 @@ KASM_API_KEY_SECRET=<from step 4> \
 KASM_IMAGE_ID=<from step 3> \
 GRADING_COORDINATOR_KEY=<same value as .env's GRADING_COORDINATOR_KEY> \
 python3 scripts/create-session.py --student-id TEST_001 --insecure
-# drop --insecure once this has a real (non-self-signed) certificate
+# --insecure is this box's case only: Kasm's installer ships a self-signed
+# cert, so verification has nothing to check it against yet (it is ON by
+# default since issue #104). Drop --insecure once there is a real cert, or
+# keep verification on and point --ca-bundle at the CA that signed it.
 ```
 Prints a `link` field — open it in a browser. You should see the same
 split-panel viewer+grading UI as Part 1's verification step, but now
