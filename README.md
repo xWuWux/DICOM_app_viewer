@@ -89,6 +89,12 @@ too (nothing was actually running yet).
                        └───────────────────────┘
 ```
 
+**Reloading the page (issue #145):** the token is read from the `#token=` fragment, erased from the
+address bar, and kept in `sessionStorage` (this tab only; cleared when the tab closes; never sent to any
+server). F5 / Ctrl+R / a restored tab therefore keep the session; opening the page with no token, or after
+grading-api rejected it (unknown or expired), shows "Sesja wygasła lub link jest nieprawidłowy…" and waits
+for a new link (no retry button, no automatic refresh). `localStorage` and cookies are deliberately not used.
+
 **Opening bare `http://localhost:8080/` no longer works** — since the
 session-token system shipped (see "Lung-RADS grading" below),
 `watermark.html`'s own `/api/case` fetch has nothing to authenticate with

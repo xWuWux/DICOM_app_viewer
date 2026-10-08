@@ -23,6 +23,12 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Reload no longer strands the student on HTTP 401 (issue #145).** `watermark.html` and `grading-panel.html` keep the
+  token in `sessionStorage` (this tab only, gone when it closes, never sent anywhere) after reading the URL
+  fragment, so F5 / Ctrl+R / a restored tab keep working; the fragment is still erased from the address bar (#94).
+  Order: fragment -> sessionStorage -> none. No token, or a 401 from grading-api, shows the owner-approved message
+  ("Sesja wygasla lub link jest nieprawidlowy...") with no retry button and no automatic refresh. 22 new Playwright
+  tests (`test_session_token.py`) + 1 new visual snapshot per page; the token still never appears in a request URL.
 - **Kiosk window-keeping for the Weasis workspace (issue #151).** `arrange_windows.sh` now
   (a) sizes both windows by their OUTER frame (they used to overflow the screen by the
   title-bar height and overlap by the side borders), (b) removes the title-bar
