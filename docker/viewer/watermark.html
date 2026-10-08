@@ -104,7 +104,23 @@
   // call below actually authenticates with; custom_startup.sh bakes it in
   // the same way, from the value grading-api's own POST /session minted
   // for this specific session.
-  const token = params.get("token") || "";
+  //
+  // issue #94: the token is read from the URL FRAGMENT (#token=...),
+  // which browsers never transmit -- so it cannot reach nginx's access
+  // log or error log (both reproduced a query-string token verbatim;
+  // issues #63/#94). The launcher (custom_startup.sh) appends it as a
+  // fragment accordingly. A ?token= in the query is deliberately NOT
+  // read: grading-api rejects that transport too.
+  const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
+  const token = hashParams.get("token") || "";
+  // CR #121: erase the fragment from the address bar once read -- the token
+  // would otherwise stay visible in the page URL, the Kasm window/tab title
+  // (both captured in screenshots), and session history. replaceState edits
+  // the current entry in place: no reload, no new history step; the token
+  // now lives only in this script's memory and the header it sends.
+  if (location.hash) {
+    history.replaceState(null, "", location.pathname + location.search);
+  }
   // Orthanc lives on its own origin (see nginx.conf comment on why it isn't
   // reverse-proxied under a subpath). Defaults to this machine's local test
   // setup; the Kasm launcher (custom_startup.sh) passes the real internal
@@ -174,7 +190,11 @@
   const STAGE_LABELS = { learning: "Nauka", assessment: "Ocena", test: "Test" };
 
   let currentCase = null;
-  let caseStartMs = null;
+  // issue #99: no caseStartMs/time_spent_seconds here anymore -- the
+  // client-computed elapsed value was sent but never used (issue #29 made
+  // time-on-task server-side only, since Date.now() is trivially editable
+  // and this data feeds a publication); sending it just gave dead code a
+  // convincing-looking field name.
 
   function escapeHtml(s) {
     const div = document.createElement("div");
@@ -182,10 +202,29 @@
     return div.innerHTML;
   }
 
+  // issue #99: exception-/server-derived strings are never interpolated
+  // into an innerHTML template again -- showError builds the node through
+  // the DOM API and writes the message via textContent, so even a value
+  // hijacked by a compromised upstream cannot become markup. Static
+  // templates (no dynamic input) may still use innerHTML.
+  function showError(prefix, err, buttonId, buttonLabel) {
+    panel.replaceChildren();
+    const p = document.createElement("p");
+    p.className = "error";
+    p.textContent = `${prefix}: ${err.message}`;
+    panel.append(p);
+    if (buttonId) {
+      const b = document.createElement("button");
+      b.id = buttonId;
+      b.textContent = buttonLabel;
+      panel.append(b);
+    }
+  }
+
   async function loadCase() {
     panel.innerHTML = "<p>Ładowanie danych...</p>";
     try {
-      const res = await fetch(`/api/case?token=${encodeURIComponent(token)}`);
+      const res = await fetch("/api/case", { headers: { "X-Grading-Token": token } });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
@@ -195,7 +234,6 @@
         return;
       }
       currentCase = data;
-      caseStartMs = Date.now();
       // NOTE: the stone-webviewer plugin isn't installed on this Orthanc image
       // (confirmed via GET /plugins), and Explorer2 has no per-study deep-VIEW
       // route at all (confirmed against its actual router.js source) -- only
@@ -210,13 +248,13 @@
       // attribute runs in global scope and can't see it (confirmed the hard
       // way: the button silently did nothing). addEventListener instead,
       // matching how every other button in this file is wired up.
-      panel.innerHTML = `<p class="error" style="color: #e05252;">Błąd ładowania: ${err.message}</p><button id="retry-btn">Spróbuj ponownie</button>`;
+      showError("Błąd ładowania", err, "retry-btn", "Spróbuj ponownie");
       document.getElementById("retry-btn").addEventListener("click", loadCase);
     }
   }
 
   function renderForm(data) {
-    let html = `<h2>${STAGE_LABELS[data.stage] || data.stage}</h2>`;
+    let html = `<h2>${escapeHtml(STAGE_LABELS[data.stage] || data.stage)}</h2>`;
     html += `<p>${escapeHtml(data.title)} (${data.position} / ${data.total_in_stage})</p>`;
 
     if (data.stage === "learning") {
@@ -243,12 +281,10 @@
   }
 
   async function onSubmit() {
-    const timeSpentSeconds = (Date.now() - caseStartMs) / 1000;
     const body = {
       token,
       case_id: currentCase.case_id,
       stage: currentCase.stage,
-      time_spent_seconds: timeSpentSeconds,
     };
     if (currentCase.stage === "learning") {
       body.text = document.getElementById("text-input").value;
@@ -288,7 +324,7 @@
       const result = await res.json();
       renderFeedback(currentCase.stage, result, body);
     } catch (err) {
-      panel.innerHTML = `<p class="error" style="color: #e05252;">Błąd zapisu: ${err.message}</p><button id="back-btn">Wróć</button>`;
+      showError("Błąd zapisu", err, "back-btn", "Wróć");
       document.getElementById("back-btn").addEventListener("click", loadCase);
     }
   }
@@ -318,7 +354,7 @@
 
   async function showResults() {
     try {
-      const res = await fetch(`/api/results?token=${encodeURIComponent(token)}`);
+      const res = await fetch("/api/results", { headers: { "X-Grading-Token": token } });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
@@ -331,7 +367,7 @@
       // doesn't leave stale rows skewing a later /results call.
       panel.innerHTML = `
         <h2>Wyniki końcowe</h2>
-        <p>Wynik testu: ${data.test_correct} / ${data.test_total} (${pct})</p>
+        <p>Wynik testu: ${escapeHtml(data.test_correct)} / ${escapeHtml(data.test_total)} (${escapeHtml(pct)})</p>
         <button id="restart-btn">Rozpocznij od początku</button>`;
       frame.src = "about:blank";
       document.getElementById("restart-btn").addEventListener("click", async () => {
@@ -343,11 +379,11 @@
           });
           loadCase();
         } catch (err) {
-          panel.innerHTML = `<p class="error" style="color: #e05252;">Błąd resetu: ${err.message}</p>`;
+          showError("Błąd resetu", err);
         }
       });
     } catch (err) {
-      panel.innerHTML = `<p class="error" style="color: #e05252;">Błąd ładowania wyników: ${err.message}</p>`;
+      showError("Błąd ładowania wyników", err);
     }
   }
 

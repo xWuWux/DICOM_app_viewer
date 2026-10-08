@@ -18,15 +18,22 @@ session_id are never trusted as credentials again from here on -- they're
 only ever used for display (the watermark text), which is fine since
 displaying the wrong ID isn't a security problem, only trusting it for
 grading actions was.
+
+Revocation (issue #104): POST /session/revoke (coordinator-only) deletes a
+token before its TTL expires. It exists so the coordinator can undo a token
+it already minted when the rest of the session setup fails -- see
+scripts/create-session.py, which mints the token before asking Kasm for a
+session (Kasm needs the token as container environment, so the order can't
+simply be inverted) and now revokes that token whenever that Kasm call fails.
 """
 
-import os
+import re
 import secrets
 import sqlite3
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import FastAPI, Header, Request
 from fastapi.exceptions import RequestValidationError
@@ -34,6 +41,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import db
+from .config import COORDINATOR_KEY
 from .errors import AppError, app_error_handler, unhandled_exception_handler, validation_error_handler
 from .logging_config import configure_logging, get_logger, request_id_var
 
@@ -51,7 +59,29 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="IP_CMC Grading API", lifespan=lifespan)
+# issue #100, hard-coded and deliberately WITHOUT a dev/docs opt-out
+# (same philosophy as config.py's "no dev exception" for the coordinator
+# key): an env flag you can forget to unset in production is one forgotten
+# variable away from re-exposing an internal grading contract to the
+# public internet edge (nginx proxies /api/ straight here -- /api/docs
+# was live until this line). The contract surface that IS published is
+# the code + tests + CHANGELOG.md. Need the schema? app.openapi() builds
+# the same dict in-process regardless of openapi_url:
+#   python -c "from app.main import app; import json; print(json.dumps(app.openapi()))"
+# Version: single source of truth is API_VERSION below; it is bumped in
+# the SAME commit that adds a CHANGELOG.md entry (the review contract for
+# this repo: no behavior-visible change lands without one), and the
+# matching git tag is cut at release time by the release owner.
+API_VERSION = "1.1.0"
+
+app = FastAPI(
+    title="IP_CMC Grading API",
+    version=API_VERSION,
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 app.add_exception_handler(AppError, app_error_handler)
 app.add_exception_handler(RequestValidationError, validation_error_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
@@ -67,6 +97,13 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+        # issue #95: mirror onto request.state too. Request.state is
+        # backed by scope["state"], shared with the Request the OUTER
+        # ServerErrorMiddleware later rebuilds for the unhandled-exception
+        # handler -- by then this contextvar's finally: below has already
+        # reset it, so scope state is the only channel the 500 handler
+        # still has the id through.
+        request.state.request_id = request_id
         token = request_id_var.set(request_id)
         start = time.monotonic()
         try:
@@ -98,10 +135,11 @@ app.add_middleware(RequestIdMiddleware)
 # whoever mints links) knows -- required so POST /session can't just be
 # called directly by a student's own browser to mint a token for anyone
 # else's student_id, which would recreate the exact hole this closes.
-# Fails loudly at import time if unset, same philosophy as
-# docker-compose.yml's ORTHANC_PASSWORD -- never silently run with no
-# secret configured.
-COORDINATOR_KEY = os.environ["GRADING_COORDINATOR_KEY"]
+# Imported from app/config.py, which validates presence AND minimum
+# length at import time (issue #97) -- the compose ${VAR:?} guard alone
+# never covered a bare `docker run`/CI, and never checked the value at
+# all: an empty-string key used to start fine, letting anyone mint
+# tokens for any student_id.
 
 
 @app.get("/healthz")
@@ -127,16 +165,40 @@ def healthz():
             conn.close()
 
 
+# issue #99: one pattern for every student_id this service accepts, so
+# POST /session and POST /session/revoke can never drift apart (a looser
+# revoke pattern would make "kill this student's link" a way to smuggle
+# markup/whitespace past the checks the mint path enforces).
+_STUDENT_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._@-]*$"
+
+
 class SessionBody(BaseModel):
-    student_id: str
-    session_id: str
+    # issue #99: these were unbounded str. An oversized or markup-bearing
+    # value that passed the coordinator gate would live forever in the
+    # sessions table and in every forensic watermark drawn for the session
+    # (the panel/watermark render student_id into DOM text). Real IDs --
+    # Moodle logins, Kasm session ids, mint-local-link's STU_LOCAL_TEST --
+    # are ASCII-alphanumeric with . _ - @ ; the pattern rejects markup,
+    # whitespace and control characters outright, the length bound rejects
+    # payload stuffing. 128 (not 64) because the visual-regression harness
+    # legitimately mints long per-test ids (VR_<testname>_<variant>).
+    # Pydantic's pattern-failure message names the pattern, never the
+    # submitted value (test_input_validation.py pins that -- echoing IDs
+    # in errors would reintroduce the #93 leak class through the
+    # 200-char-truncated log sanitizer).
+    student_id: str = Field(max_length=128, pattern=_STUDENT_ID_PATTERN)
+    session_id: str = Field(max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._@-]*$")
 
 
 @app.post("/session")
-def create_session(body: SessionBody, x_coordinator_key: str = Header(...)):
+def create_session(body: SessionBody, x_coordinator_key: str | None = Header(default=None)):
     """Mint a fresh token bound to student_id, the only path that creates
     that binding. Called by scripts/create-session.py right after minting
     the Kasm session itself, not by anything running inside a session."""
+    if not x_coordinator_key:
+        # same taxonomy rule as the X-Grading-Token endpoints (CR on #121:
+        # auth failures answer 401 AUTH_*, never FastAPI's 422).
+        raise AppError(401, "AUTH_INVALID_COORDINATOR_KEY", "Missing X-Coordinator-Key header")
     if not secrets.compare_digest(x_coordinator_key, COORDINATOR_KEY):
         # app_error_handler logs every AppError generically (error_code,
         # status_code, path) -- no need to also log here, that would just
@@ -163,6 +225,85 @@ def create_session(body: SessionBody, x_coordinator_key: str = Header(...)):
         )
         conn.commit()
         return {"token": token, "expires_at": expires_at}
+    finally:
+        conn.close()
+
+
+class SessionRevokeBody(BaseModel):
+    """issue #104: `str | None` with no pydantic constraints; the shape checks
+    are manual and their messages name the offending field, never its content.
+
+    This is defence in depth, not the primary control (CR on PR #134 asked for
+    the wording to say so): since issue #93 `validation_error_handler` answers a
+    generic body and logs only sanitized loc/type/msg triples, so a constrained
+    field would not leak a token today either. The reason to keep the checks
+    manual anyway is that this endpoint's payload is a live credential *by
+    design* -- the guarantee should not depend on a handler three layers away
+    continuing to sanitize everything, forever.
+    """
+
+    token: str | None = None
+    student_id: str | None = None
+
+
+@app.post("/session/revoke")
+def revoke_session(body: SessionRevokeBody, x_coordinator_key: str | None = Header(default=None)):
+    """Delete a live token instead of waiting out its TTL — the compensation
+    POST /session has no equivalent of.
+
+    Called by scripts/create-session.py when the Kasm half of a session
+    fails after the token was already minted (issue #104: the token has to
+    be minted first, because its value is injected into the Kasm container's
+    environment by request_kasm, so the failure order is token-then-Kasm and
+    the orphan token used to be left live and usable). Coordinator-only for
+    the same reason POST /session is: an endpoint that revokes tokens is
+    exactly as dangerous in the wrong hands as one that mints them.
+
+    Selectors: `token` for the caller that holds it, `student_id` as the
+    operator's escape hatch ("kill whatever link this student has") and for
+    the case where the mint response was never parsed and the token value is
+    lost. Revoking an already-gone/expired/unknown token answers 200 with
+    revoked=false rather than 404: this endpoint is a compensation step, and
+    a caller compensating for its own failed request must not have to
+    distinguish "someone revoked it first" from "it never existed".
+    """
+    if not x_coordinator_key:
+        raise AppError(401, "AUTH_INVALID_COORDINATOR_KEY", "Missing X-Coordinator-Key header")
+    if not secrets.compare_digest(x_coordinator_key, COORDINATOR_KEY):
+        raise AppError(401, "AUTH_INVALID_COORDINATOR_KEY", "Invalid coordinator key")
+
+    if (body.token is None) == (body.student_id is None):
+        raise AppError(400, "VALIDATION_REVOKE_SELECTOR", "Provide exactly one of token/student_id")
+
+    # Two explicit statements rather than a built-up WHERE clause: both are
+    # parameterized anyway, but this keeps bandit's B608 (and every future
+    # reader's "is that f-string user input?" pause) out of a security-
+    # critical DELETE.
+    conn = db.get_connection()
+    try:
+        if body.token is not None:
+            if len(body.token) > 128:
+                raise AppError(400, "VALIDATION_REVOKE_SELECTOR", "token exceeds 128 characters")
+            # No pattern on the token: it's opaque secrets.token_urlsafe
+            # output, and a non-matching value simply revokes nothing
+            # (revoked=false), so there is nothing worth validating.
+            cur = conn.execute("DELETE FROM sessions WHERE token = ?", (body.token,))
+            selector = "token"
+        else:
+            if len(body.student_id) > 128 or not re.fullmatch(_STUDENT_ID_PATTERN, body.student_id):
+                raise AppError(400, "VALIDATION_REVOKE_SELECTOR", "student_id is not a valid identifier")
+            cur = conn.execute("DELETE FROM sessions WHERE student_id = ?", (body.student_id,))
+            selector = "student_id"
+        conn.commit()
+        # Audit trail (CR on PR #134 about issue #104; DoD 40, ties to #98):
+        # revocation is a security-relevant action carried out with the coordinator key, and
+        # until now it left no server-side trace at all. Which selector was used
+        # and how many rows died is the whole point of the line -- the token
+        # value is never logged, same rule as every other line in this service
+        # (see logging_config.py's docstring; student_id is not logged here
+        # either, for the same pseudonymity reason).
+        logger.info("session_revoked", extra={"by": selector, "count": cur.rowcount})
+        return {"revoked": cur.rowcount > 0, "count": cur.rowcount}
     finally:
         conn.close()
 
@@ -204,7 +345,15 @@ def _get_or_create_progress(conn, student_id: str):
 
 
 def _get_case(conn, stage: str, order_index: int):
-    return conn.execute("SELECT * FROM cases WHERE stage = ? AND order_index = ?", (stage, order_index)).fetchone()
+    # issue #96: "the current case" at a position is its HIGHEST version
+    # row -- ground-truth changes arrive as new version rows, never as
+    # an UPDATE once submissions exist (cases_ground_truth_frozen
+    # trigger). With every position at version 1 this is exactly the
+    # query the pre-#96 code ran.
+    return conn.execute(
+        "SELECT * FROM cases WHERE stage = ? AND order_index = ? ORDER BY version DESC LIMIT 1",
+        (stage, order_index),
+    ).fetchone()
 
 
 def _advance_progress(conn, student_id: str, stage: str, order_index: int):
@@ -245,10 +394,28 @@ def _advance_progress(conn, student_id: str, stage: str, order_index: int):
 
 
 @app.get("/case")
-def get_case(token: str):
+def get_case(x_grading_token: str | None = Header(default=None, alias="X-Grading-Token")):
+    """issue #94: the token moved from ?token= to a header, everywhere.
+
+    A query-string credential was reproduced verbatim by nginx's access
+    log AND its error log (upstream URL) -- two log files holding live
+    session tokens per request (audit-confirmed on the running viewer
+    container; issues #63/#94). Headers appear in neither. Every client
+    of these two GET endpoints is first-party (watermark.html,
+    grading-panel.html, custom_startup.sh, the tests) -- there are no
+    external integrations to keep query-compatibility for, and tokens
+    are hours-lived, so query acceptance is removed outright rather
+    than deprecated (a #63 note for the changelog goes in with #100).
+    POST /submit and /reset keep the token in the JSON body: a body is
+    not logged by nginx, so they were never part of this leak."""
+    if not x_grading_token:
+        # CR on #121: a required Header() parameter makes FastAPI answer a
+        # missing header with 422 VALIDATION_ERROR -- clients and the
+        # error taxonomy (#74) expect auth failures as 401 AUTH_*.
+        raise AppError(401, "AUTH_INVALID_TOKEN", "Missing X-Grading-Token header")
     conn = db.get_connection()
     try:
-        student_id = _resolve_token(conn, token)
+        student_id = _resolve_token(conn, x_grading_token)
         progress = _get_or_create_progress(conn, student_id)
         if progress["stage"] == "complete":
             return {"complete": True}
@@ -266,7 +433,13 @@ def get_case(token: str):
             )
             raise AppError(500, "SERVER_ERROR", "Internal server error")
 
-        total_in_stage = conn.execute("SELECT COUNT(*) FROM cases WHERE stage = ?", (progress["stage"],)).fetchone()[0]
+        total_in_stage = conn.execute(
+            # DISTINCT order_index, not COUNT(*): from issue #96 on, one
+            # position can hold several version rows, and what a student
+            # sees as "case 3 of 10" counts positions, not schema rows.
+            "SELECT COUNT(DISTINCT order_index) FROM cases WHERE stage = ?",
+            (progress["stage"],),
+        ).fetchone()[0]
 
         response = {
             "complete": False,
@@ -287,20 +460,20 @@ def get_case(token: str):
 class SubmitBody(BaseModel):
     token: str
     case_id: int
-    # Longest real value is "assessment" (10 chars) -- generous margin over
-    # that, just enough to reject an oversized/garbage payload before it
-    # reaches the DB, not to encode any real business rule (db.STAGES is
-    # still the actual source of truth for which stages exist).
-    stage: str = Field(max_length=20)
+    # issue #99: Literal instead of str+max_length. db.STAGES remains the
+    # conceptual source of truth -- test_input_validation.py asserts the
+    # Literal members match db.STAGES/db.CATEGORY_LABELS so the two
+    # can't drift silently. A bad stage used to sail past Pydantic (only
+    # bounded to 20 chars) and die later as a 409 stage-mismatch -- now
+    # it's a schema-level 422 before any state is consulted.
+    stage: Literal["learning", "assessment", "test"]
     # Free-text learning-stage impression -- genuinely open-ended prose, so
     # bounded generously rather than tightly, just to reject unbounded
     # payloads (never trusted for grading either way -- learning is
     # self-assessment only, see this module's docstring).
     text: Optional[str] = Field(default=None, max_length=10_000)
-    # Longest real value is "4A"/"4X" (2 chars) -- same margin-not-business-
-    # rule reasoning as stage above; db.CATEGORY_LABELS is still what
-    # actually validates a category as correct/incorrect.
-    category: Optional[str] = Field(default=None, max_length=10)
+    # Lung-RADS closed vocabulary -- issue #99 Literal (same db-sync test).
+    category: Optional[Literal["0", "1", "2", "3", "4A", "4B", "4X"]] = None
     modifier_s: Optional[bool] = None
     # No time_spent_seconds field (issue #29): this data feeds a scientific
     # publication, so time-on-task is computed server-side in submit()
@@ -398,8 +571,9 @@ def submit(body: SubmitBody):
             conn.execute(
                 """INSERT INTO submissions
                    (student_id, case_id, stage, submitted_category, submitted_modifier_s,
-                    submitted_text, is_correct, time_spent_seconds, submitted_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    submitted_text, is_correct, time_spent_seconds, submitted_at,
+                    ground_truth_category, ground_truth_modifier_s, case_version)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     student_id,
                     body.case_id,
@@ -410,6 +584,15 @@ def submit(body: SubmitBody):
                     is_correct,
                     time_spent_seconds,
                     db.now(),
+                    # issue #96: freeze the ground truth -- and which
+                    # version row it came from -- into the same INSERT as
+                    # is_correct itself: snapshot and score derive from the
+                    # same `case` row, same transaction, so they can never
+                    # disagree later. gt_backfilled keeps its default 0:
+                    # this IS a proven snapshot.
+                    case["ground_truth_category"],
+                    case["ground_truth_modifier_s"],
+                    case["version"],
                 ),
             )
         except sqlite3.IntegrityError:
@@ -478,18 +661,26 @@ def reset(body: ResetBody):
 
 
 @app.get("/results")
-def results(token: str):
+def results(x_grading_token: str | None = Header(default=None, alias="X-Grading-Token")):
+    if not x_grading_token:
+        # CR on #121: 401 AUTH_INVALID_TOKEN, not FastAPI's 422 (see /case).
+        raise AppError(401, "AUTH_INVALID_TOKEN", "Missing X-Grading-Token header")
     conn = db.get_connection()
     try:
-        student_id = _resolve_token(conn, token)
+        student_id = _resolve_token(conn, x_grading_token)
         progress = _get_or_create_progress(conn, student_id)
         if progress["stage"] != "complete":
             return {"complete": False}
 
+        # issue #96: reads ONLY the submission's own frozen snapshot --
+        # no JOIN to cases anymore. A later GT change takes the form of a
+        # new case version, which by construction cannot alter these rows;
+        # the audit sec-3.2 record (ground_truth 4B vs submitted 4A vs
+        # correct:true) is now impossible by the data model itself.
         rows = conn.execute(
-            """SELECT s.is_correct, c.ground_truth_category, s.submitted_category
-               FROM submissions s JOIN cases c ON c.id = s.case_id
-               WHERE s.student_id = ? AND s.stage = 'test'""",
+            """SELECT is_correct, ground_truth_category, submitted_category
+               FROM submissions
+               WHERE student_id = ? AND stage = 'test'""",
             (student_id,),
         ).fetchall()
 

@@ -17,4 +17,14 @@ fi
 # shellcheck disable=SC1091
 source .venv-test/bin/activate
 pip install --quiet -r requirements-dev.txt
-pytest -q "$@"
+# Unit tests + coverage gate (issue #101): coverage was previously never
+# measured in CI at all -- pytest-cov wasn't even in requirements-dev.txt
+# and this script ran bare `pytest -q`, so "99% coverage" was a locally
+# measured claim with no gate behind it. --cov-fail-under=95 fails the
+# job below the floor (currently 100%); --cov-report=xml emits
+# coverage.xml for the CI artifact (see .github/workflows/ci.yml).
+# NOTE: extra args pass through to pytest, so running a single test file
+# (`./scripts/test-grading-api.sh tests/test_logging.py`) measures a
+# partial run against the FULL-app denominator and can fail the gate --
+# append `--no-cov` for those targeted local runs.
+pytest -q --cov=app --cov-report=term-missing --cov-report=xml --cov-fail-under=95 "$@"

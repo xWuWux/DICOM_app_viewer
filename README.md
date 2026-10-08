@@ -65,6 +65,14 @@ of this section that only set `ORTHANC_PASSWORD` hit
 `docker compose up`, which cascaded into `load-sample-studies.sh` failing
 too (nothing was actually running yet).
 
+> **BREAKING (issue #97):** `GRADING_COORDINATOR_KEY` must now be at least
+> 32 characters, contain no leading/trailing whitespace, and be set in
+> every launch path (not just compose) — grading-api exits at startup
+> otherwise with a `CONFIGURATION ERROR` naming the variable. Deployments
+> that used a shorter key stop starting until it's regenerated
+> (`openssl rand -hex 32`). `GRADING_TOKEN_TTL_SECONDS`, if set, must be
+> an integer between 1 and 604800 (7 days).
+
 ```
 ┌──────────────┐      ┌───────────────────────┐      ┌─────────────┐
 │  Your browser│ ───► │ viewer (nginx:8080)   │ ───► │  orthanc    │
@@ -95,7 +103,7 @@ mint a token first:
 This mints a `grading-api` session token (gated by `GRADING_COORDINATOR_KEY`
 from `.env`, the same mechanism `scripts/create-session.py` uses for real
 Kasm sessions) and prints a ready-to-open link, e.g.
-`http://localhost:8080/?student_id=STU_LOCAL_TEST&session_id=sess_.../&token=...`.
+`http://localhost:8080/?student_id=STU_LOCAL_TEST&session_id=sess_...#token=...` (issue #94: the token is a URL *fragment* -- the browser never transmits it, so it can't reach nginx logs).
 Open that link — you should see the watermarked viewer wrapper
 (`watermark.html`, the Chrome-flow page) with a rotating
 `STUDENT_ID | SESSION_ID | timestamp` overlay, loading Orthanc Explorer 2
@@ -111,7 +119,7 @@ knows which origin to iframe.
 
 Want to see the Weasis-flow page (`grading-panel.html`) locally instead?
 Take the same link `mint-local-link.sh` printed and swap the path:
-`http://localhost:8080/grading-panel.html?student_id=...&session_id=...&token=...`
+`http://localhost:8080/grading-panel.html?student_id=...&session_id=...#token=...`
 renders it the same way, minus Weasis itself (that only runs inside a
 Kasm/XFCE session, or the Xvfb-based dev technique described further down)
 — useful for iterating on the grading UI in isolation.
@@ -233,6 +241,15 @@ for a `student_id` also revokes whatever token existed before it — a
 coordinator re-minting a link they suspect leaked gets real revocation,
 not just a second valid link.
 
+Revocation also has an explicit endpoint (issue #104): `POST /session/revoke`,
+same coordinator key, taking exactly one of `token`/`student_id`. It exists for
+the case where the rest of session setup fails — the token must be minted
+*before* Kasm is asked for a session, because `request_kasm` injects its value
+into that container's environment, so a Kasm failure used to leave a live
+token with no session behind it. `create-session.py` calls it on every such
+failure; an unknown or already-revoked selector answers `200 revoked:false`
+rather than 404, because the caller uses it as an idempotent compensation step.
+
 ### Logging and error handling (issues #72, #74)
 
 Two foundational pieces added deliberately together, before working
@@ -253,7 +270,13 @@ ad hoc `HTTPException(code, "free-text string")`.
   transitions/submissions recorded. Deliberately never logs: the raw
   session token, `GRADING_COORDINATOR_KEY`, or student free-text answers
   — regression-tested directly (`tests/test_logging.py`), not just
-  documented as an intention. `httpx`'s own logger is explicitly quieted
+  documented as an intention. Since issue #94 the token is also absent
+  from *every URL by design*: `GET /api/case`/`GET /api/results` take it
+  as the `X-Grading-Token` header, browser pages receive it as a URL
+  fragment (never transmitted), launcher scripts pass it to curl via a
+  stdin-fed header (never in `ps`), and nginx rejects any query string
+  under `/api/` outright — end-to-end verified by
+  `scripts/test-log-leak.sh` (sentinel greps over real container logs). `httpx`'s own logger is explicitly quieted
   (found empirically while writing that test: it logs full request URLs,
   including query-string tokens, at INFO level — test-harness-only today,
   but silenced at the source rather than relied on to stay irrelevant),
@@ -435,6 +458,15 @@ What's confirmed working in this image, in the order it was built:
   could never cover) tiled with `STUDENT_ID | SESSION_ID | timestamp` text,
   paired with `watchdog.sh` so killing it just gets it relaunched within
   about a second. Verified for real, not just assumed:
+  - **Density is per screen, not per pixel (flicker fix)**: the glyph-pixel
+    shape is clipped against on every Weasis repaint, and a fixed 260 px
+    gap made it ~4,500 rectangles at 2294x830 -- the DICOM view flickered
+    whenever the mouse moved (found by manual testing in a live Kasm
+    session; overlay off = no flicker). The tile gap is now derived from the
+    screen so the tile count (`WATERMARK_TILES_PER_SCREEN`, default 4.4) and
+    the shape (~1,600-2,500 rectangles from 1366x768 to 4K) stay roughly
+    constant; `./scripts/test-overlay-shape.sh` enforces the budget in CI.
+    Fewer, larger-spaced marks per screen is a deliberate trade-off.
   - **True transparency without a compositor**: no compositor (e.g.
     `picom`) runs in this XFCE/KasmVNC session by default, so this uses
     the X Shape extension instead (`Gdk.Window.shape_combine_region()`)
@@ -559,17 +591,38 @@ image_id (from its edit URL in the admin UI), and the same
 KASM_SERVER=https://your-kasm-host \
 KASM_API_KEY=... KASM_API_KEY_SECRET=... KASM_IMAGE_ID=... \
 GRADING_COORDINATOR_KEY=... \
-python3 scripts/create-session.py --student-id STU_12345 --insecure  # drop --insecure with a real cert
+python3 scripts/create-session.py --student-id STU_12345 \
+  --ca-bundle /etc/kasm/ca.pem   # or --insecure, but only for a self-signed lab box
 ```
 `GRADING_API_URL` (default `http://localhost:8080/`) points at wherever
 `viewer`'s `/api/` proxy is reachable from — override it if this script
 runs somewhere other than the Docker host itself (e.g. the separate-Proxmox
 setup, `docs/PROXMOX_DEPLOYMENT.md`).
 
-`--insecure` should only ever appear against a self-signed local/dev Kasm
-instance — see `docs/PROXMOX_DEPLOYMENT.md`'s "Transport security" section
-for exactly how to replace it with a real certificate (and why the
-separate-host setup needs more than just that) before any real deployment.
+**TLS is verified by default** (issue #104): no flag means certificate *and*
+hostname verification against your system trust store. A private CA gets
+`--ca-bundle /path/to/ca.pem` (or `TLS_CA_BUNDLE` in the environment), which is
+**added to** your system trust store rather than replacing it — Kasm's gateway
+and `viewer`'s `/api/` proxy routinely have two different issuers. That is
+the flag to reach for when a call fails with a certificate error, not
+`--insecure`, which turns verification off for every request the script makes
+including the ones carrying `KASM_API_KEY_SECRET`. `--insecure` remains only
+for a self-signed local/dev Kasm instance; it prints a warning on every run,
+and typing it together with `--ca-bundle` is rejected outright rather than
+silently overriding the CA you thought was in use. See
+`docs/PROXMOX_DEPLOYMENT.md`'s "Transport security" section for how to get a
+real certificate (and why the separate-host setup needs more than just that).
+
+**A failed run undoes itself** (issue #104): the grading token has to be
+minted *before* the Kasm call, because its value is injected into that
+container's environment, so a Kasm failure used to leave a live token with no
+session behind it. `create-session.py` now calls `POST /api/session/revoke`
+whenever it fails before Kasm answered — and deliberately does *not* revoke
+once Kasm answered, because by then a real session holds that token. Ctrl-C,
+SIGTERM (a cancelled CI job) and a closed terminal all trigger the same undo.
+What no handler can catch — `SIGKILL`, an interpreter crash — falls back
+to the token's own expiry, `GRADING_TOKEN_TTL_SECONDS` (capped at 7 days by
+`docker/grading-api/app/config.py`), which is why that cap exists.
 
 Prints a ready-to-share `link` — no login required, it's pre-authenticated
 via a session token Kasm generates. The script also tries a readiness
@@ -875,7 +928,16 @@ in CI.
   token authorization (`docker/grading-api/tests/test_state_machine.py`,
   21 tests), driven through FastAPI's own `TestClient` against a fresh,
   isolated SQLite file per test — no Docker, no real stack, runs in well
-  under a second. These exist specifically to protect the invariants this
+  under a second. Since issue #104 the same runner also covers
+  `docker/grading-api/tests/test_session_revoke.py` (16 tests) for
+  `POST /session/revoke`: the coordinator gate, both selectors, an
+  already-gone token answering `200 revoked:false` rather than 404, that no
+  rejection ever echoes the token it was handed, that every successful
+  revocation leaves a `session_revoked` audit line naming the selector kind and
+  row count (never the credential, never even the `student_id`), and that a
+  trailing-newline `student_id` is rejected rather than waved through an
+  anchored-but-search-style pattern check. These exist specifically
+  to protect the invariants this
   project keeps stating in prose but never had automated coverage for:
   a token is required everywhere and only `POST /session` (coordinator-key
   gated) can mint one; an invalid, unknown, or expired token is rejected;
@@ -911,8 +973,11 @@ in CI.
     with bash's own generic `VIEWER_URL: unbound variable` instead of a
     message actually pointing at the problem — now guarded the same way.
     Both suites also gained a `GRADING_TOKEN` seam and an assertion the
-    Weasis suite's `curl` call authenticates with `?token=`, never the old
-    `?student_id=` (the session-token fix's own regression coverage here).
+    Weasis suite's `curl` call authenticates with the session token
+    (since issue #94 via a stdin-fed `X-Grading-Token` header — asserted
+    present in the stdin header AND absent from curl's argv), never the
+    old bare `?student_id=` (the session-token fix's own regression
+    coverage here).
   - `docker/kasm-workspace-weasis/watchdog.bats` (4 tests): since the
     script under test is a deliberate infinite loop, every test bounds it
     with `timeout` rather than waiting for it to exit on its own. **Found
@@ -927,7 +992,18 @@ in CI.
 - `scripts/test-provision-guacamole-session.sh` (issue #53) — unit tests
   for `scripts/provision-guacamole-session.py` (3 tests), `subprocess.run`
   and `urllib.request.urlopen` both mocked, no Docker/real Guacamole
-  needed. Guards the two invariants that make per-session VNC auth
+  needed. pytest's discovery from that directory also runs
+  `scripts/tests/test_create_session.py` (issue #104, 46 tests): every
+  failure path between minting a grading token and Kasm answering has to
+  revoke it, the one path where revoking would be wrong (Kasm already
+  answered, so the token is a live session's credential) has to leave it
+  alone, no failure message may contain the token itself, and every request
+  has to leave on a verifying context (`--insecure` only when typed, private
+  CA appended via `--ca-bundle`, SIGTERM/SIGHUP compensating like Ctrl-C), and
+  every failure line names the service that failed (`label` is required on
+  `api_call`, so a Kasm failure reads "Kasm API error calling
+  /api/public/request_kasm", never a generic "API error …").
+  Guards the two invariants that make per-session VNC auth
   actually work: the container's `docker run` never gains a `-p`/
   `--publish` (the port must stay reachable only via `docker_network`),
   and the same `VNC_PASSWORD` the container gets is exactly what
@@ -945,7 +1021,12 @@ in CI.
   of the bug), and (the session-token fix's own regression check) that
   `POST /api/session` actually mints a usable token, that an invalid token
   is rejected with 401, and that `POST /api/session` itself is rejected
-  without the coordinator key.
+  without the coordinator key. Since issue #104 it also proves the revocation
+  path works **through this proxy** rather than only in-process: mint →
+  `POST /api/session/revoke` → the revoked token gets 401 at `/api/case`, and
+  `revoke` without the coordinator key is refused. That edge routing matters —
+  a revoke that 404s at nginx would leave `create-session.py` silently not
+  compensating while every unit test stayed green.
   **Tears the stack down with `docker compose down -v` when it's done** —
   don't run this against an environment with data you care about; it's
   meant for a disposable/CI environment.

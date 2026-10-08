@@ -64,7 +64,11 @@ EOF
   export SESSION_ID="sess_1"
   run bash "$SCRIPT"
   [ "$status" -eq 0 ]
-  grep -qF -- "--app=http://ipcmc-viewer:8080/?student_id=stu_1&session_id=sess_1&orthanc_url=http%3A%2F%2Fipcmc-viewer%3A8043%2F&token=test-token-abc" "$CHROME_ARGS_FILE"
+  # issue #94: the token must be in the FRAGMENT (after #) -- a token in
+  # the query part of the kiosk URL would be sent to (and logged by)
+  # nginx on every page load.
+  grep -qF -- "--app=http://ipcmc-viewer:8080/?student_id=stu_1&session_id=sess_1&orthanc_url=http%3A%2F%2Fipcmc-viewer%3A8043%2F#token=test-token-abc" "$CHROME_ARGS_FILE"
+  ! grep -qF -- "&token=test-token-abc" "$CHROME_ARGS_FILE"
 }
 
 @test "always launches kiosk/incognito with translate disabled" {

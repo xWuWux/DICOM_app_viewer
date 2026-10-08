@@ -18,10 +18,22 @@ USER root
 
 # Weasis's own .deb release. Pinned to a specific release, not "latest",
 # matching how the Chrome-based image pins kasmweb/chrome:1.16.0.
+# Integrity (issue #50): the .deb is verified against a pinned SHA-256
+# before it is installed. Provenance of the hash: the release publishes no
+# separate checksum/signature file, so the value was taken from the digest
+# GitHub records for the release asset (`gh api repos/nroduit/Weasis/
+# releases/tags/v<ver>` -> assets[].digest) AND re-computed on a fresh
+# download; both matched. That is integrity-against-GitHub's-record, not a
+# vendor signature (upstream signing is still absent). Bumping
+# WEASIS_VERSION REQUIRES bumping WEASIS_SHA256 -- a stale hash fails the
+# build on purpose (sha256sum -c), it can never silently install an
+# unverified file. Keep in sync with docker/guacamole-weasis/Dockerfile (scripts/lint.sh fails if the two pins differ).
 ARG WEASIS_VERSION=4.7.3
+ARG WEASIS_SHA256=b796c661cc513fcd8091f0c2385bad6a272489d88ed6fcdf43a8df6bd42024c4
 RUN apt-get update && \
     curl -fsSL -o /tmp/weasis.deb \
       "https://github.com/nroduit/Weasis/releases/download/v${WEASIS_VERSION}/weasis_${WEASIS_VERSION}-1_amd64.deb" && \
+    echo "${WEASIS_SHA256}  /tmp/weasis.deb" | sha256sum -c - && \
     apt-get install -y /tmp/weasis.deb && \
     rm -f /tmp/weasis.deb && \
     rm -rf /var/lib/apt/lists/*

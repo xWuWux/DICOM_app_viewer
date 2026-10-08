@@ -35,7 +35,7 @@ def test_invalid_coordinator_key_has_stable_error_shape(client):
 
 
 def test_unknown_token_has_stable_error_shape(client):
-    resp = client.get("/case?token=this-token-was-never-minted")
+    resp = client.get("/case", headers={"X-Grading-Token": "this-token-was-never-minted"})
     _assert_error_shape(resp, 401, "AUTH_INVALID_TOKEN")
 
 
@@ -48,13 +48,13 @@ def test_expired_token_has_stable_error_shape(client, mint_token):
     finally:
         conn.close()
 
-    resp = client.get(f"/case?token={token}")
+    resp = client.get("/case", headers={"X-Grading-Token": token})
     _assert_error_shape(resp, 401, "AUTH_TOKEN_EXPIRED")
 
 
 def test_submit_stage_mismatch_has_stable_error_shape(client, mint_token):
     token = mint_token("stu_stage_mismatch")
-    case_id = client.get(f"/case?token={token}").json()["case_id"]
+    case_id = client.get("/case", headers={"X-Grading-Token": token}).json()["case_id"]
     resp = client.post(
         "/submit",
         json={"token": token, "case_id": case_id, "stage": "assessment", "category": "3", "modifier_s": False},
@@ -85,7 +85,7 @@ def test_duplicate_submission_has_stable_error_shape(client, mint_token):
     fires for the real race issue #28 guards against, reproduced here by
     inserting the "other request already won" row directly."""
     token = mint_token("stu_duplicate")
-    case_id = client.get(f"/case?token={token}").json()["case_id"]
+    case_id = client.get("/case", headers={"X-Grading-Token": token}).json()["case_id"]
 
     conn = db_module.get_connection()
     try:
@@ -111,7 +111,7 @@ def test_reset_during_test_stage_has_stable_error_shape(client, mint_token):
     token = mint_token("stu_reset_blocked")
     # Walk through learning + assessment to reach the test stage.
     for _ in range(2):
-        data = client.get(f"/case?token={token}").json()
+        data = client.get("/case", headers={"X-Grading-Token": token}).json()
         body = {"token": token, "case_id": data["case_id"], "stage": data["stage"]}
         if data["stage"] == "learning":
             body["text"] = "x"
@@ -131,7 +131,7 @@ def test_oversized_field_gives_generic_validation_error_without_echoing_input(cl
     should get a small, generic body regardless of how large the
     rejected input was."""
     token = mint_token("stu_oversized")
-    case_id = client.get(f"/case?token={token}").json()["case_id"]
+    case_id = client.get("/case", headers={"X-Grading-Token": token}).json()["case_id"]
     huge_marker = "X" * 10_001
     resp = client.post(
         "/submit",
@@ -180,6 +180,6 @@ def test_truly_unanticipated_exception_gets_generic_server_error(client, mint_to
     monkeypatch.setattr(main_module, "_get_or_create_progress", _boom)
 
     with TestClient(app, raise_server_exceptions=False) as non_raising_client:
-        resp = non_raising_client.get(f"/case?token={token}")
+        resp = non_raising_client.get("/case", headers={"X-Grading-Token": token})
     _assert_error_shape(resp, 500, "SERVER_ERROR")
     assert sensitive_detail not in resp.text

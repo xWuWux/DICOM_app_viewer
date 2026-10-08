@@ -34,7 +34,12 @@ GRADING_TOKEN="${GRADING_TOKEN:?set GRADING_TOKEN to the token minted by grading
 # parses fine in isolation but silently breaks bash's quote-matching once
 # combined with the surrounding line (confirmed the hard way — see git log).
 ENCODED_ORTHANC_URL=$(python3 -c 'import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "${ORTHANC_URL}")
-FULL_URL="${VIEWER_URL}?student_id=${STUDENT_ID}&session_id=${SESSION_ID}&orthanc_url=${ENCODED_ORTHANC_URL}&token=${GRADING_TOKEN}"
+# issue #94: the token goes in the URL FRAGMENT, not the query -- the
+# browser never transmits fragments, so it cannot land in nginx
+# access.log/error.log the way ?token= did. student/session/orthanc
+# stay in the query (not credentials; the watermark needs them readable
+# server-side-free).
+FULL_URL="${VIEWER_URL}?student_id=${STUDENT_ID}&session_id=${SESSION_ID}&orthanc_url=${ENCODED_ORTHANC_URL}#token=${GRADING_TOKEN}"
 
 # exec (not background + exit): the base image's service monitor tracks
 # this script's own PID as the "custom_startup" service and expects it to

@@ -57,16 +57,78 @@ SESSION_ID = os.environ.get("SESSION_ID", "UNKNOWN_SESSION")
 
 FONT_SIZE = 13
 ANGLE_DEG = -15
-# Wide gap on purpose -- a periodic mark, not a wall of text (tuned down
-# from an earlier 70px after a real click-through session showed ~11 rows
-# crossing a 1920x950 screen, denser than intended for a deterrence-only
-# mark -- see this file's own module docstring on that distinction).
-TILE_GAP = 260
+# Density is defined as TILES PER SCREEN, not as a fixed pixel gap (issue: image
+# flicker on mouse move). The overlay's "transparency" is an X bounding shape
+# built from the glyph pixels (no compositor exists here, see the module
+# docstring), and the X server must clip every repaint of the windows below it
+# against that shape. With a fixed 260 px gap the shape had ~4,500 rectangles
+# at 2294x830 and the DICOM view flickered whenever the mouse moved; ~1,700
+# (about 4.4 tiles on that screen) was flicker-free in a live test. The shape
+# size grows with SCREEN AREA, so a fixed gap would fix this laptop and break
+# a 4K or retina client (6,500+ rectangles at gap 500): the gap is therefore
+# derived from the actual screen so the tile count -- and with it the clip
+# complexity -- stays roughly constant at any resolution. Still "a periodic
+# mark, not a wall of text" (see the module docstring on deterrence).
+TILES_PER_SCREEN = float(os.environ.get("WATERMARK_TILES_PER_SCREEN", "4.4"))
+if not 1.0 <= TILES_PER_SCREEN <= 40.0:
+    raise SystemExit("WATERMARK_TILES_PER_SCREEN must be between 1 and 40")
+# Never denser than the pre-fix tuning, whatever the screen size.
+MIN_TILE_GAP = 260
+
+
+def tile_gap(width, height, text_w, text_h):
+    """Gap g such that (text_w + g) * (text_h + g) == screen_area / TILES_PER_SCREEN."""
+    cell_area = (width * height) / TILES_PER_SCREEN
+    b = text_w + text_h
+    disc = b * b - 4 * (text_w * text_h - cell_area)
+    gap = (-b + math.sqrt(max(disc, 0))) / 2
+    return max(int(gap), MIN_TILE_GAP)
 
 
 def watermark_text():
     ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     return f"{STUDENT_ID} | {SESSION_ID} | {ts}"
+
+
+def render_watermark(width, height, cell_w, cell_h):
+    """The watermark as an ARGB surface (module-level so the shape-complexity
+    budget test can render exactly what the overlay draws, without a window)."""
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
+    ctx = cairo.Context(surface)
+    ctx.set_operator(cairo.OPERATOR_CLEAR)
+    ctx.paint()
+    ctx.set_operator(cairo.OPERATOR_OVER)
+
+    ctx.save()
+    # Rotate around the canvas center, same -15deg the web watermark
+    # uses, then tile across an area larger than the screen so corners
+    # stay covered after rotation.
+    ctx.translate(width / 2, height / 2)
+    ctx.rotate(ANGLE_DEG * math.pi / 180)
+    ctx.translate(-width / 2, -height / 2)
+
+    text = watermark_text()
+    ctx.select_font_face("monospace", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+    ctx.set_font_size(FONT_SIZE)
+
+    span = int(max(width, height) * 1.6)
+    start = -span // 2
+    y = start
+    while y < span:
+        x = start
+        while x < span:
+            ctx.move_to(x, y)
+            ctx.text_path(text)
+            ctx.set_source_rgba(0, 0, 0, 0.9)
+            ctx.set_line_width(2.2)
+            ctx.stroke_preserve()
+            ctx.set_source_rgba(1, 1, 1, 0.85)
+            ctx.fill()
+            x += cell_w
+        y += cell_h
+    ctx.restore()
+
+    return surface
 
 
 class Overlay(Gtk.Window):
@@ -112,8 +174,9 @@ class Overlay(Gtk.Window):
         probe_ctx.set_font_size(FONT_SIZE)
         probe_text = f"{STUDENT_ID} | {SESSION_ID} | 0000-00-00T00:00:00Z"
         extents = probe_ctx.text_extents(probe_text)
-        self.cell_w = int(extents.width) + TILE_GAP
-        self.cell_h = int(extents.height) + TILE_GAP
+        self.text_w = int(extents.width)
+        self.text_h = int(extents.height)
+        self.update_cells()
 
         self.connect("draw", self.on_draw)
         self.show_all()
@@ -125,6 +188,11 @@ class Overlay(Gtk.Window):
 
         GLib.timeout_add(1000, self.tick)
 
+    def update_cells(self):
+        gap = tile_gap(self.width, self.height, self.text_w, self.text_h)
+        self.cell_w = self.text_w + gap
+        self.cell_h = self.text_h + gap
+
     def tick(self):
         self.queue_draw()
         return True
@@ -134,43 +202,11 @@ class Overlay(Gtk.Window):
         self.height = screen.get_height()
         self.resize(self.width, self.height)
         self.move(0, 0)
+        self.update_cells()
         self.queue_draw()
 
     def on_draw(self, widget, cr):
-        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, self.width, self.height)
-        ctx = cairo.Context(surface)
-        ctx.set_operator(cairo.OPERATOR_CLEAR)
-        ctx.paint()
-        ctx.set_operator(cairo.OPERATOR_OVER)
-
-        ctx.save()
-        # Rotate around the canvas center, same -15deg the web watermark
-        # uses, then tile across an area larger than the screen so corners
-        # stay covered after rotation.
-        ctx.translate(self.width / 2, self.height / 2)
-        ctx.rotate(ANGLE_DEG * math.pi / 180)
-        ctx.translate(-self.width / 2, -self.height / 2)
-
-        text = watermark_text()
-        ctx.select_font_face("monospace", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
-        ctx.set_font_size(FONT_SIZE)
-
-        span = int(max(self.width, self.height) * 1.6)
-        start = -span // 2
-        y = start
-        while y < span:
-            x = start
-            while x < span:
-                ctx.move_to(x, y)
-                ctx.text_path(text)
-                ctx.set_source_rgba(0, 0, 0, 0.9)
-                ctx.set_line_width(2.2)
-                ctx.stroke_preserve()
-                ctx.set_source_rgba(1, 1, 1, 0.85)
-                ctx.fill()
-                x += self.cell_w
-            y += self.cell_h
-        ctx.restore()
+        surface = render_watermark(self.width, self.height, self.cell_w, self.cell_h)
 
         cr.set_source_surface(surface, 0, 0)
         cr.set_operator(cairo.OPERATOR_SOURCE)
