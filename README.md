@@ -458,15 +458,21 @@ What's confirmed working in this image, in the order it was built:
   could never cover) tiled with `STUDENT_ID | SESSION_ID | timestamp` text,
   paired with `watchdog.sh` so killing it just gets it relaunched within
   about a second. Verified for real, not just assumed:
-  - **Density is per screen, not per pixel (flicker fix)**: the glyph-pixel
-    shape is clipped against on every Weasis repaint, and a fixed 260 px
-    gap made it ~4,500 rectangles at 2294x830 -- the DICOM view flickered
-    whenever the mouse moved (found by manual testing in a live Kasm
-    session; overlay off = no flicker). The tile gap is now derived from the
-    screen so the tile count (`WATERMARK_TILES_PER_SCREEN`, default 4.4) and
-    the shape (~1,600-2,500 rectangles from 1366x768 to 4K) stay roughly
-    constant; `./scripts/test-overlay-shape.sh` enforces the budget in CI.
-    Fewer, larger-spaced marks per screen is a deliberate trade-off.
+  - **Compositor + adaptive density (flicker fix, issue #150)**: the first
+    overlay was made "transparent" by an X bounding shape built from the glyph
+    pixels, re-cut every second. It made the DICOM view flash whenever the
+    mouse moved (found by manual testing in a live Kasm session; overlay off =
+    no flicker). Measured in live sessions: 7 flashes / 3 min with the shape,
+    3 with a 15 s refresh, **0 with picom** (a ~0.5 MB package, started by
+    `custom_startup.sh`, config `picom.conf`: no effects, it only makes the
+    ARGB overlay genuinely transparent). If picom is not running the overlay
+    falls back to the shape (an ARGB window with no compositor is an opaque
+    black rectangle) and keeps it small with a density defined per screen:
+    `WATERMARK_TILES_PER_SCREEN` (default **3**, owner decision), so the shape
+    stays ~1,000-1,200 rectangles from 1366x768 to 4K;
+    `./scripts/test-overlay-shape.sh` (budget) and
+    `./scripts/test-overlay-compositor.sh` (real X server: alpha mode, then
+    picom killed -> fallback, pixel-checked) enforce both in CI.
   - **True transparency without a compositor**: no compositor (e.g.
     `picom`) runs in this XFCE/KasmVNC session by default, so this uses
     the X Shape extension instead (`Gdk.Window.shape_combine_region()`)

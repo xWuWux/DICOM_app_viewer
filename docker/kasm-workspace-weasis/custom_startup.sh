@@ -137,6 +137,20 @@ PYEOF
 # whole container on logout regardless (ephemeral, zero persistence, see
 # CLAUDE.md), there's no risk of this outliving the session even though
 # Weasis, not this, is the process Kasm's own service monitor tracks.
+# Compositor for the watermark overlay (issue #150). With picom running the
+# overlay is a genuinely transparent window; without it overlay.py falls back to
+# its glyph-shaped window (which flashed the DICOM view), so a picom that dies is
+# restarted but never fatal. Skipped when picom is not installed (BATS stubs, the
+# legacy Chrome image). PICOM_CONF is a test-only seam.
+if command -v picom >/dev/null 2>&1; then
+    (
+        while true; do
+            picom --config "${PICOM_CONF:-/opt/watermark/picom.conf}" >>/tmp/picom.log 2>&1
+            sleep 5
+        done
+    ) >/dev/null 2>&1 3>&- &
+fi
+
 STUDENT_ID="$STUDENT_ID" SESSION_ID="$SESSION_ID" /opt/watermark/watchdog.sh &
 
 # The grading panel (issue #5's page, never actually displayed in this

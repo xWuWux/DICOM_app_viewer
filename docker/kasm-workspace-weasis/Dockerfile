@@ -70,13 +70,21 @@ ENV ORTHANC_URL="http://${REMOTE_HOST}:8043/"
 # of something else (confirmed via `apt-cache policy` before assuming an
 # extra package was needed) -- only the GObject-Introspection bindings
 # package is actually missing.
+#
+# picom (issue #150): a small standalone compositor, so the watermark overlay
+# can be a genuinely transparent ARGB window instead of a window cut into a
+# ~1,700-rectangle X shape that made the DICOM view flash on every re-cut.
+# Measured in live sessions: 7 flashes/3 min (shape, 1 s), 3 (shape, 15 s),
+# 0 (picom). ~0.5 MB package, one extra process per session. xfwm4's own
+# compositor does not work on this KasmVNC X server; picom does.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       python3-gi-cairo \
-      gir1.2-webkit2-4.1 && \
+      gir1.2-webkit2-4.1 \
+      picom && \
     rm -rf /var/lib/apt/lists/*
 
-COPY overlay.py watchdog.sh /opt/watermark/
+COPY overlay.py watchdog.sh picom.conf /opt/watermark/
 RUN chmod +x /opt/watermark/watchdog.sh
 
 COPY grading_panel_window.py arrange_windows.sh /opt/grading-panel/

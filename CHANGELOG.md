@@ -31,12 +31,23 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   panel if it is closed (never during the startup race), and (e) relaunches a closed
   Weasis on the same study, at most 5 times and never within 20 s of the last relaunch.
   The panel window has a fixed width. Found by manual testing in a live Kasm session.
-- **Watermark overlay: adaptive tile density (flicker fix).** `overlay.py` derives the
-  tile gap from the screen (`WATERMARK_TILES_PER_SCREEN`, default 4.4; was a fixed
-  260 px gap), keeping the X bounding shape at ~1.6-2.5k rectangles at any
-  resolution instead of 4.5k+ (6.5k at 4K with a fixed gap). Fixes the DICOM view
-  flickering on mouse movement. Visible effect: fewer, wider-spaced marks.
-  New `scripts/test-overlay-shape.sh` + CI job `overlay-shape-test` guard the budget.
+- **Watermark overlay: picom compositor + adaptive density (flicker fix, issue #150).**
+  The Weasis workspace image now installs `picom` and `custom_startup.sh` runs it
+  (supervised); `overlay.py` is a genuinely transparent ARGB window when a compositor
+  is active and falls back to the glyph shape (adaptive tile gap, default 3 tiles per
+  screen via `WATERMARK_TILES_PER_SCREEN`) when it is not, so a dead picom never turns
+  the viewer black. Measured flashes per 3 min in live sessions: 7 (shape, 1 s refresh),
+  3 (shape, 15 s), 0 (picom). Visible effect: fewer, wider-spaced marks (was 8+).
+  New `scripts/test-overlay-shape.sh` and `scripts/test-overlay-compositor.sh` + CI jobs
+  `overlay-shape-test` / `overlay-compositor-test`.
+
+- **Watermark watchdog: backoff ceiling lowered 60s -> 5s** (issue #156).
+  The #148 exponential backoff let a student who repeatedly kills the
+  overlay earn up to a minute without the mandatory forensic watermark.
+  The shipped default of `WATCHDOG_BACKOFF_MAX` is now 5s (still tunable
+  via env); crash-loop suppression and log rotation are unchanged. A BATS
+  test reads the default out of the script itself, so raising it again
+  fails CI instead of silently regressing the control.
 
 ### Breaking (client contract)
 - **Session tokens no longer travel in URLs** (issue #94). `GET /case`

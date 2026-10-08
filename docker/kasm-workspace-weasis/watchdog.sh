@@ -24,7 +24,8 @@
 # container's disk -- grew in /tmp forever. Now: the FIRST relaunch after a
 # death still happens in 1s (the deterrence promise above is unchanged for
 # a one-off kill), consecutive fast crashes back off exponentially up to a
-# ceiling, an overlay that survives a while resets the backoff, the log is
+# ceiling (default 5s on purpose -- see WATCHDOG_BACKOFF_MAX below), an
+# overlay that survives a while resets the backoff, the log is
 # rotated past a size cap, and every line carries the cumulative restart
 # count -- the "background worker telemetry" the audit asked this script to
 # provide (it is the only log a supervisor produces; keeping it bounded and
@@ -40,7 +41,12 @@ OVERLAY_SCRIPT="${OVERLAY_SCRIPT:-/opt/watermark/overlay.py}"
 WATCHDOG_LOG="${WATCHDOG_LOG:-/tmp/watermark-overlay.log}"
 WATCHDOG_LOG_MAX_BYTES="${WATCHDOG_LOG_MAX_BYTES:-1048576}"
 WATCHDOG_LOG_KEEP_LINES="${WATCHDOG_LOG_KEEP_LINES:-2000}"
-WATCHDOG_BACKOFF_MAX="${WATCHDOG_BACKOFF_MAX:-60}"
+# Ceiling capped at 5s, not 60s: the watermark is a mandatory control
+# (CLAUDE.md), so raising a student's restart-free window towards a minute
+# in exchange for fewer log lines was the wrong trade (issue #156 review).
+# Crash-loop is still suppressed -- the loop just never waits longer than
+# ~5s between relaunches.
+WATCHDOG_BACKOFF_MAX="${WATCHDOG_BACKOFF_MAX:-5}"
 WATCHDOG_STABLE_RESET_SECONDS="${WATCHDOG_STABLE_RESET_SECONDS:-60}"
 
 rotate_log() {
