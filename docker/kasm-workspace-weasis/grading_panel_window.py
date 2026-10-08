@@ -136,6 +136,15 @@ def on_decide_policy(_webview, decision, decision_type):
 def main():
     win = Gtk.Window(title="IP_CMC Grading Panel")
     win.set_default_size(PANEL_WIDTH, 900)
+    # Fixed width (issue #151): dragging the panel's edge made the whole screen
+    # flash in a live test, and the width is owned by arrange_windows.sh anyway.
+    # Height stays free (it follows the browser viewport). Best effort: the WM
+    # may ignore size hints, in which case the loop snaps the window back.
+    hints = Gdk.Geometry()
+    hints.min_width = hints.max_width = PANEL_WIDTH
+    hints.min_height = 200
+    hints.max_height = 32767
+    win.set_geometry_hints(None, hints, Gdk.WindowHints.MIN_SIZE | Gdk.WindowHints.MAX_SIZE)
     screen = win.get_screen()
     win.move(screen.get_width() - PANEL_WIDTH, 0)
     win.connect("destroy", Gtk.main_quit)

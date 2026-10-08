@@ -575,6 +575,15 @@ assumed:
     maximized window — a "successful" (exit-0) `wmctrl -r ... -e ...`
     call had zero visible effect until the maximized state was explicitly
     removed first.
+  - **Frames count (issue #151).** `wmctrl -e` takes the window FRAME's
+    top-left but the CLIENT's size, and xfwm4 puts a 29 px title bar and
+    5 px borders around each window. Giving each window "the full screen
+    height" pushed Weasis' lower edge 34 px off screen and made the two
+    windows overlap by their side borders; the script now subtracts each
+    window's own `_NET_FRAME_EXTENTS`. The same loop keeps the kiosk
+    intact: minimised windows are restored (no taskbar exists, Alt+F9
+    hid both for good), a closed grading panel or Weasis is relaunched
+    (rate-limited), and the title-bar minimise/maximise buttons are gone.
   - An *earlier, one-shot* version of this script measured the screen
     size once at startup — but KasmVNC starts at a fixed default geometry
     and only resizes to the client's real browser-viewport size *after* a

@@ -168,7 +168,13 @@ VIEWER_URL="$VIEWER_URL" GRADING_TOKEN="$GRADING_TOKEN" STUDENT_ID="$STUDENT_ID"
 # panel is even visible -- confirmed via a real click-through test. See
 # arrange_windows.sh's own header comment for why this is a one-shot
 # script, not a persistent watchdog.
-GRADING_PANEL_WIDTH="$GRADING_PANEL_WIDTH" /opt/grading-panel/arrange_windows.sh &
+# Same environment as the panel above: arrange_windows.sh relaunches the panel
+# if the student closes it, and Weasis (same binary + study URI as the exec at
+# the bottom of this file) if it exits (issue #151).
+WEASIS_BIN="${WEASIS_BIN:-/opt/weasis/bin/Weasis}"
+VIEWER_URL="$VIEWER_URL" GRADING_TOKEN="$GRADING_TOKEN" STUDENT_ID="$STUDENT_ID" SESSION_ID="$SESSION_ID" \
+    ARRANGE_WEASIS_BIN="$WEASIS_BIN" ARRANGE_WEASIS_URI="$WEASIS_URI" \
+    GRADING_PANEL_WIDTH="$GRADING_PANEL_WIDTH" /opt/grading-panel/arrange_windows.sh &
 
 # exec (not background + exit): same reasoning as
 # docker/kasm-workspace/custom_startup.sh -- the base image's service
