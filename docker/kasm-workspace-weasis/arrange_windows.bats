@@ -105,7 +105,17 @@ EOF
 }
 
 @test "a window that vanishes for a single pass is not treated as closed" {
-  ( sleep 0.3; sed -i '/Grading Panel/d' "$WINDOWS_FILE"; sleep 0.25; echo '0x00800001  0 host IP_CMC Grading Panel' >> "$WINDOWS_FILE" ) &
+  # Timing geometry is the whole test. A relaunch needs TWO CONSECUTIVE misses
+  # and passes are >= ARRANGE_POLL_INTERVAL_S apart, so the absence window
+  # must reliably cover exactly ONE pass. The old shape (0.25 s window racing
+  # a 0.2 s interval) was flaky by construction: under CI load the subshell's
+  # sleeps drifted and two consecutive passes could both see the gap (CI runs
+  # 37774983212 / 37772985998: same SHA, push-run green, PR-run red).
+  # New shape: 0.5 s interval, absence window [0.40, 0.55] centred on the
+  # second pass (~0.5 s) -- straddling two passes would need >3x sleep drift,
+  # and a window placed BETWEEN checks would test nothing at all.
+  ( sleep 0.4; sed -i '/Grading Panel/d' "$WINDOWS_FILE"; sleep 0.15; echo '0x00800001  0 host IP_CMC Grading Panel' >> "$WINDOWS_FILE" ) &
+  export ARRANGE_POLL_INTERVAL_S="0.5"
   export ARRANGE_MAX_ITERATIONS="10"
   run timeout 30s bash "$SCRIPT"
   [ "$status" -eq 0 ]
