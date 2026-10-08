@@ -23,14 +23,15 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
-- **Watermark overlay: adaptive tile density (flicker fix).** `overlay.py` derives the
-  tile gap from the screen (`WATERMARK_TILES_PER_SCREEN`, default 4.4; was a fixed
-  260 px gap), keeping the X bounding shape at ~1.6-2.5k rectangles at any
-  resolution instead of 4.5k+ (6.5k at 4K with a fixed gap). Fixes the DICOM view
-  flickering on mouse movement. Visible effect: fewer, wider-spaced marks.
-  New `scripts/test-overlay-shape.sh` + CI job `overlay-shape-test` guard the budget.
-
-### Breaking (client contract)
+- **Watermark overlay: picom compositor + adaptive density (flicker fix, issue #150).**
+  The Weasis workspace image now installs `picom` and `custom_startup.sh` runs it
+  (supervised); `overlay.py` is a genuinely transparent ARGB window when a compositor
+  is active and falls back to the glyph shape (adaptive tile gap, default 3 tiles per
+  screen via `WATERMARK_TILES_PER_SCREEN`) when it is not, so a dead picom never turns
+  the viewer black. Measured flashes per 3 min in live sessions: 7 (shape, 1 s refresh),
+  3 (shape, 15 s), 0 (picom). Visible effect: fewer, wider-spaced marks (was 8+).
+  New `scripts/test-overlay-shape.sh` and `scripts/test-overlay-compositor.sh` + CI jobs
+  `overlay-shape-test` / `overlay-compositor-test`.
 - **Session tokens no longer travel in URLs** (issue #94). `GET /case`
   and `GET /results` authenticate via the `X-Grading-Token` header; the
   viewer pages read the token from the URL `#token=` fragment and strip

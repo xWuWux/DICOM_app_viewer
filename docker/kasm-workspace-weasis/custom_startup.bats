@@ -166,3 +166,20 @@ print(' '.join(urllib.parse.unquote(p) for p in uri.split('+')))
   # nothing may have been launched with a rejected token
   [ ! -s "$WEASIS_ARGS_FILE" ]
 }
+
+@test "issue #150: picom is started with the watermark compositor config when installed" {
+  printf '#!/usr/bin/env bash\necho "$@" >> "%s"\nexec sleep 30\n' "$BATS_TEST_TMPDIR/picom-args.txt" > "$STUB_DIR/picom"
+  chmod +x "$STUB_DIR/picom"
+  export PICOM_CONF="$BATS_TEST_TMPDIR/picom.conf"
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  for _ in $(seq 1 20); do [ -s "$BATS_TEST_TMPDIR/picom-args.txt" ] && break; sleep 0.1; done
+  grep -q -- "--config $BATS_TEST_TMPDIR/picom.conf" "$BATS_TEST_TMPDIR/picom-args.txt"
+  pkill -f "$STUB_DIR/picom" || true
+}
+
+@test "issue #150: a missing picom is skipped, not fatal" {
+  rm -f "$STUB_DIR/picom"
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+}
