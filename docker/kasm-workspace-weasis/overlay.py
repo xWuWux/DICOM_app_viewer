@@ -9,7 +9,10 @@ DOM watermark, needed here because Weasis is a separate native window that
 a browser-page watermark can never cover.
 
 How this actually works, verified empirically (not assumed from docs):
-- No compositor (e.g. picom) runs in this XFCE/KasmVNC session by default,
+- (Since issue #150 picom runs in the session and the overlay is a real ARGB
+  window with no bounding shape; the shape below is only the FALLBACK when no
+  compositor is active, e.g. picom died -- see on_draw.) Original reasoning:
+  No compositor (e.g. picom) runs in this XFCE/KasmVNC session by default,
   so CSS-style mix-blend-mode:difference has no real X11 equivalent here
   -- that trick only works within one browser's own single rendering
   pipeline, not across independently-rendered X11 windows. The practical
@@ -63,13 +66,14 @@ ANGLE_DEG = -15
 # docstring), and the X server must clip every repaint of the windows below it
 # against that shape. With a fixed 260 px gap the shape had ~4,500 rectangles
 # at 2294x830 and the DICOM view flickered whenever the mouse moved; ~1,700
-# (about 4.4 tiles on that screen) was flicker-free in a live test. The shape
+# (about 4.4 tiles on that screen) was flicker-free in a live test; the owner
+# then chose 3 tiles per screen as the deterrent density (2026-10-08). The shape
 # size grows with SCREEN AREA, so a fixed gap would fix this laptop and break
 # a 4K or retina client (6,500+ rectangles at gap 500): the gap is therefore
 # derived from the actual screen so the tile count -- and with it the clip
 # complexity -- stays roughly constant at any resolution. Still "a periodic
 # mark, not a wall of text" (see the module docstring on deterrence).
-TILES_PER_SCREEN = float(os.environ.get("WATERMARK_TILES_PER_SCREEN", "4.4"))
+TILES_PER_SCREEN = float(os.environ.get("WATERMARK_TILES_PER_SCREEN", "3"))
 if not 1.0 <= TILES_PER_SCREEN <= 40.0:
     raise SystemExit("WATERMARK_TILES_PER_SCREEN must be between 1 and 40")
 # Never denser than the pre-fix tuning, whatever the screen size.
@@ -159,6 +163,9 @@ class Overlay(Gtk.Window):
         # (confirmed via GDK's own screen API), so re-measure and redraw
         # instead of trusting the one-time reading above.
         screen.connect("size-changed", self.on_screen_resized)
+        # picom starting late, or dying, flips the mode on the next redraw.
+        self._shaped = False
+        screen.connect("composited-changed", lambda _screen: self.queue_draw())
 
         # Tile spacing is derived from the actual rendered width of a
         # representative string, not guessed -- a fixed guess that's
@@ -213,8 +220,22 @@ class Overlay(Gtk.Window):
         cr.paint()
 
         gdk_window = self.get_window()
-        region = Gdk.cairo_region_create_from_surface(surface)
-        gdk_window.shape_combine_region(region, 0, 0)
+        if self.get_screen().is_composited():
+            # A compositor (picom, started by custom_startup.sh) owns the screen:
+            # the ARGB window is genuinely transparent, so NO bounding shape is
+            # needed -- and none is applied, which is the point: re-cutting a
+            # shape each second made the DICOM view flash (issue #150, owner
+            # tests 2026-10-08: 7 -> 3 -> 0 flashes as the shape went away).
+            if self._shaped:
+                gdk_window.shape_combine_region(None, 0, 0)
+                self._shaped = False
+        else:
+            # No compositor: an ARGB window would render as an opaque black
+            # rectangle covering Weasis (seen live), so fall back to the
+            # glyph-pixel bounding shape (adaptive density keeps it small).
+            region = Gdk.cairo_region_create_from_surface(surface)
+            gdk_window.shape_combine_region(region, 0, 0)
+            self._shaped = True
         gdk_window.input_shape_combine_region(cairo.Region(), 0, 0)
         return False
 
