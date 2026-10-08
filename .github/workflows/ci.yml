@@ -16,7 +16,8 @@ name: CI
 # Every script here (scripts/lint.sh, build-test.sh, security-scan.sh,
 # test-grading-api.sh, test-shell-scripts.sh, smoke-test.sh,
 # test-guacamole-integration.sh, test-visual-regression.sh,
-# test-copy-lockdown.sh, test-log-leak.sh, test-overlay-shape.sh) is runnable identically on a
+# test-copy-lockdown.sh, test-log-leak.sh, test-overlay-shape.sh,
+# test-overlay-compositor.sh) is runnable identically on a
 # local machine -- this
 # file only handles installing each stage's prerequisites, never
 # duplicates the check logic itself.
@@ -175,6 +176,14 @@ jobs:
       - name: Watermark overlay shape-complexity budget (flicker regression guard)
         run: ./scripts/test-overlay-shape.sh
 
+  overlay-compositor-test:
+    runs-on: ubuntu-latest
+    needs: [unit-test, shell-test, provision-guacamole-session-test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Watermark overlay modes on a real X server (picom alpha / shape fallback, issue #150)
+        run: ./scripts/test-overlay-compositor.sh
+
   # ---- Success ----
   # issue #124: this job is the single status a reviewer looks at, so it must
   # depend on EVERY job and accept ONLY "success". The previous version listed
@@ -200,6 +209,7 @@ jobs:
       - copy-lockdown-test
       - log-leak-test
       - overlay-shape-test
+      - overlay-compositor-test
     if: always()
     steps:
       - uses: actions/checkout@v4
