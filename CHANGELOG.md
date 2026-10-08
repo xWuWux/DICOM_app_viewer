@@ -88,6 +88,14 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   explicit (`1.0.0`) instead of FastAPI's stock default (issue #100).
 
 ### Fixed
+- The watermark-overlay watchdog no longer grows `/tmp/watermark-overlay.log`
+  without bound or relaunches a crash-looping overlay once per second
+  forever (issue #66, DoD P91). First relaunch after a death is still 1 s
+  (the deterrence promise unchanged); consecutive fast crashes back off
+  1s → 2s → 4s … up to 60 s, an overlay that stays up resets the cadence,
+  the log rotates past 1 MB keeping its tail, and every line carries the
+  cumulative restart count. All knobs are the same test-seam convention as
+  `OVERLAY_SCRIPT`/`WATCHDOG_LOG`; production sets none of them.
 - A failed `scripts/create-session.py` run no longer leaves a live grading token
   behind (issue #104). The token has to be minted before `request_kasm` — its
   value is injected into that container's environment by that very call — so any
