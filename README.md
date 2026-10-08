@@ -458,6 +458,15 @@ What's confirmed working in this image, in the order it was built:
   could never cover) tiled with `STUDENT_ID | SESSION_ID | timestamp` text,
   paired with `watchdog.sh` so killing it just gets it relaunched within
   about a second. Verified for real, not just assumed:
+  - **Density is per screen, not per pixel (flicker fix)**: the glyph-pixel
+    shape is clipped against on every Weasis repaint, and a fixed 260 px
+    gap made it ~4,500 rectangles at 2294x830 -- the DICOM view flickered
+    whenever the mouse moved (found by manual testing in a live Kasm
+    session; overlay off = no flicker). The tile gap is now derived from the
+    screen so the tile count (`WATERMARK_TILES_PER_SCREEN`, default 4.4) and
+    the shape (~1,600-2,500 rectangles from 1366x768 to 4K) stay roughly
+    constant; `./scripts/test-overlay-shape.sh` enforces the budget in CI.
+    Fewer, larger-spaced marks per screen is a deliberate trade-off.
   - **True transparency without a compositor**: no compositor (e.g.
     `picom`) runs in this XFCE/KasmVNC session by default, so this uses
     the X Shape extension instead (`Gdk.Window.shape_combine_region()`)
