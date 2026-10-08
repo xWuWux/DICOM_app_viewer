@@ -193,9 +193,6 @@ jobs:
   # accepted state here: every job is unconditional in this workflow, so a skip
   # can only mean an ancestor failed or was cancelled. The logic lives in
   # scripts/ci-gate.py (unit-tested by scripts/ci-gate.bats, runnable locally).
-  # Since issue #135 the gate ALSO compares this `needs` list against the job ids
-  # declared in this file and exits 2 on drift (missing or stale entries), so a
-  # forgotten job here fails ci-success instead of silently green-lighting it.
   # When adding a job to this workflow, add it to `needs` below.
   ci-success:
     runs-on: ubuntu-latest
