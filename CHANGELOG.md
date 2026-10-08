@@ -32,6 +32,8 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   3 (shape, 15 s), 0 (picom). Visible effect: fewer, wider-spaced marks (was 8+).
   New `scripts/test-overlay-shape.sh` and `scripts/test-overlay-compositor.sh` + CI jobs
   `overlay-shape-test` / `overlay-compositor-test`.
+
+### Breaking (client contract)
 - **Session tokens no longer travel in URLs** (issue #94). `GET /case`
   and `GET /results` authenticate via the `X-Grading-Token` header; the
   viewer pages read the token from the URL `#token=` fragment and strip
