@@ -23,6 +23,13 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Real study data, local only (issue #87).** `GRADING_CASES_FILE` seeds the cases from a local
+  git-ignored JSON (answer key, reports, study UIDs never reach the public repo); new
+  `scripts/build-cases-file.py` (spreadsheet + DICOM headers -> cases file), `scripts/load-local-studies.sh`
+  (parallel, retrying, counts-only Orthanc loader with `--skip-list`) and
+  `scripts/dicom-patient-consistency.py` (detects/repairs, as copies, studies whose images carry
+  more than one PatientID, which Orthanc would split into duplicated series). `./local/` is mounted
+  read-only into grading-api; `local/*` and the data folders are git-ignored.
 - **Watermark overlay: picom compositor + adaptive density (flicker fix, issue #150).**
   The Weasis workspace image now installs `picom` and `custom_startup.sh` runs it
   (supervised); `overlay.py` is a genuinely transparent ARGB window when a compositor

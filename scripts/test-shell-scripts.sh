@@ -19,5 +19,6 @@ bats \
   docker/kasm-workspace-weasis/custom_startup.bats \
   docker/kasm-workspace-weasis/watchdog.bats \
   docker/guacamole-weasis/launch-session.bats \
+  scripts/load-local-studies.bats \
   scripts/ci-gate.bats \
   "$@"
