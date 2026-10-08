@@ -23,6 +23,14 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Kiosk window-keeping for the Weasis workspace (issue #151).** `arrange_windows.sh` now
+  (a) sizes both windows by their OUTER frame (they used to overflow the screen by the
+  title-bar height and overlap by the side borders), (b) removes the title-bar
+  minimise/maximise/shade buttons, (c) restores a minimised window on the next pass (there
+  is no taskbar; Alt+F9 used to hide both windows for good), (d) relaunches the grading
+  panel if it is closed (never during the startup race), and (e) relaunches a closed
+  Weasis on the same study, at most 5 times and never within 20 s of the last relaunch.
+  The panel window has a fixed width. Found by manual testing in a live Kasm session.
 - **Watermark overlay: adaptive tile density (flicker fix).** `overlay.py` derives the
   tile gap from the screen (`WATERMARK_TILES_PER_SCREEN`, default 4.4; was a fixed
   260 px gap), keeping the X bounding shape at ~1.6-2.5k rectangles at any
