@@ -241,6 +241,37 @@ def test_connection_failure_to_kasm_revokes_too(env, monkeypatch):
     assert kasm.called("/api/session/revoke") == [{"token": FAKE_TOKEN}]
 
 
+def test_kasm_failures_name_the_kasm_api(env, monkeypatch, capsys):
+    """nit 1 from PR #134's review: when api_call grew a `label`, its default
+    became the generic "API" and the Kasm call sites never passed one, so the
+    operator-facing line degraded from "Kasm API error ..." to "API error ...
+    -- naming the service is what makes a two-service script diagnosable."""
+    exit_code = _run(monkeypatch, _Kasm(kasm_mode="http_error"))
+    message = str(getattr(exit_code, "code", exit_code))
+    assert "Kasm API" in message, f"the failing service is not named: {message!r}"
+    assert "/api/public/request_kasm" in message
+
+
+def test_readiness_poll_failures_name_the_kasm_api(env, monkeypatch, capsys):
+    """Same label on the non-fatal path, where the line is printed instead of
+    raised -- it is the only trace a partially-failed run leaves behind."""
+    assert _run(monkeypatch, _Kasm(status_mode="http_error")) is None
+    err = capsys.readouterr().err
+    assert "Kasm API" in err, f"the failing service is not named: {err!r}"
+    assert "/api/public/get_kasm_status" in err
+
+
+def test_api_call_will_not_run_without_a_label(monkeypatch):
+    """Pins the structural half of nit 1: `label` has no default and is
+    keyword-only, so a call site added later cannot quietly inherit a generic
+    service name the way the two Kasm sites did."""
+    import inspect
+
+    param = inspect.signature(create_session.api_call).parameters["label"]
+    assert param.default is inspect.Parameter.empty, "label grew a default again"
+    assert param.kind is inspect.Parameter.KEYWORD_ONLY
+
+
 @pytest.mark.parametrize("kasm_mode", ["read_timeout", "conn_reset", "ssl_error", "non_json_200"])
 def test_raw_socket_and_json_failures_are_clean_and_still_revoke(env, monkeypatch, capsys, kasm_mode):
     """CR should-fix on PR #134: api_call only mapped HTTPError/URLError, so a
