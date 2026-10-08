@@ -23,6 +23,13 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Watermark overlay: adaptive tile density (flicker fix).** `overlay.py` derives the
+  tile gap from the screen (`WATERMARK_TILES_PER_SCREEN`, default 4.4; was a fixed
+  260 px gap), keeping the X bounding shape at ~1.6-2.5k rectangles at any
+  resolution instead of 4.5k+ (6.5k at 4K with a fixed gap). Fixes the DICOM view
+  flickering on mouse movement. Visible effect: fewer, wider-spaced marks.
+  New `scripts/test-overlay-shape.sh` + CI job `overlay-shape-test` guard the budget.
+
 ### Breaking (client contract)
 - **Session tokens no longer travel in URLs** (issue #94). `GET /case`
   and `GET /results` authenticate via the `X-Grading-Token` header; the
