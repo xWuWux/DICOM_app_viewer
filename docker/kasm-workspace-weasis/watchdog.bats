@@ -103,8 +103,9 @@ EOF
   export WATCHDOG_LOG_MAX_BYTES=200
   export WATCHDOG_LOG_KEEP_LINES=3
   # ceiling 1 keeps the ~1s cadence so the loop actually iterates several
-  # times inside the timeout (the default 60s ceiling would sleep past it
-  # after the first crash and never test the growth path).
+  # times inside the timeout (any escalating ceiling -- the shipped 5s
+  # default included -- would sleep past this short timeout after a few
+  # crashes and never exercise the log-growth path).
   export WATCHDOG_BACKOFF_MAX=1
   timeout 3s bash "$SCRIPT" || true
   # Invariant: at any moment size <= cap + rotation-marker + one
@@ -129,4 +130,24 @@ EOF
   awk '/1 restart\(s\) total/ { one = NR }
        /2 restart\(s\) total/ { two = NR }
        END { exit !(one && two && one < two) }' "$WATCHDOG_LOG"
+}
+
+# ---- issue #156: the backoff ceiling must not eat the watermark budget ----
+
+@test "default backoff ceiling keeps the watermark gap under a few seconds" {
+  # Deliberately NO WATCHDOG_BACKOFF_MAX override: this test guards the
+  # SHIPPED default. The bound is read out of the script under test, so
+  # raising the default later breaks this test on purpose instead of
+  # silently contradicting a hardcoded 5 here.
+  default_max=$(grep -oE 'WATCHDOG_BACKOFF_MAX:-[0-9]+' "$SCRIPT" | grep -oE '[0-9]+$')
+  [ "$default_max" -ge 2 ]  # still a real backoff, not a revert to flat 1s
+  [ "$default_max" -le 5 ]  # the #156 review budget: <=5s per gap
+  # Crash-loop stub with shipped defaults: sleeps 1s,2s,4s,5s... -> all of
+  # 1/2/4 land inside 9s. Any "relaunching in 6s..99s" line would mean the
+  # ceiling was ignored (a student then owns a minute-scale watermark hole).
+  timeout 9s bash "$SCRIPT" || true
+  grep -q "relaunching in 1s" "$WATCHDOG_LOG"
+  grep -q "relaunching in 2s" "$WATCHDOG_LOG"
+  grep -q "relaunching in 4s" "$WATCHDOG_LOG"
+  ! grep -qE "relaunching in ([6-9]|[1-9][0-9])s" "$WATCHDOG_LOG"
 }

@@ -30,6 +30,14 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   flickering on mouse movement. Visible effect: fewer, wider-spaced marks.
   New `scripts/test-overlay-shape.sh` + CI job `overlay-shape-test` guard the budget.
 
+- **Watermark watchdog: backoff ceiling lowered 60s -> 5s** (issue #156).
+  The #148 exponential backoff let a student who repeatedly kills the
+  overlay earn up to a minute without the mandatory forensic watermark.
+  The shipped default of `WATCHDOG_BACKOFF_MAX` is now 5s (still tunable
+  via env); crash-loop suppression and log rotation are unchanged. A BATS
+  test reads the default out of the script itself, so raising it again
+  fails CI instead of silently regressing the control.
+
 ### Breaking (client contract)
 - **Session tokens no longer travel in URLs** (issue #94). `GET /case`
   and `GET /results` authenticate via the `X-Grading-Token` header; the
