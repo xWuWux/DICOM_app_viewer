@@ -984,13 +984,16 @@ in CI.
   for `scripts/provision-guacamole-session.py` (3 tests), `subprocess.run`
   and `urllib.request.urlopen` both mocked, no Docker/real Guacamole
   needed. pytest's discovery from that directory also runs
-  `scripts/tests/test_create_session.py` (issue #104, 43 tests): every
+  `scripts/tests/test_create_session.py` (issue #104, 46 tests): every
   failure path between minting a grading token and Kasm answering has to
   revoke it, the one path where revoking would be wrong (Kasm already
   answered, so the token is a live session's credential) has to leave it
   alone, no failure message may contain the token itself, and every request
   has to leave on a verifying context (`--insecure` only when typed, private
-  CA appended via `--ca-bundle`, SIGTERM/SIGHUP compensating like Ctrl-C).
+  CA appended via `--ca-bundle`, SIGTERM/SIGHUP compensating like Ctrl-C), and
+  every failure line names the service that failed (`label` is required on
+  `api_call`, so a Kasm failure reads "Kasm API error calling
+  /api/public/request_kasm", never a generic "API error …").
   Guards the two invariants that make per-session VNC auth
   actually work: the container's `docker run` never gains a `-p`/
   `--publish` (the port must stay reachable only via `docker_network`),

@@ -153,7 +153,13 @@ def build_ssl_context(ca_bundle: str = None, insecure: bool = False) -> ssl.SSLC
 
 
 def api_call(server: str, path: str, payload: dict, ctx: ssl.SSLContext = None, fatal: bool = True,
-             headers: dict = None, label: str = "API") -> dict:
+             headers: dict = None, *, label: str) -> dict:
+    # `label` is required and keyword-only on purpose. It used to default to
+    # "API", and the two Kasm call sites never passed one, so a Kasm failure
+    # printed "API error calling /api/public/request_kasm" -- PR #134's review
+    # (nit 1) caught the loss of diagnosability. A call site that forgets the
+    # label should now fail as a TypeError while the test runs, not print a
+    # vaguer message in front of an operator.
     url = f"{server.rstrip('/')}{path}"
     data = json.dumps(payload).encode()
     req = urllib.request.Request(
@@ -424,7 +430,8 @@ def main():
             },
         }
 
-        created = api_call(server, "/api/public/request_kasm", request_payload, ctx)
+        created = api_call(server, "/api/public/request_kasm", request_payload, ctx,
+                            label="Kasm API")
         kasm_id = created.get("kasm_id")
         user_id = created.get("user_id")
         if not kasm_id:
@@ -454,6 +461,7 @@ def main():
                 },
                 ctx,
                 fatal=False,
+                label="Kasm API",
             )
             if status is None:
                 print("  (skipping readiness polling)", file=sys.stderr)
