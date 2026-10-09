@@ -15,6 +15,8 @@ setup() {
   export ICONIC_FILE="$BATS_TEST_TMPDIR/iconic.txt"
   export CALLS_FILE="$BATS_TEST_TMPDIR/calls.txt"
   export PANEL_LAUNCHES="$BATS_TEST_TMPDIR/panel_launches.txt"
+  export PASS_FILE="$BATS_TEST_TMPDIR/pass.txt"; echo 0 > "$PASS_FILE"
+  unset VANISH_PASSES PANEL_GONE_FROM WEASIS_GONE_FROM
   : > "$ICONIC_FILE"; : > "$CALLS_FILE"; : > "$PANEL_LAUNCHES"
   printf '%s\n' \
     '0x01000001  0 host Weasis v4.7.3' \
@@ -22,7 +24,20 @@ setup() {
 
   cat > "$STUB_DIR/wmctrl" <<'EOF'
 #!/usr/bin/env bash
-if [ "$1" = "-l" ]; then cat "$WINDOWS_FILE"; exit 0; fi
+if [ "$1" = "-l" ]; then
+  # VANISH_PASSES (space-separated pass numbers): the panel is hidden from the window
+  # list during exactly those loop passes -- counted by the xrandr stub below, which the
+  # script calls once at the start of every pass, so the test needs no timers.
+  # PANEL_GONE_FROM / WEASIS_GONE_FROM: that window is gone from the given pass onwards
+  # (a closed window), again counted in passes, never in seconds.
+  pass=$(cat "$PASS_FILE" 2>/dev/null || echo 0)
+  out=$(cat "$WINDOWS_FILE")
+  case " ${VANISH_PASSES:-} " in *" $pass "*) out=$(printf '%s\n' "$out" | grep -v "Grading Panel") ;; esac
+  if [ -n "${PANEL_GONE_FROM:-}" ] && [ "$pass" -ge "$PANEL_GONE_FROM" ]; then out=$(printf '%s\n' "$out" | grep -v "Grading Panel"); fi
+  if [ -n "${WEASIS_GONE_FROM:-}" ] && [ "$pass" -ge "$WEASIS_GONE_FROM" ]; then out=$(printf '%s\n' "$out" | grep -v "Weasis v4"); fi
+  printf '%s\n' "$out"
+  exit 0
+fi
 echo "wmctrl $*" >> "$CALLS_FILE"
 EOF
   cat > "$STUB_DIR/xprop" <<'EOF'
@@ -37,6 +52,7 @@ else echo "WM_STATE(WM_STATE):"; echo "		window state: Normal"; fi
 EOF
   cat > "$STUB_DIR/xrandr" <<'EOF'
 #!/usr/bin/env bash
+echo $(( $(cat "$PASS_FILE" 2>/dev/null || echo 0) + 1 )) > "$PASS_FILE"
 echo "Screen 0: minimum 32 x 32, current 2000 x 800, maximum 32768 x 32768"
 EOF
   cat > "$STUB_DIR/xfconf-query" <<'EOF'
@@ -89,7 +105,7 @@ EOF
 }
 
 @test "a panel that is closed mid-session is relaunched" {
-  ( sleep 0.5; sed -i '/Grading Panel/d' "$WINDOWS_FILE" ) &
+  export PANEL_GONE_FROM="3"
   export ARRANGE_MAX_ITERATIONS="12"
   run timeout 30s bash "$SCRIPT"
   [ "$status" -eq 0 ]
@@ -105,15 +121,23 @@ EOF
 }
 
 @test "a window that vanishes for a single pass is not treated as closed" {
-  ( sleep 0.3; sed -i '/Grading Panel/d' "$WINDOWS_FILE"; sleep 0.25; echo '0x00800001  0 host IP_CMC Grading Panel' >> "$WINDOWS_FILE" ) &
-  export ARRANGE_MAX_ITERATIONS="10"
+  export VANISH_PASSES="3"          # missing in pass 3 only, present in passes 1-2 and 4-8
+  export ARRANGE_MAX_ITERATIONS="8"
   run timeout 30s bash "$SCRIPT"
   [ "$status" -eq 0 ]
   [ "$(wc -l < "$PANEL_LAUNCHES")" -eq 0 ]
 }
 
+@test "a window missing for two consecutive passes IS treated as closed and relaunched" {
+  export VANISH_PASSES="3 4"        # deterministic counterpart of the test above
+  export ARRANGE_MAX_ITERATIONS="8"
+  run timeout 30s bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [ "$(wc -l < "$PANEL_LAUNCHES")" -ge 1 ]
+}
+
 @test "a Weasis that was closed is relaunched with the same study URI" {
-  ( sleep 0.5; sed -i '/Weasis v4/d' "$WINDOWS_FILE" ) &
+  export WEASIS_GONE_FROM="3"
   export ARRANGE_MAX_ITERATIONS="12"
   run timeout 30s bash "$SCRIPT"
   [ "$status" -eq 0 ]
@@ -122,7 +146,7 @@ EOF
 
 @test "Weasis is relaunched without an argument when there was no study URI" {
   export ARRANGE_WEASIS_URI=""
-  ( sleep 0.5; sed -i '/Weasis v4/d' "$WINDOWS_FILE" ) &
+  export WEASIS_GONE_FROM="3"
   export ARRANGE_MAX_ITERATIONS="12"
   run timeout 30s bash "$SCRIPT"
   [ "$(head -1 "$WEASIS_LAUNCHES")" = "launched: " ]
@@ -130,14 +154,14 @@ EOF
 
 @test "Weasis relaunches are rate-limited by the cooldown" {
   export ARRANGE_WEASIS_COOLDOWN_S="1000"
-  ( sleep 0.5; sed -i '/Weasis v4/d' "$WINDOWS_FILE" ) &
+  export WEASIS_GONE_FROM="3"
   export ARRANGE_MAX_ITERATIONS="20"
   run timeout 30s bash "$SCRIPT"
   [ "$(wc -l < "$WEASIS_LAUNCHES")" -eq 1 ]
 }
 
 @test "a Weasis that never comes back is retried but only up to the limit" {
-  ( sleep 0.5; sed -i '/Weasis v4/d' "$WINDOWS_FILE" ) &
+  export WEASIS_GONE_FROM="3"
   export ARRANGE_MAX_ITERATIONS="40"
   run timeout 60s bash "$SCRIPT"
   [ "$(wc -l < "$WEASIS_LAUNCHES")" -eq 5 ]
