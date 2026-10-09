@@ -39,7 +39,7 @@ Wniosek zbiorczy: **audyt jest w przeważającej większości poprawny**. 100% s
 - **P64** schemat `db.py`: są `UNIQUE`/FK, **brak `CHECK`** na `stage`/`category`.
 - **P71** `scripts/create-session.py`: token bity **przed** `request_kasm` (linia 86 vs 115), bez kompensacji → osierocony token przy awarii Kasm.
 - **P81** `logging_config.py`: brak pól `service`/`environment`/`component`; `timestamp` przez `time.strftime("%…%S")` → dokładność do sekundy (w logach widać `2026-10-05T09:44:27Z`).
-- **P66** `results()` łącza `submissions.is_correct` (migawka) z **bieżącym** `cases.ground_truth_category` — wzmocnione, patrz §3.2.
+- **P66** `results()` łączy `submissions.is_correct` (migawka) z **bieżącym** `cases.ground_truth_category` — wzmocnione, patrz §3.2.
 
 **Konfiguracja, obrazy, CI**
 - **P113/P38/#51** `docker/grading-api/Dockerfile` i `docker/viewer/Dockerfile`: **bez `USER`** → root. (`kasm-workspace-weasis` ma `USER kasm-user`, `guacamole-weasis` `USER student` — jak w audycie.)
@@ -75,7 +75,7 @@ Czyli jedyny błąd, przy którym korelacja jest najbardziej potrzebna, nie ma k
 **Ryzyko/naprawa:** logować w `dispatch` (przed `finally`) albo resetować dopiero po wysłaniu odpowiedzi; test regresji: wymuś 500 i asertuj `request_id != "-"`. **Wiersz:** P78, P83, P103 (status „Częściowo” → dopisać tę przyczynę).
 
 ### 3.2 (Wysoka, wzmocnienie P66) `/results` po zmianie ground truth daje **rekord wewnętrznie sprzeczny**
-Scenariusz uruchomiony: uczen oddaje w `test` kategorie `4A`, `is_correct=1`, `/results` → `accuracy 1.0`, breakdown `{gt:4A, sub:4A, correct:true}`. Po `UPDATE cases SET ground_truth_category='4B'`:
+Scenariusz uruchomiony: uczeń oddaje w `test` kategorię `4A`, `is_correct=1`, `/results` → `accuracy 1.0`, breakdown `{gt:4A, sub:4A, correct:true}`. Po `UPDATE cases SET ground_truth_category='4B'`:
 ```json
 {"accuracy": 1.0, "breakdown": [{"ground_truth": "4B", "submitted": "4A", "correct": true}]}
 ```
@@ -87,58 +87,58 @@ To nie tylko „zmieniony wyświetlany wynik” — to **publikowany rekord, w k
 **Naprawa:** przy starcie `if len(COORDINATOR_KEY) < 32: raise SystemExit(czytelny komunikat)` + test. **Wiersz:** P23 (proponowana waga Średnia → **Wysoka**), P37.
 
 ### 3.4 (Średnia, nowe) Handler 422 tworzy **nieograniczony wzrost logu**
-Przy `max_length=10_000` sama odmowa produkuje ~20 KB logu na żądanie, a `limit_req` nginx (10 r/s burst 20) pozwala na ~30 takich żądań w secie burst. Łaczy się z P72 (nieograniczony wzrost) i #66 (log bez rotacji) — a `--no-access-log`/json-file bez `max-size` nic tu nie ogranicza.
+Przy `max_length=10_000` sama odmowa produkuje ~20 KB logu na żądanie, a `limit_req` nginx (10 r/s burst 20) pozwala na ~30 takich żądań w secie burst. Łączy się z P72 (nieograniczony wzrost) i #66 (log bez rotacji) — a `--no-access-log`/json-file bez `max-size` nic tu nie ogranicza.
 **Naprawa:** odrzucać `input` (patrz P41) + obcinać długość `msg`; limit objętości ładunku na nginx (`client_max_body_size`).
 
 ### 3.5 (Dodatkowy dowód, nie nowa luka) Token w `error.log` nginx
-Oprócz `access.log` (udokumentowane w arkuszu) **`error.log` zawiera pelny upstream URL z tokenem** (`upstream: "http://127.0.0.1:8000/case?token=…"`) — czyli wyciek przezywa nawet przy wylaczonym dostep logiem. Dodać do P41/#63 („unieważnić tokeny, jeśli logi były gdziekolwiek zbierane” dotyczy też error.log).
+Oprócz `access.log` (udokumentowane w arkuszu) **`error.log` zawiera pełny upstream URL z tokenem** (`upstream: "http://127.0.0.1:8000/case?token=…"`) — czyli wyciek przeżywa nawet po wyłączeniu access logu. Dodać do P41/#63 („unieważnić tokeny, jeśli logi były gdziekolwiek zbierane” dotyczy też error.log).
 
 ### 3.6 (Informacja) `docker-compose.remote-host.yml` publikuje `:8043` na `0.0.0.0`
-`remote-host.yml:73-74` → `${BIND_ADDR:-0.0.0.0}:8080` **oraz `:8043`**, podczas gdy `docker-compose.yml:65` pinie 8043 do `127.0.0.1`. Plik sam o tym pisze i wymaga recznego firewalla — czyli kontrola jest **deklarowana, nie wdrazana** (P25/O15). W arkuszu P38/P35 nie ma tego akcentu.
+`remote-host.yml:73-74` → `${BIND_ADDR:-0.0.0.0}:8080` **oraz `:8043`**, podczas gdy `docker-compose.yml:65` przypina 8043 do `127.0.0.1`. Plik sam o tym pisze i wymaga ręcznego firewalla — czyli kontrola jest **deklarowana, nie wdrażana** (P25/O15). W arkuszu P38/P35 nie ma tego akcentu.
 
 ---
 
 ## 4. Co się zmieniło od czasu zapisania plików (stan na dziś)
 
-**Nagówek `Komentarze_do_zgłoszeń_DoD_audyt.md` („szkice, nic nie opublikowano”) jest nieaktualny.**
-- Komentarze audytu sa **opublikowane** (aut. `lukaszkosminski`) na: **#4, #27, #28, #29, #30, #43, #50, #51, #54, #60, #61, #63, #65, #66, #67, #68, #69, #70, #71, #72, #73, #74, #8** — po 1 komentarzu na zgłoszenie (#72, #74, #8 miały wczesniej inne komentarze).
+**Nagłówek `Komentarze_do_zgłoszeń_DoD_audyt.md` („szkice, nic nie opublikowano”) jest nieaktualny.**
+- Komentarze audytu są **opublikowane** (aut. `lukaszkosminski`) na: **#4, #27, #28, #29, #30, #43, #50, #51, #54, #60, #61, #63, #65, #66, #67, #68, #69, #70, #71, #72, #73, #74, #8** — po 1 komentarzu na zgłoszenie (#72, #74, #8 miały wcześniej inne komentarze).
 - Założone zgłoszenia **#85–#91** z etykietami `dod-audit` + `tier: 4` (09:21–09:25Z): #85 backup/restore/DR (Krytyczna), #86 SERVICE.md + deklaracja Tieru, #87 klasyfikacja danych/retencja/RODO, #88 runbooki + postmortem, #89 NFR/SLI/SLO, #90 proces/ADR/szablon, #91 konfiguracja jako kod + wykrywanie dryfu.
   → **Wiersz O33** („Tier 4 nie zapisany w repozytorium”) wymaga statusu **Częściowo**: etykieta `tier: 4` istnieje w trackerie i #86 dokumentuje w `SERVICE.md`, nadal brak tego w `CLAUDE.md`.
-- Stan liczników: **19 otwartych** issue (najwyzszy numer 91), **zero z przypisanym** → O6 pozostaje prawdziwe.
+- Stan liczników: **19 otwartych** issue (najwyższy numer 91), **zero z przypisanym** → O6 pozostaje prawdziwe.
 - `#8` nadal otwarty, bez przypisania, 303 znaki opisu, bez kryteriów akceptacji → P1 bez zmian.
 
 ---
 
 ## 5. USTALENIA DO POPRAWKI (obalone / nieścisłe)
 
-| Wiersz | Twierdzenie w arkuszu | Stan faktyczny | Co wpisac |
+| Wiersz | Twierdzenie w arkuszu | Stan faktyczny | Co wpisać |
 |---|---|---|---|
 | **P115 / P21** | „ARCHITECTURE.md bez przepływu Weasis” | **OBALONE** — `docs/ARCHITECTURE.md` ma **12** wzmianek Weasis, w tym sekcja od linii 126 opisująca druga ścieżkę sesji (`docker/kasm-workspace-weasis/`, autostart Weasis, panel w osobnym oknie) | Zastąpić: „ARCHITECTURE.md opisuje przepływ Weasis **jako ‘being built alongside’**, mimo że ta ścieżka jest już wdrożona (`README.md:41` Status: Done) → problem nie w treści, lecz w statusie/aktualności” |
-| **P17** | „FastAPI generuje OpenAPI, ale **bez wersji**” | **NIEŚCISLE** — `openapi.json` ma `info.version = "0.1.0"` (domyślne FastAPI, niczym niestereowane) | Zastąpić: „wersja schematu to domyślne `0.1.0`, nic jej nie aktualizuje i nie jest zwiazana z rewizją → kontrakt faktycznie nie jest wersjonowany (brak `/v1`)” |
+| **P17** | „FastAPI generuje OpenAPI, ale **bez wersji**” | **NIEŚCISŁE** — `openapi.json` ma `info.version = "0.1.0"` (domyślne FastAPI, niczym niesterowane) | Zastąpić: „wersja schematu to domyślne `0.1.0`, nic jej nie aktualizuje i nie jest związana z rewizją → kontrakt faktycznie nie jest wersjonowany (brak `/v1`)” |
 | **P115 / O31 / P21 (dryf)** | „README 21 vs 58 testów; 14 vs 16 wizualnych” | **Częściowo niekompletne** — trzeci suchy: `README.md:891` „BATS tests (20 tests total)”, realnie **28** `@test` (`launch-session.bats` 8 + `custom_startup.bats` 9 + `watchdog.bats` 4 + `custom_startup.bats` 7). Wizualne: 14 snapshottów (7 stanów × 2 strony) + test `case_mismatch_409` z #83 → 16 collectów | Dopisać suchy liczby BATS do wiersza P115/O31 |
-| **P41/#63** | „nginx … (do weryfikacji na uruchomionym kontenerze)” | **Zweryfikowane na żywym kontenerze** (patrz §1) — usunąc zastrzeżenie, podnieść status z „hipoteza” na „potwierdzone empirycznie” | przenieść do „Zweryfikowane powtórzone na kopii repozytorium” |
-| **#70** | teza zgłoszenia „brak `busy_timeout`” | audyt miał rację że teza jest nieprecyzyjna; **teraz zmierzone**: 5,01 s / 5,02 s → **500** | wpisac liczby (5,01 s / 5,02 s / HTTP 500) jako dowód |
+| **P41/#63** | „nginx … (do weryfikacji na uruchomionym kontenerze)” | **Zweryfikowane na żywym kontenerze** (patrz §1) — usunąć zastrzeżenie, podnieść status z „hipoteza” na „potwierdzone empirycznie” | przenieść do „Zweryfikowane powtórzone na kopii repozytorium” |
+| **#70** | teza zgłoszenia „brak `busy_timeout`” | audyt miał rację że teza jest nieprecyzyjna; **teraz zmierzone**: 5,01 s / 5,02 s → **500** | wpisać liczby (5,01 s / 5,02 s / HTTP 500) jako dowód |
 | **P46** | „brak automatycznej bramki pokrycia” | mocniejsze: pokrycia **nie ma w CI wcale** (brak `pytest-cov` w `requirements-dev.txt`, `test-grading-api.sh` = `pytest -q`) | dopisać przyczynę |
 | **P19 (próbka)** | „Próbka PR #9–#18 bez formalnych akceptacji” | **#16 nie jest PR-em** (404). Poprawna próbka: #9–#15, #17, #18 (+ #58, #59, #75, #76, #81, #82, #84) — wszystkie 0 recenzji | skorygować numerację |
 | **O33** | „Tier 4 nie zapisany w repozytorium” | nieaktualne w pełni — etykieta `tier: 4` w trackerze + #86 | status → **Częściowo (w toku, #86)** |
-| **Ochrona brancha (P19/P45/O4)** | „master jest chroniony, ale bez wymogu recenzji” | **NIEZWERYFIKOWANE** — `GET /branches/master/protection` → 404 przy tokenie bez uprawnienia `admin` (konto `lukaszkosminski`: `push: true, admin: false`). Nie da się rozstrzygnąć z API bez admina | sprawdzic w UI (`Settings → Branches`) albo poprosic `xWuWux`; na razie wpisac „do weryfikacji w UI” |
+| **Ochrona brancha (P19/P45/O4)** | „master jest chroniony, ale bez wymogu recenzji” | **NIEZWERYFIKOWANE** — `GET /branches/master/protection` → 404 przy tokenie bez uprawnienia `admin` (konto `lukaszkosminski`: `push: true, admin: false`). Nie da się rozstrzygnąć z API bez admina | sprawdzić w UI (`Settings → Branches`) albo poprosić `xWuWux`; na razie wpisać „do weryfikacji w UI” |
 
 ---
 
 ## 6. Jak odtworzyć
 
 ```bash
-# czyste srodowisko audytu (nie rusza biezacego checkoutu)
+# czyste środowisko audytu (nie rusza bieżącego checkoutu)
 WT=$(mktemp -d)/audit-verify
-git -C <twoj-klon> worktree add "$WT" 6dab554
+git -C <twój-klon> worktree add "$WT" 6dab554
 python3 -m venv /tmp/venv-audit
 /tmp/venv-audit/bin/pip install -r "$WT/docker/grading-api/requirements-dev.txt" pytest-cov
 
-# P46 — 58 testow, pokrycie 99%, braki main.py 263-267 i 346-350
+# P46 — 58 testów, pokrycie 99%, braki main.py 263-267 i 346-350
 cd "$WT/docker/grading-api"
 GRADING_COORDINATOR_KEY=$(python3 -c "print('k'*48)") /tmp/venv-audit/bin/python -m pytest -q --cov=app --cov-report=term-missing
 
-# P41 / #74 (token + odpowiedz studenta w logu 422)
+# P41 / #74 (token + odpowiedź studenta w logu 422)
 GRADING_DB_PATH=/tmp/p41.db /tmp/venv-audit/bin/python repro_p41.py
 
 # #70 (5,01 s -> database is locked -> HTTP 500)
@@ -147,7 +147,7 @@ GRADING_DB_PATH=/tmp/p70.db /tmp/venv-audit/bin/python repro_p70.py
 # P66 (dryf ground truth w /results), P23 (walidacja konfiguracji), P17 (/docs)
 GRADING_DB_PATH=/tmp/p66.db /tmp/venv-audit/bin/python repro_p66.py
 
-# P41 w nginx + sprawdzenie, ze #64 wciaz dziala
+# P41 w nginx + sprawdzenie, że #64 wciąż działa
 docker run -d --rm --name ngt -p 18080:8080 -p 18043:8043 \
   --add-host grading-api:127.0.0.1 --add-host orthanc:127.0.0.1 \
   -e ORTHANC_USER=ocr -e ORTHANC_PASSWORD=testpass dicom_app_viewer-viewer:latest
@@ -158,4 +158,4 @@ curl -X POST http://127.0.0.1:18043/tools/store               # 403 -> #64 OK
 
 Skrypty `repro_p41.py`, `repro_p70.py`, `repro_p66.py` to około 40-liniowe skrypty na `fastapi.testclient` z §1 (nie są częścią tego commitu — dodać do `scripts/` tylko wtedy, jeśli ustalenia mają trafić do regression testów; zgodnie z §3.1 i §3.3 właśnie takich testów brakuje).
 
-Po zakonczeniu weryfikacji: `git -C <twoj-klon> worktree remove "$WT"`.
+Po zakończeniu weryfikacji: `git -C <twój-klon> worktree remove "$WT"`.
