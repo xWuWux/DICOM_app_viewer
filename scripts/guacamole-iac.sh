@@ -33,7 +33,7 @@ grep -q "^GRADING_COORDINATOR_KEY=.\+" .env || sed -i "s/^GRADING_COORDINATOR_KE
 grep -q "^GUACAMOLE_DB_PASSWORD=.\+" .env || sed -i "s/^GUACAMOLE_DB_PASSWORD=.*/GUACAMOLE_DB_PASSWORD=$(openssl rand -hex 16)/" .env
 
 echo "--- 2. Building the Guacamole Weasis workspace image ---"
-docker build -t "${GUACAMOLE_WEASIS_IMAGE:-ipcmc/guacamole-weasis:poc}" docker/guacamole-weasis
+docker build --build-context kasm=docker/kasm-workspace-weasis -t "${GUACAMOLE_WEASIS_IMAGE:-ipcmc/guacamole-weasis:poc}" docker/guacamole-weasis
 
 echo "--- 3. Bringing up the stack (core services + Guacamole infra) ---"
 docker compose -f docker-compose.yml -f docker-compose.guacamole.yml up -d --build
