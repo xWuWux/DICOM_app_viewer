@@ -166,7 +166,7 @@ def api_call(method, url, data=None, headers=None, fatal=True, label="API"):
             raw = resp.read()
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as e:
-        # Owner credential scan (PR #191 review): EVERY guacamole URL carries
+        # Credential-hygiene rule: EVERY guacamole URL carries
         # ?token=<admin token>, and Guacamole echoes request objects back in
         # error bodies -- connection attributes carry the VNC password. Any
         # 4xx/5xx would otherwise write a live admin token and echoed
