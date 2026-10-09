@@ -195,3 +195,135 @@ EOF
   [ "$status" -eq 0 ]
   grep -q "wmctrl -r Weasis -e 0,0,0,1600,800" "$CALLS_FILE"
 }
+
+# ---- issue #185: Weasis follows the grading-api case pointer ---------------------
+# curl is a stub that answers from $CASES_FILE, one response per poll (the last line
+# repeats): a JSON text, or FAIL (curl exits 22), or the literal text BAD. The weasis
+# stub records every hand-over in $WEASIS_LAUNCHES; WEASIS_STUB_RC makes it fail.
+URI_HELPER="$BATS_TEST_DIRNAME/weasis_case_uri.py"
+UID_A='{"orthanc_study_uid":"1.2.840.1","stage":"learning"}'
+UID_B='{"orthanc_study_uid":"1.2.840.2","stage":"assessment"}'
+STARTUP_URI_A=""
+
+follow_setup() {
+  export VIEWER_URL="http://viewer:8080/" ORTHANC_URL="http://viewer:8043/" GRADING_TOKEN="secret-token-xyz"
+  export WEASIS_URI_HELPER="$URI_HELPER" ARRANGE_CASE_POLL_EVERY=1
+  export CASES_FILE="$BATS_TEST_TMPDIR/cases.txt" CURL_COUNT="$BATS_TEST_TMPDIR/curl_count.txt" CURL_ARGV="$BATS_TEST_TMPDIR/curl_argv.txt"
+  : > "$CURL_COUNT"; : > "$CURL_ARGV"
+  cat > "$STUB_DIR/curl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >> "$CURL_ARGV"
+cat > /dev/null
+echo x >> "$CURL_COUNT"
+n=$(wc -l < "$CURL_COUNT")
+total=$(wc -l < "$CASES_FILE")
+[ "$n" -gt "$total" ] && n=$total
+line=$(sed -n "${n}p" "$CASES_FILE")
+case "$line" in
+  FAIL) exit 22 ;;
+  BAD) printf '<html>502</html>' ;;
+  *) printf '%s' "$line" ;;
+esac
+STUB
+  cat > "$STUB_DIR/weasis_stub" <<'STUB'
+#!/usr/bin/env bash
+echo "launched: $*" >> "$WEASIS_LAUNCHES"
+exit "${WEASIS_STUB_RC:-0}"
+STUB
+  chmod +x "$STUB_DIR/curl" "$STUB_DIR/weasis_stub"
+  # What custom_startup.sh would have computed for the first study (same helper).
+  ARRANGE_WEASIS_URI=$(python3 "$URI_HELPER" uri "$UID_A" "$ORTHANC_URL")
+  export ARRANGE_WEASIS_URI
+  STARTUP_URI_A="$ARRANGE_WEASIS_URI"
+}
+
+launches() { grep -c '^launched:' "$WEASIS_LAUNCHES" || true; }
+
+@test "#185: a changed case sends the new study to Weasis exactly once" {
+  follow_setup
+  printf '%s\n' "$UID_A" "$UID_B" "$UID_B" "$UID_B" > "$CASES_FILE"
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [ "$(launches)" -eq 1 ]
+  expected=$(python3 "$URI_HELPER" uri "$UID_B" "$ORTHANC_URL")
+  grep -qxF "launched: $expected" "$WEASIS_LAUNCHES"
+  [[ "$output" == *"case changed"*"1.2.840.2"* ]]
+}
+
+@test "#185: an unchanged case sends nothing" {
+  follow_setup
+  printf '%s\n' "$UID_A" > "$CASES_FILE"
+  run bash "$SCRIPT"
+  [ "$(launches)" -eq 0 ]
+  [[ "$output" != *"case changed"* ]]
+}
+
+@test "#185: API failure keeps the study, logs once, and recovers on the next poll" {
+  follow_setup
+  printf '%s\n' FAIL FAIL "$UID_B" > "$CASES_FILE"
+  run bash "$SCRIPT"
+  [ "$(launches)" -eq 1 ]
+  [ "$(grep -c 'unreachable (' <<<"$output")" -eq 1 ]   # first failure only, not every poll
+  [[ "$output" == *"keeping the current study"* ]]
+}
+
+@test "#185: a non-JSON response is logged and changes nothing" {
+  follow_setup
+  printf '%s\n' BAD > "$CASES_FILE"
+  run bash "$SCRIPT"
+  [ "$(launches)" -eq 0 ]
+  [[ "$output" == *"not a case"* ]]
+}
+
+@test "#185: a complete case does not touch Weasis" {
+  follow_setup
+  printf '%s\n' '{"complete": true}' > "$CASES_FILE"
+  run bash "$SCRIPT"
+  [ "$(launches)" -eq 0 ]
+}
+
+@test "#185: a case with an empty or invalid study UID does not touch Weasis" {
+  follow_setup
+  printf '%s\n' '{"orthanc_study_uid":""}' '{"orthanc_study_uid":"1.2; rm -rf /"}' '{"stage":"x"}' > "$CASES_FILE"
+  run bash "$SCRIPT"
+  [ "$(launches)" -eq 0 ]
+}
+
+@test "#185: a failing hand-over is retried, then given up after MAX_SEND_RETRIES" {
+  follow_setup
+  export WEASIS_STUB_RC=1 ARRANGE_MAX_ITERATIONS=12
+  printf '%s\n' "$UID_B" > "$CASES_FILE"
+  run bash "$SCRIPT"
+  [ "$(launches)" -eq 3 ]
+  [[ "$output" == *"retry 1/3"* ]] && [[ "$output" == *"giving up"* ]]
+}
+
+@test "#185: with no Weasis window nothing is launched here, but the crash relaunch opens the NEW study" {
+  follow_setup
+  export WEASIS_GONE_FROM=2 ARRANGE_MAX_ITERATIONS=8
+  printf '%s\n' "$UID_A" "$UID_B" > "$CASES_FILE"
+  run bash "$SCRIPT"
+  [[ "$output" == *"Weasis window not present"* ]]
+  # The only launches are the crash relaunches, and they carry the NEW study.
+  [ "$(launches)" -ge 1 ]
+  grep -qxF "launched: $(python3 "$URI_HELPER" uri "$UID_B" "$ORTHANC_URL")" "$WEASIS_LAUNCHES"
+  ! grep -qF "$STARTUP_URI_A" "$WEASIS_LAUNCHES"
+}
+
+@test "#185: the token is sent on stdin only: never in curl argv, never in the log" {
+  follow_setup
+  printf '%s\n' "$UID_B" > "$CASES_FILE"
+  run bash "$SCRIPT"
+  ! grep -q "secret-token-xyz" "$CURL_ARGV"
+  [[ "$output" != *"secret-token-xyz"* ]]
+}
+
+@test "#185: without VIEWER_URL/ORTHANC_URL/GRADING_TOKEN the feature is disabled with one log line" {
+  follow_setup
+  unset GRADING_TOKEN
+  printf '%s\n' "$UID_B" > "$CASES_FILE"
+  run bash "$SCRIPT"
+  [ "$(launches)" -eq 0 ]
+  [ ! -s "$CURL_COUNT" ]
+  [[ "$output" == *"will NOT follow case changes"* ]]
+}

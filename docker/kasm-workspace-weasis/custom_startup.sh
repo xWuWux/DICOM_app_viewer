@@ -105,30 +105,12 @@ fi
 # image's custom_startup.sh using python3 for its own URL encoding. Prints
 # a ready-to-launch weasis:// URI on success, or nothing if there's no
 # study to open right now (finished all stages, or a bad/empty response).
-WEASIS_URI=$(python3 - "$CASE_JSON" "$ORTHANC_URL" <<'PYEOF'
-import json, sys, urllib.parse
-
-case_json, orthanc_url = sys.argv[1], sys.argv[2]
-try:
-    case = json.loads(case_json)
-except ValueError:
-    sys.exit(0)
-
-study_uid = case.get("orthanc_study_uid")
-if case.get("complete") or not study_uid:
-    sys.exit(0)
-
-dicomweb_url = orthanc_url.rstrip("/") + "/dicom-web"
-parts = [
-    "$dicom:rs",
-    "--url",
-    f'"{dicomweb_url}"',
-    "-r",
-    f'"requestType=STUDY&studyUID={study_uid}"',
-]
-print("weasis://?" + "+".join(urllib.parse.quote(p, safe="") for p in parts))
-PYEOF
-)
+# Issue #185: the URI is built by weasis_case_uri.py, shared with the window
+# loop (arrange_windows.sh), which re-sends it when the case changes. Empty
+# output (complete case, no study, unparseable response) means "plain Weasis".
+# WEASIS_URI_HELPER is a test seam; production uses the image path.
+WEASIS_URI_HELPER="${WEASIS_URI_HELPER:-/opt/grading-panel/weasis_case_uri.py}"
+WEASIS_URI=$(python3 "$WEASIS_URI_HELPER" uri "$CASE_JSON" "$ORTHANC_URL" 2>/dev/null || true)
 
 # Issue #6: launch the forensic watermark overlay's watchdog in the
 # background *before* the exec below. A backgrounded child survives its
@@ -172,8 +154,8 @@ VIEWER_URL="$VIEWER_URL" GRADING_TOKEN="$GRADING_TOKEN" STUDENT_ID="$STUDENT_ID"
 # if the student closes it, and Weasis (same binary + study URI as the exec at
 # the bottom of this file) if it exits (issue #151).
 WEASIS_BIN="${WEASIS_BIN:-/opt/weasis/bin/Weasis}"
-VIEWER_URL="$VIEWER_URL" GRADING_TOKEN="$GRADING_TOKEN" STUDENT_ID="$STUDENT_ID" SESSION_ID="$SESSION_ID" \
-    ARRANGE_WEASIS_BIN="$WEASIS_BIN" ARRANGE_WEASIS_URI="$WEASIS_URI" \
+VIEWER_URL="$VIEWER_URL" ORTHANC_URL="$ORTHANC_URL" GRADING_TOKEN="$GRADING_TOKEN" STUDENT_ID="$STUDENT_ID" SESSION_ID="$SESSION_ID" \
+    ARRANGE_WEASIS_BIN="$WEASIS_BIN" ARRANGE_WEASIS_URI="$WEASIS_URI" WEASIS_URI_HELPER="$WEASIS_URI_HELPER" \
     GRADING_PANEL_WIDTH="$GRADING_PANEL_WIDTH" /opt/grading-panel/arrange_windows.sh &
 
 # exec (not background + exit): same reasoning as
