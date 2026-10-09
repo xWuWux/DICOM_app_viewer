@@ -220,7 +220,8 @@ change the deployment.
   #94's own comment records that a query-string token was reproduced in *two* log
   files, so this class is proven-live in this project.
 - **Test to add:** extend `scripts/test-log-leak.sh` to both flows plus the
-  error-path cases, and make CI run it (verify whether it is wired in at all).
+  error-path cases. CI already runs it (`.github/workflows/ci.yml`), so the
+  extension is picked up automatically.
 
 ### RT-T-10 — Container escape and post-session persistence
 - **Scenario:** from inside a session to the host, then to the DICOM volume; or
@@ -254,7 +255,10 @@ change the deployment.
 - **Evidence:** request, response code, error taxonomy code, whether the DB row
   kept text.
 - **Severity:** EI **H** (answer-key feedback leakage) · PHI L.
-- **Baseline known:** `docker/grading-api/tests/test_input_validation.py`,
+- **Baseline known:** `POST /submit` already rejects a `case_id` that differs from
+  the session's assigned case (`docker/grading-api/app/main.py`), and
+  `category_options` is only returned in the `assessment`/`test` stages, so
+  expect those probes to be refused. `docker/grading-api/tests/test_input_validation.py`,
   `test_error_taxonomy.py`, `test_no_case_data_integrity.py` already push here —
   expect mostly PASS; the point is enumeration of *other* cases via `case_id`.
 - **Test to add:** cross-case `case_id` enumeration assertions in
