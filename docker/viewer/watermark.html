@@ -112,15 +112,42 @@
   // fragment accordingly. A ?token= in the query is deliberately NOT
   // read: grading-api rejects that transport too.
   const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
-  const token = hashParams.get("token") || "";
+  // issue #145: the token survives a reload (F5, Ctrl+R, a discarded tab) via
+  // sessionStorage -- scoped to this one tab/window, cleared when it closes,
+  // never sent to any server and never persisted like localStorage would be.
+  // Order: URL fragment (a fresh link always wins) -> sessionStorage -> none.
+  // The shape check rejects anything that is not a token_urlsafe value, so
+  // a mangled fragment can never be stored or sent as a header.
+  const TOKEN_KEY = "grading_token";
+  const TOKEN_RE = /^[A-Za-z0-9_-]{16,128}$/;
+  function readToken() {
+    const frag = hashParams.get("token");
+    if (frag && TOKEN_RE.test(frag)) {
+      try { sessionStorage.setItem(TOKEN_KEY, frag); } catch (_storageBlocked) { /* memory only */ }
+      return frag;
+    }
+    try {
+      const stored = sessionStorage.getItem(TOKEN_KEY);
+      return TOKEN_RE.test(stored || "") ? stored : "";
+    } catch (_storageBlocked) {
+      return "";
+    }
+  }
+  let token = readToken();
   // CR #121: erase the fragment from the address bar once read -- the token
   // would otherwise stay visible in the page URL, the Kasm window/tab title
   // (both captured in screenshots), and session history. replaceState edits
-  // the current entry in place: no reload, no new history step; the token
-  // now lives only in this script's memory and the header it sends.
+  // the current entry in place: no reload, no new history step.
   if (location.hash) {
     history.replaceState(null, "", location.pathname + location.search);
   }
+
+  // issue #145 (owner-approved wording): no token, or a 401 from grading-api
+  // (unknown OR expired -- the API answers AUTH_INVALID_TOKEN for both), is NOT a
+  // transient error: retrying cannot help, so there is no retry button, and nothing
+  // is refreshed automatically -- the page waits for a new link.
+  const SESSION_EXPIRED_TEXT = "Sesja wygasła lub link jest nieprawidłowy. Zamknij okno i otwórz ponownie link otrzymany od koordynatora.";
+  class SessionExpiredError extends Error {}
   // Orthanc lives on its own origin (see nginx.conf comment on why it isn't
   // reverse-proxied under a subpath). Defaults to this machine's local test
   // setup; the Kasm launcher (custom_startup.sh) passes the real internal
@@ -221,10 +248,28 @@
     }
   }
 
+  function showSessionExpired() {
+    try { sessionStorage.removeItem(TOKEN_KEY); } catch (_storageBlocked) { /* nothing stored */ }
+    token = "";
+    panel.replaceChildren();
+    const p = document.createElement("p");
+    p.id = "session-expired";
+    p.className = "error";
+    p.textContent = SESSION_EXPIRED_TEXT;
+    panel.append(p);
+  }
+
   async function loadCase() {
+    if (!token) {
+      showSessionExpired();
+      return;
+    }
     panel.innerHTML = "<p>Ładowanie danych...</p>";
     try {
       const res = await fetch("/api/case", { headers: { "X-Grading-Token": token } });
+      if (res.status === 401) {
+        throw new SessionExpiredError();
+      }
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
@@ -244,6 +289,10 @@
       frame.src = `${orthancUrl}ui/app/index.html#/filtered-studies?StudyInstanceUID=%22${encodeURIComponent(data.orthanc_study_uid)}%22`;
       renderForm(data);
     } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        showSessionExpired();
+        return;
+      }
       // loadCase lives in this closure, not on window -- an inline onclick=""
       // attribute runs in global scope and can't see it (confirmed the hard
       // way: the button silently did nothing). addEventListener instead,
@@ -299,6 +348,9 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      if (res.status === 401) {
+        throw new SessionExpiredError();
+      }
       if (!res.ok) {
         // issue #61: a 409 here (VALIDATION_CASE_MISMATCH or
         // DUPLICATE_SUBMISSION) means the server's own progress has moved
@@ -324,6 +376,10 @@
       const result = await res.json();
       renderFeedback(currentCase.stage, result, body);
     } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        showSessionExpired();
+        return;
+      }
       showError("Błąd zapisu", err, "back-btn", "Wróć");
       document.getElementById("back-btn").addEventListener("click", loadCase);
     }
@@ -355,6 +411,9 @@
   async function showResults() {
     try {
       const res = await fetch("/api/results", { headers: { "X-Grading-Token": token } });
+      if (res.status === 401) {
+        throw new SessionExpiredError();
+      }
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
@@ -372,17 +431,25 @@
       frame.src = "about:blank";
       document.getElementById("restart-btn").addEventListener("click", async () => {
         try {
-          await fetch("/api/reset", {
+          const resetRes = await fetch("/api/reset", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ token }),
           });
+          if (resetRes.status === 401) {
+            showSessionExpired();
+            return;
+          }
           loadCase();
         } catch (err) {
           showError("Błąd resetu", err);
         }
       });
     } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        showSessionExpired();
+        return;
+      }
       showError("Błąd ładowania wyników", err);
     }
   }
