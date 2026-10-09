@@ -1,6 +1,6 @@
 # Custom Kasm Workspace image for the DICOM viewer MVP.
 #
-# This is NOT meant to be built/run with plain `docker build` + `docker run` —
+# This is NOT meant to be built/run with plain `docker build` + `docker run` -
 # Kasm images must be registered through Kasm Workspaces (which injects its own
 # agent, VNC server, audio, etc.). Build this only after Kasm Workspaces itself
 # is installed (see README.md "From MVP to the real thing"). Once Kasm is up:
@@ -9,7 +9,7 @@
 #   -> register the resulting image in the Kasm admin UI as a new Workspace,
 #      or `docker push` it to a registry Kasm can pull from.
 #
-# Base: Kasm's official Chrome-only workspace (lightest option — we don't need
+# Base: Kasm's official Chrome-only workspace (lightest option - we don't need
 # a full desktop since the viewer is a web page).
 # This Chrome-based flow is LEGACY (owner decision 2026-10-06, issue #50): it
 # intentionally stays on kasmweb/chrome:1.16.0 while the Weasis flow
@@ -36,7 +36,7 @@ USER root
 # Kasm admin UI's "Docker Run Config Override" for the registered workspace.)
 ARG REMOTE_HOST=ipcmc-viewer
 ENV VIEWER_URL="http://${REMOTE_HOST}:8080/"
-# Port 8043, NOT Orthanc's own 8042 — that's the auth-injecting proxy in
+# Port 8043, NOT Orthanc's own 8042 - that's the auth-injecting proxy in
 # docker/viewer/default.conf.template. Pointing here directly at Orthanc
 # would hit its Basic Auth challenge, which an iframe can't answer.
 ENV ORTHANC_URL="http://${REMOTE_HOST}:8043/"

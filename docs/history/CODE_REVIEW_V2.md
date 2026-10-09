@@ -13,26 +13,26 @@
 
 ---
 
-## 📊 Podsumowanie
+## Podsumowanie
 
 Druga iteracja code review po wprowadzeniu poprawek z pierwszej wersji. Większość krytycznych uwag została zaadresowana.
 
-### Ogólna ocena: 4.2/5 ⭐ (wzrost z 3.5/5)
+### Ogólna ocena: 4.2/5 (wzrost z 3.5/5)
 
 | Kategoria | Ocena V1 | Ocena V2 | Komentarz |
 |-----------|----------|----------|-----------|
-| **Architektura** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | Dobra izolacja, brak Postgres |
-| **Bezpieczeństwo** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | Rate limiting dodany |
-| **Kod** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | Walidacja i obsługa błędów |
-| **Testy** | ⭐⭐ | ⭐⭐⭐ | Testy manualne potwierdzone |
-| **Dokumentacja** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | Wzorcowa |
-| **MVP Scope** | ⭐⭐⭐ | ⭐⭐⭐ | Zawężony, świadomy wybór |
+| **Architektura** | 4/5 | 4/5 | Dobra izolacja, brak Postgres |
+| **Bezpieczeństwo** | 4/5 | 4/5 | Rate limiting dodany |
+| **Kod** | 3/5 | 5/5 | Walidacja i obsługa błędów |
+| **Testy** | 2/5 | 3/5 | Testy manualne potwierdzone |
+| **Dokumentacja** | 5/5 | 5/5 | Wzorcowa |
+| **MVP Scope** | 3/5 | 3/5 | Zawężony, świadomy wybór |
 
 ---
 
-## ✅ Naprawione problemy (z V1)
+## Naprawione problemy (z V1)
 
-### 1. ✅ **Indeksy SQLite dodane**
+### 1. **Indeksy SQLite dodane**
 
 **Plik**: `docker/grading-api/app/db.py`
 
@@ -44,12 +44,12 @@ CREATE INDEX IF NOT EXISTS idx_submissions_submitted ON submissions(submitted_at
 CREATE INDEX IF NOT EXISTS idx_cases_stage ON cases(stage);
 ```
 
-**Status**: ✅ **Naprawione**  
+**Status**: **Naprawione**  
 **Test**: Potwierdzone działaniem w commit `becc69d`
 
 ---
 
-### 2. ✅ **Walidacja czasu dodana**
+### 2. **Walidacja czasu dodana**
 
 **Plik**: `docker/grading-api/app/main.py`
 
@@ -60,12 +60,12 @@ if body.time_spent_seconds is not None:
         raise HTTPException(400, "time_spent_seconds must be between 0 and 7200 seconds")
 ```
 
-**Status**: ✅ **Naprawione**  
+**Status**: **Naprawione**  
 **Test**: `400/400/200` - potwierdzone w commit `becc69d`
 
 ---
 
-### 3. ✅ **Obsługa błędów w frontend**
+### 3. **Obsługa błędów w frontend**
 
 **Plik**: `docker/viewer/watermark.html`
 
@@ -86,12 +86,12 @@ async function loadCase() {
 }
 ```
 
-**Status**: ✅ **Naprawione**  
+**Status**: **Naprawione**  
 **Uwaga**: Naprawiono krytyczny bug - przyciski retry używały `onclick="loadCase()"` (nie działało w closure), teraz `addEventListener`
 
 ---
 
-### 4. ✅ **Rate limiting w nginx**
+### 4. **Rate limiting w nginx**
 
 **Plik**: `docker/viewer/default.conf.template`
 
@@ -108,12 +108,12 @@ location /api/ {
 }
 ```
 
-**Status**: ✅ **Naprawione**  
+**Status**: **Naprawione**  
 **Test**: `21x200 potem 429` - potwierdzone w commit `becc69d`
 
 ---
 
-### 5. ✅ **Health check z DB connection**
+### 5. **Health check z DB connection**
 
 **Plik**: `docker/grading-api/app/main.py`
 
@@ -130,11 +130,11 @@ def healthz():
         raise HTTPException(503, f"Database error: {str(e)}")
 ```
 
-**Status**: ✅ **Naprawione**
+**Status**: **Naprawione**
 
 ---
 
-### 6. ✅ **Naprawa CRLF**
+### 6. **Naprawa CRLF**
 
 **Plik**: `.gitattributes`
 
@@ -142,15 +142,15 @@ def healthz():
 * text=auto eol=lf
 ```
 
-**Status**: ✅ **Naprawione** - wymusza LF dla wszystkich plików tekstowych
+**Status**: **Naprawione** - wymusza LF dla wszystkich plików tekstowych
 
 ---
 
-## ⚠️ Pozostałe problemy (do naprawy)
+## Pozostałe problemy (do naprawy)
 
 ### 1. **Brak stratified sampling** (P0 - Krytyczne)
 
-**Status**: ❌ **Nie naprawione**  
+**Status**: **Nie naprawione**  
 **Powód**: Wymaga Postgres i curacji 500 studiów - poza zakresem MVP
 
 **Rekomendacja**: Dodać do backlogu po MVP
@@ -159,7 +159,7 @@ def healthz():
 
 ### 2. **Brak prawdziwej walidacji medycznej** (P0 - Krytyczne)
 
-**Status**: ❌ **Nie naprawione**  
+**Status**: **Nie naprawione**  
 **Powód**: Wymaga zatwierdzenia przez radiologa - poza zakresem MVP
 
 **Rekomendacja**: Dodać workflow review dla eksperta
@@ -168,7 +168,7 @@ def healthz():
 
 ### 3. **Placeholder content** (P0 - Krytyczne)
 
-**Status**: ❌ **Nie naprawione**  
+**Status**: **Nie naprawione**  
 **Powód**: Sample data to nie badania płuc
 
 **Rekomendacja**: Dodać pipeline anonimizacji DICOM
@@ -177,7 +177,7 @@ def healthz():
 
 ### 4. **Brak backup strategy dla Orthanc** (P2 - Średni)
 
-**Status**: ❌ **Nie naprawione**
+**Status**: **Nie naprawione**
 
 **Rekomendacja**:
 ```yaml
@@ -190,13 +190,13 @@ volumes:
 
 ### 5. **Brak testów jednostkowych** (P2 - Średni)
 
-**Status**: ❌ **Nie naprawione**
+**Status**: **Nie naprawione**
 
 **Rekomendacja**: Dodać pytest dla grading-api
 
 ---
 
-## 🆕 Nowe uwagi (V2)
+## Nowe uwagi (V2)
 
 ### 1. **Usunięcie martwego kodu Pydantic**
 
@@ -212,7 +212,7 @@ class SubmitBody(BaseModel):
     # it was dead code, removed rather than left as misleading no-op "validation")
 ```
 
-**Status**: ✅ **Naprawione w commit `becc69d`**
+**Status**: **Naprawione w commit `becc69d`**
 
 ---
 
@@ -231,7 +231,7 @@ panel.innerHTML = `<button id="retry-btn">Spróbuj ponownie</button>`;
 document.getElementById("retry-btn").addEventListener("click", loadCase);
 ```
 
-**Status**: ✅ **Naprawione w commit `becc69d`**
+**Status**: **Naprawione w commit `becc69d`**
 
 ---
 
@@ -278,34 +278,34 @@ def submit(body: SubmitBody):
 
 ---
 
-## 🧪 Testy manualne (potwierdzone w `becc69d`)
+## Testy manualne (potwierdzone w `becc69d`)
 
 | Test | Oczekiwany wynik | Status |
 |------|------------------|--------|
-| Health check z DB | `{"status": "ok"}` | ✅ |
-| Walidacja czasu (< 0) | HTTP 400 | ✅ |
-| Walidacja czasu (> 7200) | HTTP 400 | ✅ |
-| Rate limiting (21 req) | 21x200, potem 429 | ✅ |
-| Obsługa błędów frontend | Przycisk retry działa | ✅ |
-| Brak onclick="" w HTML | Potwierdzone | ✅ |
+| Health check z DB | `{"status": "ok"}` | OK |
+| Walidacja czasu (< 0) | HTTP 400 | OK |
+| Walidacja czasu (> 7200) | HTTP 400 | OK |
+| Rate limiting (21 req) | 21x200, potem 429 | OK |
+| Obsługa błędów frontend | Przycisk retry działa | OK |
+| Brak onclick="" w HTML | Potwierdzone | OK |
 
 ---
 
-## 📊 Metryki jakości kodu
+## Metryki jakości kodu
 
 | Metryka | V1 | V2 | Cel |
 |---------|-----|-----|-----|
 | Coverage testów | ~10% | ~10% | >80% |
 | Liczba komentarzy | Wysoka | Wysoka | Dobra |
 | Złożoność funkcji | Niska | Niska | Dobra |
-| Technical debt | Średni | Niski | ✅ |
-| Ilość bugów krytycznych | 3 | 0 | ✅ |
+| Technical debt | Średni | Niski | OK |
+| Ilość bugów krytycznych | 3 | 0 | OK |
 
 ---
 
-## 🎯 Plan działania (zaktualizowany)
+## Plan działania (zaktualizowany)
 
-### Faza 1 (P0) — Krytyczne ✅ ZAKOŃCZONA
+### Faza 1 (P0) — Krytyczne ZAKOŃCZONA
 - [x] Indeksy SQLite
 - [x] Walidacja czasu w grading-api
 - [x] Obsługa błędów w frontend
@@ -330,7 +330,7 @@ def submit(body: SubmitBody):
 
 ---
 
-## 🔗 Powiązane dokumenty
+## Powiązane dokumenty
 
 - [CLAUDE.md](./CLAUDE.md) — Hard Rules projektu
 - [README.md](./README.md) — Co jest zaimplementowane
@@ -339,11 +339,11 @@ def submit(body: SubmitBody):
 
 ---
 
-## ✍️ Podpis
+## Podpis
 
 **Reviewer**: lukaszkosminski  
 **Data**: 2026-09-10  
-**Status**: ✅ **Zatwierdzono do merge**
+**Status**: **Zatwierdzono do merge**
 
 **Uwagi końcowe**:
 - Wszystkie krytyczne i wysokie problemy z V1 zostały naprawione
@@ -353,7 +353,7 @@ def submit(body: SubmitBody):
 
 ---
 
-## 📝 Changelog zmian V2
+## Changelog zmian V2
 
 | Commit | Zmiana | Autor |
 |--------|--------|-------|

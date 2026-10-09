@@ -248,7 +248,7 @@ class SessionRevokeBody(BaseModel):
 
 @app.post("/session/revoke")
 def revoke_session(body: SessionRevokeBody, x_coordinator_key: str | None = Header(default=None)):
-    """Delete a live token instead of waiting out its TTL — the compensation
+    """Delete a live token instead of waiting out its TTL - the compensation
     POST /session has no equivalent of.
 
     Called by scripts/create-session.py when the Kasm half of a session

@@ -38,7 +38,7 @@ services:
       # (Orthanc's Explorer2/Stone-Viewer assets assume they're served from
       # the root of their own origin). Reachability for Kasm's own session
       # containers comes from the kasm_default_network attachment above
-      # instead (by container name, e.g. http://ipcmc-orthanc:8042/) — not
+      # instead (by container name, e.g. http://ipcmc-orthanc:8042/) - not
       # from this published port, which stays loopback-only.
       - "127.0.0.1:8042:8042"
 
@@ -79,9 +79,9 @@ services:
       - ORTHANC_PASSWORD=${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD in .env -- see .env.example}
     ports:
       - "8080:8080"   # This is the only thing that should ever be reachable directly for this MVP,
-                       # and in the real deployment even this gets replaced by Kasm's own gateway —
+                       # and in the real deployment even this gets replaced by Kasm's own gateway -
                        # see README.md "From MVP to the real thing".
-      - "127.0.0.1:8043:8043"   # Auth-injecting Orthanc proxy — loopback only. Publishing
+      - "127.0.0.1:8043:8043"   # Auth-injecting Orthanc proxy - loopback only. Publishing
                                  # this beyond localhost would hand out unauthenticated Orthanc
                                  # access to anyone who can reach it (see nginx.conf comment).
     networks:
@@ -92,7 +92,7 @@ networks:
   ipcmc-internal:
     driver: bridge
   kasm_default_network:
-    # Created by the Kasm Workspaces installer, not by this compose file —
+    # Created by the Kasm Workspaces installer, not by this compose file -
     # attaching here is what lets Kasm's session containers reach `orthanc`
     # and `viewer` by container name (see comments above). If Kasm isn't
     # installed yet, comment this network out of both services above and
