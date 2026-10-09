@@ -14,6 +14,7 @@ import sqlite3
 import time
 
 # main.py reads db.TOKEN_TTL_SECONDS; validation lives in config.py (#97).
+from .cases_file import CasesFileError, load_cases
 from .config import TOKEN_TTL_SECONDS  # noqa: F401  re-export, call sites unchanged
 from .logging_config import get_logger
 
@@ -537,7 +538,36 @@ def init_db():
     conn.commit()
 
     count = conn.execute("SELECT COUNT(*) FROM cases").fetchone()[0]
-    if count == 0:
+    cases_file = os.environ.get("GRADING_CASES_FILE", "").strip()
+    if count == 0 and cases_file:
+        # Real cases from a local file (never from the repository): see
+        # app/cases_file.py. An invalid file stops startup with a message that
+        # names the entry and field, never a value.
+        try:
+            seed_rows = load_cases(cases_file, STAGES, {key for key, _ in CATEGORY_LABELS})
+        except CasesFileError as exc:
+            conn.close()
+            raise SystemExit(f"CONFIGURATION ERROR: GRADING_CASES_FILE: {exc}") from None
+        conn.executemany(
+            """INSERT INTO cases
+               (stage, order_index, orthanc_study_uid, title,
+                ground_truth_category, ground_truth_modifier_s, reference_report)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            seed_rows,
+        )
+        conn.commit()
+        logger.info("cases_seeded_from_file", extra={"count": len(seed_rows)})
+    elif count > 0 and cases_file:
+        # Silent ignoring would leave an operator wondering why the new cases do
+        # not show up; existing rows may already have submissions (frozen, #96).
+        logger.warning(
+            "cases_file_ignored",
+            extra={
+                "reason": "cases table is not empty; recreate the grading-db volume (dev) "
+                "or use scripts/new-case-version.py"
+            },
+        )
+    elif count == 0:
         conn.executemany(
             """INSERT INTO cases
                (stage, order_index, orthanc_study_uid, title,

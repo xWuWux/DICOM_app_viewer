@@ -44,6 +44,37 @@ Nothing about `orthanc`, `grading-api`, or the local dev quick-start below
 changes between the two — only which workspace image you register in Kasm,
 and which frontend page that image's `custom_startup.sh` points at.
 
+## Real study data (local only)
+
+Real (radiologist-supplied, pseudonymised) studies are **never committed**: the GitHub
+repo is public, and the cases carry the exam's answer key, clinical reference reports and
+real study UIDs. Everything below stays on this host (issue #87); `Dokumentacja/DICOM_Images`,
+`Dokumentacja/Opisy_badan` and `./local/*` are git-ignored.
+
+1. **Check consistency first** (counts only, nothing printed from the files):
+   `python3 scripts/dicom-patient-consistency.py Dokumentacja/DICOM_Images`.
+   Orthanc groups by PatientID, so a study whose images disagree on the patient is split
+   into duplicated, truncated series (the first batch had this in 2 of 5 studies, 18 of
+   9,155 images). `--fix-out local/fixed` writes corrected COPIES of only those images (the
+   originals are never touched) and refuses if the odd images could be somebody else's.
+2. **Load into Orthanc**: `./scripts/load-local-studies.sh Dokumentacja/DICOM_Images --skip-list local/fixed/skip.txt`
+   then `./scripts/load-local-studies.sh local/fixed`. Parallel, retrying, idempotent,
+   prints counts only (a shared Docker host answered ~1% of parallel uploads with resets; re-run until `0 failed`).
+3. **Build the cases file**: `python3 scripts/build-cases-file.py --xlsx Dokumentacja/Opisy_badan/<file>.xlsx --dicom-dir Dokumentacja/DICOM_Images --out local/cases.json`
+   (columns `Anonim | Opis | Lung-Rads`; `--stages` maps studies to learning/assessment/test,
+   default: all studies in learning, the first in assessment and test). Studies are matched to
+   spreadsheet rows by their majority PatientName/PatientID; UIDs are read from the headers.
+4. **Point grading-api at it**: `GRADING_CASES_FILE=/local/cases.json` in `.env`, then start
+   the stack with an EMPTY `grading-db` volume (`docker compose down -v`): the file is only read while the
+   cases table is empty (otherwise a `cases_file_ignored` warning is logged; change an
+   answered case with `scripts/new-case-version.py`). A malformed file stops startup with a message
+   naming the entry and field, never a value.
+
+Known quirks of the first batch (all handled above): every Study/Series/SOP UID has a stripped
+root and starts with a dot (e.g. `.123456.654321`; Orthanc, DICOMweb and Weasis cope), there is
+no DeidentificationMethod declaration in the files, and dates/age are present. The
+anonymisation sign-off (issue #87) is the radiologist's written statement, not these checks.
+
 ## Quick start (local dev, no Kasm needed)
 
 This is the fastest way to poke at `grading-api`/the grading UI without

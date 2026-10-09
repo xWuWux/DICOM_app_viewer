@@ -23,6 +23,13 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Real study data, local only (issue #87).** `GRADING_CASES_FILE` seeds the cases from a local
+  git-ignored JSON (answer key, reports, study UIDs never reach the public repo); new
+  `scripts/build-cases-file.py` (spreadsheet + DICOM headers -> cases file), `scripts/load-local-studies.sh`
+  (parallel, retrying, counts-only Orthanc loader with `--skip-list`) and
+  `scripts/dicom-patient-consistency.py` (detects/repairs, as copies, studies whose images carry
+  more than one PatientID, which Orthanc would split into duplicated series). `./local/` is mounted
+  read-only into grading-api; `local/*` and the data folders are git-ignored.
 - **CI gate: `needs`-list drift guard + robust entry types (issue #135).** `scripts/ci-gate.py`
   now parses the job ids out of `.github/workflows/ci.yml` (stdlib regex over the `jobs:`
   block, no PyYAML) and exits 2 when `NEEDS_JSON` and the workflow disagree in either
