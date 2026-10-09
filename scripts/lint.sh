@@ -71,6 +71,9 @@ if [ -z "$kasm_pin" ] || [ "$kasm_pin" != "$guac_pin" ]; then
   status=1
 fi
 
+echo "--- text style (docs/STYLE.md): no pictographs, no CJK, ASCII dashes in code, English prose ---"
+python3 scripts/check-text-style.py || status=1
+
 echo "--- ruff check + format --check (docker/grading-api) ---"
 if command -v ruff >/dev/null 2>&1; then
   ruff check docker/grading-api || status=1
