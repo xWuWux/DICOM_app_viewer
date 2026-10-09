@@ -140,7 +140,7 @@ def review_case(case_id: int, reviewer: ReviewerBody):
 
 **Ryzyko**: Nie można użyć do testowania medycznego.
 
-**Rekomendacja**: Dodać pipeline anonimozacji DICOM i curację prawdziwych przypadków.
+**Rekomendacja**: Dodać pipeline anonimizacji DICOM i curację prawdziwych przypadków.
 
 **Priorytet**: P0 — Krytyczne
 
@@ -345,7 +345,7 @@ frame.src = `${orthancUrl}ui/app/index.html#/filtered-studies?...`
 
 ### Faza 1 (P0) — Krytyczne
 - [ ] Dodać stratified sampling z Postgres
-- [ ] Pipeline anonimozacji DICOM
+- [ ] Pipeline anonimizacji DICOM
 - [ ] Walidacja medyczna przez eksperta
 
 ### Faza 2 (P1) — Wysokie
