@@ -88,9 +88,19 @@ EOF
 
 @test "a stable overlay run resets the backoff to 1s" {
   export WATCHDOG_BACKOFF_MAX=8
-  export WATCHDOG_STABLE_RESET_SECONDS=1
+  # Margins are the whole point (flake history: PR-run 37895158780 red,
+  # push-run 37895154641 green on the same SHA). The old shape used a 1s
+  # reset threshold against the stub's own lifetime: on a loaded runner
+  # python's cold start alone exceeded 1s, EVERY invocation looked "stable",
+  # the backoff never doubled and the "relaunching in 2s" line never
+  # appeared. A "fast death" is a process-lifetime observation, so the
+  # threshold must sit far above any plausible interpreter startup (4s vs
+  # the ~0.1-2s measured spread), and the "stable" run must exceed the
+  # threshold by a wide margin in BOTH directions (6.5s).
+  export WATCHDOG_STABLE_RESET_SECONDS=4
+  export STABLE_RUN_SECONDS=6.5
   export STABLE_AFTER_INVOCATIONS=2   # first two die fast, then it "works"
-  timeout 7s bash "$SCRIPT" || true
+  timeout 18s bash "$SCRIPT" || true
   # escalation must have happened first (2s line exists) and the LAST
   # relaunch delay must be back to 1s -- ordering, not mere presence.
   grep -q "relaunching in 2s" "$WATCHDOG_LOG"
