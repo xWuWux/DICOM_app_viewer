@@ -171,7 +171,7 @@ def healthz():
 **Status**: **Nie naprawione**  
 **Powód**: Sample data to nie badania płuc
 
-**Rekomendacja**: Dodać pipeline anonimozacji DICOM
+**Rekomendacja**: Dodać pipeline anonimizacji DICOM
 
 ---
 
@@ -325,7 +325,7 @@ def submit(body: SubmitBody):
 
 ### Faza 4 (P3) — Po MVP
 - [ ] Stratified sampling z Postgres
-- [ ] Pipeline anonimozacji DICOM
+- [ ] Pipeline anonimizacji DICOM
 - [ ] Walidacja medyczna przez eksperta
 
 ---
