@@ -36,6 +36,13 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   `scripts/dicom-patient-consistency.py` (detects/repairs, as copies, studies whose images carry
   more than one PatientID, which Orthanc would split into duplicated series). `./local/` is mounted
   read-only into grading-api; `local/*` and the data folders are git-ignored.
+- **Configuration as code, part 1 (issue #91).** New `docs/CONFIG.md` is the
+  hand-maintained source of truth for every environment variable (default,
+  required, sensitive, `klasa`, validation rule, reading site). `.env.example`
+  gained the previously missing user-side variables (`BIND_ADDR`,
+  `GRADING_TOKEN_TTL_SECONDS`, `GRADING_DB_PATH`, `TLS_CA_BUNDLE`, the
+  create-session/Guacamole operator blocks). The CI gate that keeps this
+  table in sync (`scripts/check-config-surface.py`) follows in the next PR.
 - **CI gate: `needs`-list drift guard + robust entry types (issue #135).** `scripts/ci-gate.py`
   now parses the job ids out of `.github/workflows/ci.yml` (stdlib regex over the `jobs:`
   block, no PyYAML) and exits 2 when `NEEDS_JSON` and the workflow disagree in either
