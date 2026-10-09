@@ -10,6 +10,7 @@ second and never touches real infrastructure (unlike
 scripts/test-guacamole-integration.sh, which is the real end-to-end
 proof this actually works against a live stack).
 """
+
 import importlib.util
 import json
 import os
@@ -23,7 +24,9 @@ import pytest
 # coordinator-key length for any process importing the app (issue #97);
 # kept in sync here so both suites share one convention even though this
 # script only forwards the key as an HTTP header.
-os.environ.setdefault("GRADING_COORDINATOR_KEY", "test-only-coordinator-key-0123456789abcdef")
+os.environ.setdefault(
+    "GRADING_COORDINATOR_KEY", "test-only-coordinator-key-0123456789abcdef"
+)
 
 # provision-guacamole-session.py has a hyphen in its filename, so it can't
 # be `import`ed normally -- load it by path instead, same technique the
@@ -32,7 +35,9 @@ os.environ.setdefault("GRADING_COORDINATOR_KEY", "test-only-coordinator-key-0123
 _MODULE_PATH = os.path.join(
     os.path.dirname(__file__), "..", "provision-guacamole-session.py"
 )
-_spec = importlib.util.spec_from_file_location("provision_guacamole_session", _MODULE_PATH)
+_spec = importlib.util.spec_from_file_location(
+    "provision_guacamole_session", _MODULE_PATH
+)
 provision = importlib.util.module_from_spec(_spec)
 sys.modules["provision_guacamole_session"] = provision
 _spec.loader.exec_module(provision)
@@ -79,6 +84,7 @@ def mock_docker_run():
         result = MagicMock()
         result.returncode = 0
         result.stderr = ""
+        result.stdout = ""  # issue #182: library helpers parse docker stdout
         return result
 
     with patch.object(provision.subprocess, "run", side_effect=_fake_run):
@@ -86,7 +92,9 @@ def mock_docker_run():
 
 
 def _run_main(mock_docker_run, monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["provision-guacamole-session.py", "--student-id", "STU_TEST"])
+    monkeypatch.setattr(
+        sys, "argv", ["provision-guacamole-session.py", "--student-id", "STU_TEST"]
+    )
     with patch.object(urllib.request, "urlopen", side_effect=_fake_urlopen):
         provision.main()
     docker_run_calls = [c for c in mock_docker_run if c[:2] == ["docker", "run"]]
@@ -111,9 +119,13 @@ def test_docker_run_passes_a_real_vnc_password(mock_docker_run, monkeypatch, cap
     docker_run_args = _run_main(mock_docker_run, monkeypatch)
     capsys.readouterr()
     vnc_password_env = [
-        a for a in docker_run_args if isinstance(a, str) and a.startswith("VNC_PASSWORD=")
+        a
+        for a in docker_run_args
+        if isinstance(a, str) and a.startswith("VNC_PASSWORD=")
     ]
-    assert len(vnc_password_env) == 1, "expected exactly one -e VNC_PASSWORD=... argument"
+    assert len(vnc_password_env) == 1, (
+        "expected exactly one -e VNC_PASSWORD=... argument"
+    )
     password = vnc_password_env[0].split("=", 1)[1]
     assert len(password) > 0
     # Classic VNC/RFB auth only ever uses the first 8 bytes -- confirms
@@ -122,7 +134,9 @@ def test_docker_run_passes_a_real_vnc_password(mock_docker_run, monkeypatch, cap
     assert len(password) == 8
 
 
-def test_docker_run_uses_the_narrow_seccomp_profile_not_unconfined(mock_docker_run, monkeypatch, capsys):
+def test_docker_run_uses_the_narrow_seccomp_profile_not_unconfined(
+    mock_docker_run, monkeypatch, capsys
+):
     """issue #52: `--security-opt seccomp=unconfined` exposed the full
     host kernel syscall surface. Guard against a regression back to it,
     and confirm the profile this actually points at is a real, existing
@@ -140,11 +154,15 @@ def test_docker_run_uses_the_narrow_seccomp_profile_not_unconfined(mock_docker_r
     assert security_opts[0] != "seccomp=unconfined"
 
     profile_path = security_opts[0].split("=", 1)[1]
-    assert os.path.isfile(profile_path), f"seccomp profile path does not exist: {profile_path}"
+    assert os.path.isfile(profile_path), (
+        f"seccomp profile path does not exist: {profile_path}"
+    )
     assert os.path.basename(profile_path) == "profile.json"
 
 
-def test_guacamole_connection_gets_the_same_vnc_password(mock_docker_run, monkeypatch, capsys):
+def test_guacamole_connection_gets_the_same_vnc_password(
+    mock_docker_run, monkeypatch, capsys
+):
     """The two ends of the VNC handshake must agree: whatever password the
     container's own VNC_PASSWORD env var got must be exactly what
     Guacamole's connection config sends back during authentication."""
@@ -160,14 +178,151 @@ def test_guacamole_connection_gets_the_same_vnc_password(mock_docker_run, monkey
     docker_run_args = None
     with patch.object(provision, "api_call", side_effect=_spying_api_call):
         with patch.object(urllib.request, "urlopen", side_effect=_fake_urlopen):
-            monkeypatch.setattr(sys, "argv", ["provision-guacamole-session.py", "--student-id", "STU_TEST"])
+            monkeypatch.setattr(
+                sys,
+                "argv",
+                ["provision-guacamole-session.py", "--student-id", "STU_TEST"],
+            )
             provision.main()
     capsys.readouterr()
 
     docker_run_args = [c for c in mock_docker_run if c[:2] == ["docker", "run"]][0]
     vnc_password_env = next(
-        a for a in docker_run_args if isinstance(a, str) and a.startswith("VNC_PASSWORD=")
+        a
+        for a in docker_run_args
+        if isinstance(a, str) and a.startswith("VNC_PASSWORD=")
     )
     container_password = vnc_password_env.split("=", 1)[1]
 
     assert captured_connection_data["parameters"]["password"] == container_password
+
+
+# ---------------------------------------------------------------------------
+# issue #182: mid-provision failure must leave NOTHING behind un-unwound
+# (the compensation pattern create-session.py uses for the Kasm flow).
+# Tests drive main(), so they cover the real __main__ contract:
+# SystemExit(1) + reverse-order undos + honest stderr reporting.
+# ---------------------------------------------------------------------------
+
+import io as _io  # noqa: E402  (HTTPError body fp)
+
+
+def _http_error(url):
+    return provision.urllib.error.HTTPError(
+        url, 500, "boom", {}, _io.BytesIO(b"upstream exploded")
+    )
+
+
+def _failing_urlopen(fail_on, seen):
+    def _fake(req, timeout=15):
+        seen.append((req.method, req.full_url))
+        if fail_on and fail_on in req.full_url:
+            raise _http_error(req.full_url)
+        return _fake_urlopen(req, timeout=timeout)
+
+    return _fake
+
+
+def _container_name_from(mock_docker_run):
+    run = [c for c in mock_docker_run if c[:2] == ["docker", "run"]][0]
+    return run[run.index("--name") + 1]
+
+
+def test_connection_create_failure_rolls_back_user_container_token(
+    mock_docker_run, monkeypatch, capsys
+):
+    provision._UNDO.clear()
+    monkeypatch.setattr(provision.gs, "sibling_containers", lambda *a, **k: [])
+    seen = []
+    monkeypatch.setattr(
+        sys, "argv", ["provision-guacamole-session.py", "--student-id", "STU_RB"]
+    )
+    with patch.object(
+        urllib.request,
+        "urlopen",
+        side_effect=_failing_urlopen("/connections?token=", seen),
+    ):
+        with pytest.raises(SystemExit) as stop:
+            provision.main()
+    assert stop.value.code == 1
+    err = capsys.readouterr().err
+    name = _container_name_from(mock_docker_run)
+    # reverse order: user DELETE (cascade-covers permissions) came before...
+    deletes = [u for m, u in seen if m == "DELETE" and "/users/stu_STU_RB" in u]
+    assert len(deletes) == 2  # one pre-cleanup, ONE from the rollback
+    # ...the container rm, which is the LAST docker call (the pre-run rm
+    # for name-squatting long predates it), and then...
+    assert mock_docker_run[-1] == ["docker", "rm", "-f", name]
+    # ...the token revoke, which ran because there were no siblings.
+    assert any("/api/session/revoke" in u for _, u in seen)
+    for expected in (
+        "undone: guacamole user",
+        "undone: container",
+        "undone: grading token",
+    ):
+        assert expected in err, expected
+
+
+def test_rollback_skips_token_revoke_when_student_has_another_session(
+    mock_docker_run, monkeypatch, capsys
+):
+    provision._UNDO.clear()
+    monkeypatch.setattr(
+        provision.gs, "sibling_containers", lambda *a, **k: ["guac-weasis-STU_SIB-111"]
+    )
+    seen = []
+    monkeypatch.setattr(
+        sys, "argv", ["provision-guacamole-session.py", "--student-id", "STU_SIB"]
+    )
+    with patch.object(
+        urllib.request,
+        "urlopen",
+        side_effect=_failing_urlopen("/connections?token=", seen),
+    ):
+        with pytest.raises(SystemExit):
+            provision.main()
+    err = capsys.readouterr().err
+    # revoke-by-student would kill the OTHER session's grading -- refused:
+    assert not any("/api/session/revoke" in u for _, u in seen)
+    assert "skipped token revoke" in err
+    # everything per-SESSION was still undone:
+    assert mock_docker_run[-1] == [
+        "docker",
+        "rm",
+        "-f",
+        _container_name_from(mock_docker_run),
+    ]
+    assert len([u for m, u in seen if m == "DELETE" and "/users/stu_STU_SIB" in u]) == 2
+
+
+def test_docker_run_failure_leaves_no_orphan_token(
+    mock_docker_run, monkeypatch, capsys
+):
+    provision._UNDO.clear()
+    monkeypatch.setattr(provision.gs, "sibling_containers", lambda *a, **k: [])
+    calls = mock_docker_run
+
+    def _failing_run(args, **kwargs):
+        calls.append(args)
+        result = MagicMock()
+        result.returncode = 1 if args[:2] == ["docker", "run"] else 0
+        result.stderr = "image start failed" if result.returncode else ""
+        result.stdout = ""
+        return result
+
+    seen = []
+    monkeypatch.setattr(
+        sys, "argv", ["provision-guacamole-session.py", "--student-id", "STU_RUN"]
+    )
+    with patch.object(provision.subprocess, "run", side_effect=_failing_run):
+        with patch.object(
+            urllib.request, "urlopen", side_effect=_failing_urlopen(None, seen)
+        ):
+            with pytest.raises(SystemExit) as stop:
+                provision.main()
+    assert stop.value.code == 1
+    # the token minted BEFORE the failed run is revoked again...
+    assert any("/api/session/revoke" in u for u in map(lambda t: t[1], seen))
+    # ...and nothing Guacamole-side was ever created (we died before login).
+    assert not any("/connections" in u or "/users?token" in u for _, u in seen)
+    assert "docker run failed" in capsys.readouterr().err
