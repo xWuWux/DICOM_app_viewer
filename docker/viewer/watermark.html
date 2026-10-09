@@ -48,13 +48,13 @@
 
   /* mix-blend-mode:difference guarantees contrast against ANY underlying
      content (white page -> dark text, black page -> light text, any color
-     -> its complement) — a fixed color/opacity went invisible on Orthanc's
+     -> its complement) - a fixed color/opacity went invisible on Orthanc's
      white UI (see git log), which defeats a forensic watermark entirely.
 
      This is plain DOM text rotated with CSS, not canvas-drawn glyphs: a
      rotated <canvas> render looked "squished"/degraded once actually
      streamed through Kasm's video codec (thin diagonal strokes are exactly
-     what lossy video compression mangles — the same class of problem the
+     what lossy video compression mangles - the same class of problem the
      docs flagged for DICOM pixel fidelity, just biting our own watermark
      text here). DOM text uses the same rendering + font hinting pipeline
      as the rest of the page, so it survives the stream the same way the
@@ -75,7 +75,7 @@
     font: bold 15px monospace;
     white-space:nowrap;
     flex: 0 0 auto;
-    padding: 160px 220px; /* sparse tiling on purpose — a mark, not a wall of text */
+    padding: 160px 220px; /* sparse tiling on purpose - a mark, not a wall of text */
     opacity: 0.3; /* still guaranteed-contrast via mix-blend-mode, just softer */
   }
 
@@ -156,7 +156,7 @@
 
   const rotator = document.getElementById("watermark-rotator");
   const grid = document.getElementById("watermark-grid");
-  const CELL_W = 900, CELL_H = 420; // approximate — real layout wraps via flexbox
+  const CELL_W = 900, CELL_H = 420; // approximate - real layout wraps via flexbox
 
   function rebuildGrid() {
     // watermark-rotator is 2x the viewport in both dimensions (to stay fully
@@ -188,7 +188,7 @@
   // Anti-tamper: reload if the watermark is hidden or removed from the DOM.
   // NOTE: this deters casual DOM tampering; it does NOT stop a camera photo of the
   // screen or a determined attacker disabling JS. See README.md's "Security
-  // note" section — attribution via the watermark is the real control.
+  // note" section - attribution via the watermark is the real control.
   const observer = new MutationObserver(() => {
     if (!document.body.contains(rotator) ||
         rotator.style.display === "none" ||
@@ -388,7 +388,7 @@
   function renderFeedback(stage, result, submitted) {
     let html = "";
     if (stage === "learning") {
-      // Stacked one above the other on purpose — the whole point of this
+      // Stacked one above the other on purpose - the whole point of this
       // stage is comparing your own read against the real one, side by side
       // (well, top-to-bottom) rather than just being told the answer.
       html = `<h3>Twoja ocena</h3>
