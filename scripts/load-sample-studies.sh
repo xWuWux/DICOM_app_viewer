@@ -3,7 +3,7 @@
 # covers both the small pydicom fixtures at the top level and anything pulled
 # in by fetch-public-samples.sh, e.g. sample-data/brainix/) into the running
 # Orthanc container via its REST API. All of this is public teaching/test
-# data, already anonymized — NOT real patient data. Real ingestion still needs
+# data, already anonymized - NOT real patient data. Real ingestion still needs
 # the anonymization pipeline described in CLAUDE.md.
 set -euo pipefail
 

@@ -155,3 +155,61 @@ print(' '.join(urllib.parse.unquote(p) for p in uri.split('+')))
   [[ "$output" == *"URL-safe"* ]]
   [ ! -s "$WEASIS_ARGS_FILE" ]
 }
+
+# ---- issue #179: forensic watermark (mandatory, CLAUDE.md) -----------------------
+# The watchdog and picom are backgrounded, so their stub files race the foreground
+# script: poll briefly (never sleep a fixed time) before asserting.
+wait_for_file() { for _ in $(seq 1 30); do [ -s "$1" ] && return 0; sleep 0.1; done; return 1; }
+
+watermark_stubs() {
+  export WM_ENV_FILE="$BATS_TEST_TMPDIR/wm-env.txt" PICOM_ARGS_FILE="$BATS_TEST_TMPDIR/picom-args.txt"
+  cat > "$STUB_DIR/watchdog.sh" <<'STUB'
+#!/usr/bin/env bash
+echo "STUDENT_ID=$STUDENT_ID SESSION_ID=$SESSION_ID" > "$WM_ENV_FILE"
+STUB
+  cat > "$STUB_DIR/picom" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$PICOM_ARGS_FILE"
+sleep 30
+STUB
+  chmod +x "$STUB_DIR/watchdog.sh" "$STUB_DIR/picom"
+  touch "$BATS_TEST_TMPDIR/picom.conf"
+  export WATERMARK_WATCHDOG="$STUB_DIR/watchdog.sh" PICOM_CONF="$BATS_TEST_TMPDIR/picom.conf"
+}
+
+@test "issue #179: the watermark watchdog is started with the student and session ids" {
+  watermark_stubs
+  export STUDENT_ID="STU_42" SESSION_ID="sess_9" CURL_RESPONSE_JSON='{"complete": true}'
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  wait_for_file "$WM_ENV_FILE"
+  [ "$(cat "$WM_ENV_FILE")" = "STUDENT_ID=STU_42 SESSION_ID=sess_9" ]
+}
+
+@test "issue #179: picom is started with the watermark compositor config" {
+  watermark_stubs
+  export CURL_RESPONSE_JSON='{"complete": true}'
+  run bash "$SCRIPT"
+  wait_for_file "$PICOM_ARGS_FILE"
+  grep -qx -- "--config" "$PICOM_ARGS_FILE"
+  grep -qxF "$PICOM_CONF" "$PICOM_ARGS_FILE"
+}
+
+@test "issue #179: a missing watchdog is reported loudly, never silently skipped, and the session still starts" {
+  watermark_stubs
+  export WATERMARK_WATCHDOG="$BATS_TEST_TMPDIR/does-not-exist.sh" CURL_RESPONSE_JSON='{"complete": true}'
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"NO forensic watermark"* ]]
+}
+
+@test "issue #179: without picom the watermark still starts, with a warning about the fallback" {
+  watermark_stubs
+  rm "$STUB_DIR/picom"
+  export PATH="$STUB_DIR:/usr/bin:/bin"
+  command -v picom && skip "a real picom is installed on this host"
+  export CURL_RESPONSE_JSON='{"complete": true}'
+  run bash "$SCRIPT"
+  [[ "$output" == *"picom not available"* ]]
+  wait_for_file "$WM_ENV_FILE"
+}

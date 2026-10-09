@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Guacamole-flow equivalent of docker/kasm-workspace-weasis/custom_startup.sh.
-# Deliberately basic-functionality only per explicit scope for this PoC:
-# no watermark overlay, no Weasis export/import lockdown, no window
-# auto-tiling -- just fetch the assigned case and launch Weasis on it,
-# plus a plain browser tab for the grading panel. Do not point this at
+# Hosting-focused per the owner's decision of 2026-10-09: no Weasis
+# export/import lockdown and (until issue #180) no window auto-tiling.
+# The forensic watermark IS started here since issue #179 (mandatory).
+# Fetches the assigned case, launches Weasis on it, plus a plain browser
+# tab for the grading panel. Do not point this at
 # real patient data; see docker-compose.guacamole.yml's own header
 # comment.
 #
@@ -101,6 +102,32 @@ PYEOF
 # needs regardless -- see scripts/provision-guacamole-session.py's own
 # comment and docker/guacamole-weasis/seccomp/build-profile.py for that
 # separate, still-necessary fix.
+# Issue #179: forensic watermark (mandatory, CLAUDE.md), same as the Kasm
+# flow's custom_startup.sh: picom makes the overlay window genuinely
+# transparent (without it overlay.py falls back to a glyph-shaped window), and
+# the watchdog relaunches the overlay within about a second if it dies.
+# Both are started in the background BEFORE the exec at the bottom of this
+# file; the container is destroyed with the session, so nothing outlives it.
+# Skipped, loudly, when the files are missing: a session without a watermark
+# must never be silent. PICOM_CONF / WATERMARK_WATCHDOG are test-only seams.
+PICOM_CONF="${PICOM_CONF:-/opt/watermark/picom.conf}"
+WATERMARK_WATCHDOG="${WATERMARK_WATCHDOG:-/opt/watermark/watchdog.sh}"
+if command -v picom >/dev/null 2>&1 && [ -f "$PICOM_CONF" ]; then
+    (
+        while true; do
+            picom --config "$PICOM_CONF" >>/tmp/picom.log 2>&1
+            sleep 5
+        done
+    ) >/dev/null 2>&1 3>&- &   # 3>&-: do not hold the BATS harness's fd 3 open (as custom_startup.sh does)
+else
+    echo "launch-session: WARNING picom not available -- the watermark falls back to its shaped (flickering) mode" >&2
+fi
+if [ -x "$WATERMARK_WATCHDOG" ]; then
+    STUDENT_ID="$STUDENT_ID" SESSION_ID="$SESSION_ID" "$WATERMARK_WATCHDOG" &
+else
+    echo "launch-session: ERROR watermark watchdog missing at ${WATERMARK_WATCHDOG} -- this session has NO forensic watermark" >&2
+fi
+
 export WEBKIT_FORCE_SANDBOX=0
 BROWSER_BIN="${BROWSER_BIN:-epiphany}"
 GRADING_PANEL_URL="${VIEWER_URL}grading-panel.html?student_id=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$STUDENT_ID")&session_id=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$SESSION_ID")#token=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$GRADING_TOKEN")"

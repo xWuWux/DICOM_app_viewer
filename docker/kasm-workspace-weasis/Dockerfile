@@ -87,7 +87,7 @@ RUN apt-get update && \
 COPY overlay.py watchdog.sh picom.conf /opt/watermark/
 RUN chmod +x /opt/watermark/watchdog.sh
 
-COPY grading_panel_window.py arrange_windows.sh /opt/grading-panel/
+COPY grading_panel_window.py arrange_windows.sh weasis_case_uri.py /opt/grading-panel/
 RUN chmod +x /opt/grading-panel/arrange_windows.sh
 
 COPY custom_startup.sh /dockerstartup/custom_startup.sh

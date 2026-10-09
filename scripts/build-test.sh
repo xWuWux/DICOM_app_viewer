@@ -33,6 +33,6 @@ echo "--- docker/kasm-workspace-weasis ---"
 docker build -q -t ipcmc/dicom-viewer-weasis:build-test docker/kasm-workspace-weasis
 
 echo "--- docker/guacamole-weasis ---"
-docker build -q -t ipcmc/guacamole-weasis:build-test docker/guacamole-weasis
+docker build -q --build-context kasm=docker/kasm-workspace-weasis -t ipcmc/guacamole-weasis:build-test docker/guacamole-weasis
 
 echo "All images built successfully."

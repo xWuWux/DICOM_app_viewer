@@ -12,51 +12,51 @@
 
 ---
 
-## 📋 Podsumowanie
+## Podsumowanie
 
 To **solidny MVP** aplikacji DICOM viewer z watermarks i systemem oceniania Lung-RADS. Projekt jest dobrze udokumentowany, z jasno określonymi zasadami bezpieczeństwa i architekturą.
 
-### Ogólna ocena: 3.5/5 ⭐
+### Ogólna ocena: 3.5/5
 
 | Kategoria | Ocena | Komentarz |
 |-----------|-------|-----------|
-| **Architektura** | ⭐⭐⭐⭐ | Dobra izolacja, ale brakuje Postgres |
-| **Bezpieczeństwo** | ⭐⭐⭐⭐ | Solidny watermark, ale brakuje rate limiting |
-| **Kod** | ⭐⭐⭐ | Czytelny, ale brakuje walidacji i obsługi błędów |
-| **Testy** | ⭐⭐ | Tylko smoke testy, brak unit/E2E |
-| **Dokumentacja** | ⭐⭐⭐⭐⭐ | Wzorcowa |
-| **MVP Scope** | ⭐⭐⭐ | Zawężony, ale świadomy wybór |
+| **Architektura** | 4/5 | Dobra izolacja, ale brakuje Postgres |
+| **Bezpieczeństwo** | 4/5 | Solidny watermark, ale brakuje rate limiting |
+| **Kod** | 3/5 | Czytelny, ale brakuje walidacji i obsługi błędów |
+| **Testy** | 2/5 | Tylko smoke testy, brak unit/E2E |
+| **Dokumentacja** | 5/5 | Wzorcowa |
+| **MVP Scope** | 3/5 | Zawężony, ale świadomy wybór |
 
 ---
 
-## ✅ Mocne strony
+## Mocne strony
 
 ### 1. **Bezpieczeństwo i architektura**
-- ✅ **Izolacja sieciowa**: Orthanc bez publicznego portu, dostęp tylko przez `ipcmc-internal`
-- ✅ **Forensic watermark**: Tiled overlay z `mix-blend-mode:difference` gwarantuje kontrast
-- ✅ **Anti-tamper**: MutationObserver przeładowuje stronę jeśli watermark jest ukryty
-- ✅ **Auth injection**: Nginx wstrzykuje Basic Auth serwer-side, nie w iframe
-- ✅ **Ephemeral containers**: Kasm niszczy kontenery po wylogowaniu
+- **Izolacja sieciowa**: Orthanc bez publicznego portu, dostęp tylko przez `ipcmc-internal`
+- **Forensic watermark**: Tiled overlay z `mix-blend-mode:difference` gwarantuje kontrast
+- **Anti-tamper**: MutationObserver przeładowuje stronę jeśli watermark jest ukryty
+- **Auth injection**: Nginx wstrzykuje Basic Auth serwer-side, nie w iframe
+- **Ephemeral containers**: Kasm niszczy kontenery po wylogowaniu
 
 ### 2. **Dokumentacja**
-- ✅ **CLAUDE.md**: Jasne zasady ("Hard Rules"), których nie można łamać
-- ✅ **README.md**: Co jest zaimplementowane, co odroczone
-- ✅ **ARCHITECTURE.md**: Diagramy Mermaid pokazujące flow sesji i topologię
-- ✅ **Komentarze w kodzie**: Szczegółowe wyjaśnienia decyzji projektowych
+- **CLAUDE.md**: Jasne zasady ("Hard Rules"), których nie można łamać
+- **README.md**: Co jest zaimplementowane, co odroczone
+- **ARCHITECTURE.md**: Diagramy Mermaid pokazujące flow sesji i topologię
+- **Komentarze w kodzie**: Szczegółowe wyjaśnienia decyzji projektowych
 
 ### 3. **Testy i CI**
-- ✅ **lint.sh**: Sprawdzenie składni bash i walidacja compose
-- ✅ **smoke-test.sh**: Testy endpointów HTTP z retry logic
-- ✅ **CI workflow**: Uruchamia oba skrypty na każdym push/PR
+- **lint.sh**: Sprawdzenie składni bash i walidacja compose
+- **smoke-test.sh**: Testy endpointów HTTP z retry logic
+- **CI workflow**: Uruchamia oba skrypty na każdym push/PR
 
 ### 4. **Grading API**
-- ✅ **3-stage state machine**: Nauka → Ocena → Test
-- ✅ **Enforce ground truth secrecy**: Ground truth nigdy nie jest zwracane przed właściwym stage
-- ✅ **SQLite**: Lżejsze niż Postgres dla MVP, łatwa migracja później
+- **3-stage state machine**: Nauka → Ocena → Test
+- **Enforce ground truth secrecy**: Ground truth nigdy nie jest zwracane przed właściwym stage
+- **SQLite**: Lżejsze niż Postgres dla MVP, łatwa migracja później
 
 ---
 
-## ⚠️ Problemy krytyczne (P0)
+## Problemy krytyczne (P0)
 
 ### 1. **Brak stratified sampling** (CLAUDE.md Hard Rule #4)
 
@@ -140,13 +140,13 @@ def review_case(case_id: int, reviewer: ReviewerBody):
 
 **Ryzyko**: Nie można użyć do testowania medycznego.
 
-**Rekomendacja**: Dodać pipeline anonimozacji DICOM i curację prawdziwych przypadków.
+**Rekomendacja**: Dodać pipeline anonimizacji DICOM i curację prawdziwych przypadków.
 
 **Priorytet**: P0 — Krytyczne
 
 ---
 
-## 🔧 Problemy techniczne (P1-P2)
+## Problemy techniczne (P1-P2)
 
 ### 1. **Brak indeksów w SQLite**
 
@@ -293,7 +293,7 @@ tar -czf /backups/orthanc-$(date +%Y%m%d).tar.gz /var/lib/orthanc/db
 
 ---
 
-## 📋 Drobne uwagi (P3)
+## Drobne uwagi (P3)
 
 ### 1. **Hardcoded wartości**
 ```python
@@ -341,11 +341,11 @@ frame.src = `${orthancUrl}ui/app/index.html#/filtered-studies?...`
 
 ---
 
-## 🎯 Plan działania
+## Plan działania
 
 ### Faza 1 (P0) — Krytyczne
 - [ ] Dodać stratified sampling z Postgres
-- [ ] Pipeline anonimozacji DICOM
+- [ ] Pipeline anonimizacji DICOM
 - [ ] Walidacja medyczna przez eksperta
 
 ### Faza 2 (P1) — Wysokie
@@ -365,7 +365,7 @@ frame.src = `${orthancUrl}ui/app/index.html#/filtered-studies?...`
 
 ---
 
-## 📊 Metryki jakości kodu
+## Metryki jakości kodu
 
 | Metryka | Wartość | Cel |
 |---------|---------|-----|
@@ -376,7 +376,7 @@ frame.src = `${orthancUrl}ui/app/index.html#/filtered-studies?...`
 
 ---
 
-## 🔗 Powiązane dokumenty
+## Powiązane dokumenty
 
 - [CLAUDE.md](./CLAUDE.md) — Hard Rules projektu
 - [README.md](./README.md) — Co jest zaimplementowane
@@ -385,8 +385,8 @@ frame.src = `${orthancUrl}ui/app/index.html#/filtered-studies?...`
 
 ---
 
-## ✍️ Podpis
+## Podpis
 
 **Reviewer**: lukaszkosminski  
 **Data**: 2026-09-10  
-**Status**: ✅ Zatwierdzono z uwagami
+**Status**: Zatwierdzono z uwagami
