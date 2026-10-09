@@ -23,6 +23,19 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Reload no longer strands the student on HTTP 401 (issue #145).** `watermark.html` and `grading-panel.html` keep the
+  token in `sessionStorage` (this tab only, gone when it closes, never sent anywhere) after reading the URL
+  fragment, so F5 / Ctrl+R / a restored tab keep working; the fragment is still erased from the address bar (#94).
+  Order: fragment -> sessionStorage -> none. No token, or a 401 from grading-api, shows the owner-approved message
+  ("Sesja wygasla lub link jest nieprawidlowy...") with no retry button and no automatic refresh. 22 new Playwright
+  tests (`test_session_token.py`) + 1 new visual snapshot per page; the token still never appears in a request URL.
+- **Real study data, local only (issue #87).** `GRADING_CASES_FILE` seeds the cases from a local
+  git-ignored JSON (answer key, reports, study UIDs never reach the public repo); new
+  `scripts/build-cases-file.py` (spreadsheet + DICOM headers -> cases file), `scripts/load-local-studies.sh`
+  (parallel, retrying, counts-only Orthanc loader with `--skip-list`) and
+  `scripts/dicom-patient-consistency.py` (detects/repairs, as copies, studies whose images carry
+  more than one PatientID, which Orthanc would split into duplicated series). `./local/` is mounted
+  read-only into grading-api; `local/*` and the data folders are git-ignored.
 - **Configuration as code, part 1 (issue #91).** New `docs/CONFIG.md` is the
   hand-maintained source of truth for every environment variable (default,
   required, sensitive, `klasa`, validation rule, reading site). `.env.example`
@@ -30,7 +43,6 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   `GRADING_TOKEN_TTL_SECONDS`, `GRADING_DB_PATH`, `TLS_CA_BUNDLE`, the
   create-session/Guacamole operator blocks). The CI gate that keeps this
   table in sync (`scripts/check-config-surface.py`) follows in the next PR.
-
 - **CI gate: `needs`-list drift guard + robust entry types (issue #135).** `scripts/ci-gate.py`
   now parses the job ids out of `.github/workflows/ci.yml` (stdlib regex over the `jobs:`
   block, no PyYAML) and exits 2 when `NEEDS_JSON` and the workflow disagree in either

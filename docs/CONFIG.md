@@ -32,6 +32,7 @@ enforcement site.
 | `BIND_ADDR` | `0.0.0.0` | no | no | config-usera | none (address literal) | `docker-compose.remote-host.yml` (publishes 8042/8080/8043) — see security note below |
 | `GRADING_TOKEN_TTL_SECONDS` | `28800` (8 h) | no | no | config-usera | `config.py`: integer, `1..604800` (#97) | `app/config.py` |
 | `GRADING_DB_PATH` | `/data/grading.db` | no | no | config-usera | none | `app/db.py`, `scripts/rehearse-migration.py` |
+| `GRADING_CASES_FILE` | empty (placeholder cases) | no | path only -- the file it points at holds the answer key: keep it git-ignored, mode 0600 (issue #87) | config-usera | `cases_file.py`: name/field-only errors; startup refuses to boot on a malformed file (`SystemExit`, `db.py`) | compose (both), `app/db.py` -> `app/cases_file.py`, `build-cases-file.py` |
 | `TLS_CA_BUNDLE` | empty (system trust) | no | no | config-usera | path used by `ssl` | `scripts/create-session.py` (#103/#143 docs split) |
 | `GRADING_API_URL` | `http://localhost:8080` | no | no | config-usera | URL used directly | `create-session.py`, `provision-guacamole-session.py`, smoke/VR harnesses |
 | `KASM_SERVER` | none | yes for the Kasm flow | no | config-usera | URL | `create-session.py` |
@@ -43,9 +44,6 @@ enforcement site.
 | `GUACAMOLE_ADMIN_PASSWORD` | `guacadmin` | no | yes | config-usera | none — the DEFAULT IS A WEAK SECRET; PoC seam only, production must set it | `provision-`/`teardown-guacamole-session.py` |
 | `GUACAMOLE_WEASIS_IMAGE` | `ipcmc/guacamole-weasis:poc` | no | no | config-usera | image name | `provision-guacamole-session.py`, `guacamole-iac.sh` |
 | `DOCKER_NETWORK` | `dicom_app_viewer_ipcmc-internal` | no | no | config-usera | docker network name | `provision-guacamole-session.py` |
-
-Pending: `GRADING_CASES_FILE` joins this table when #160 merges (do not
-pre-add it; the gate compares against master).
 
 Security note on `BIND_ADDR` (`0.0.0.0` default): publishing `:8043`
 (Orthanc DICOMWeb) on all interfaces is the open question tracked by #103 /
