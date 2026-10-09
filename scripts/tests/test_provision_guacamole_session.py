@@ -326,3 +326,35 @@ def test_docker_run_failure_leaves_no_orphan_token(
     # ...and nothing Guacamole-side was ever created (we died before login).
     assert not any("/connections" in u or "/users?token" in u for _, u in seen)
     assert "docker run failed" in capsys.readouterr().err
+
+
+def test_api_error_text_redacts_admin_token_and_echoed_secrets(capsys):
+    # Owner credential scan on PR #191: every Guacamole URL carries
+    # ?token=<admin token> and Guacamole echoes request objects back in
+    # error bodies (connection attributes carry the VNC password). NO
+    # error text -- raised or printed -- may contain either.
+    admin_token = "SENTINEL-ADMIN-TOKEN-9f2c"
+    vnc_secret = "SENTINEL-VNC-PASS-7a11"
+    url = f"http://fake.local/app/api/session/data/postgresql/connections?token={admin_token}"
+    body = json.dumps({"echo": {"parameters": {"password": vnc_secret}}}).encode()
+
+    def _boom(req, timeout=15):
+        raise provision.urllib.error.HTTPError(url, 400, "Bad Request", {}, _io.BytesIO(body))
+
+    with patch.object(urllib.request, "urlopen", side_effect=_boom):
+        with pytest.raises(provision.ProvisionAborted) as excinfo:
+            provision.api_call("POST", url, data={"x": 1}, label="Guacamole (create connection)")
+    msg = str(excinfo.value)
+    assert admin_token not in msg
+    assert vnc_secret not in msg
+    assert "token=<redacted>" in msg
+    assert '"password": "<redacted>"' in msg  # visibly redacted, not deleted
+    assert len(msg) < 400
+
+    with patch.object(urllib.request, "urlopen", side_effect=_boom):
+        assert provision.api_call(
+            "POST", url, data={"x": 1}, fatal=False, label="Guacamole (pre-cleanup)"
+        ) is None
+    err = capsys.readouterr().err
+    assert admin_token not in err
+    assert vnc_secret not in err

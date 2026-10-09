@@ -60,6 +60,7 @@ Companion teardown script: scripts/teardown-guacamole-session.py
 import argparse
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -165,7 +166,22 @@ def api_call(method, url, data=None, headers=None, fatal=True, label="API"):
             raw = resp.read()
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as e:
-        message = f"{label} error calling {url}: {e.code} {e.read().decode()}"
+        # Owner credential scan (PR #191 review): EVERY guacamole URL carries
+        # ?token=<admin token>, and Guacamole echoes request objects back in
+        # error bodies -- connection attributes carry the VNC password. Any
+        # 4xx/5xx would otherwise write a live admin token and echoed
+        # password to stderr/cron/CI logs (the #182 rollback re-reports these
+        # messages verbatim). Same discipline as guacamole_session.http_json:
+        # scrub the token param and truncate the echoed body at the ONE
+        # site that builds API error text.
+        safe_url = re.sub(r"([?&])token=[^&]*", r"\1token=<redacted>", url)
+        # Truncation alone is NOT sanitization: a short echoed object fits
+        # entirely inside 200 chars. Scrub password fields and any token
+        # params inside the body itself before excerpting.
+        body = e.read().decode(errors="replace")
+        body = re.sub(r'("password"\s*:\s*)"[^"]*"', r'\1"<redacted>"', body)
+        body = re.sub(r"token=[^&\s\"']+", "token=<redacted>", body)
+        message = f"{label} error calling {safe_url}: {e.code} {body[:200]}"
         if fatal:
             raise ProvisionAborted(message)
         print(f"  (non-fatal) {message}", file=sys.stderr)
@@ -397,18 +413,11 @@ def _provision():
 
     link = f"{guac_url}#/?username={urllib.parse.quote(guac_username)}&password={urllib.parse.quote(guac_password)}"
 
-    # INTENTIONAL credential output (PR #191 CodeQL alert
-    # py/clear-text-logging-sensitive-data, assessed and kept): the link IS
-    # this CLI's deliverable -- Guacamole's documented auto-login shape
-    # (module docstring), and structurally the same trade the Kasm flow
-    # already ships: create-session.py prints its bearer-credential
-    # kasm_url (issue #122's "the link IS the credential") while refusing
-    # to print the raw grading TOKEN. House rules post-2022-09-22 forbid
-    # printing LONG-LIVED secrets; this one is single-session-scoped,
-    # minted seconds ago, and revoked or TTL-expired alongside the
-    # session (rollback here, reaper/teardown otherwise). CodeQL has no
-    # native inline suppression -- dismiss the alert as by-design, do NOT
-    # "fix" the print (it would break the tool's only purpose).
+    # This link is the deliverable AND a live credential: it embeds this
+    # session's auto-login secret, which disappears the moment the session
+    # does (rollback here, teardown/reaper otherwise, or its TTL). Operator
+    # handling rules live in the module docstring; do not pipe stdout into
+    # logs, tickets, or commits.
     print(
         json.dumps(
             {
