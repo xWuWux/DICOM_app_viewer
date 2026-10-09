@@ -31,6 +31,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
+import guacamole_session as gs_mod
 from guacamole_session import NamespaceViolation, teardown_session
 
 
@@ -62,7 +63,10 @@ def main():
         print(f"REFUSED: {exc}", file=sys.stderr)
         return 2
 
-    failed = {k: v for k, v in report.items() if v != "ok"}
+    failed = {k: v for k, v in report.items() if not gs_mod.step_ok(v)}
+    skipped = {k: v for k, v in report.items() if str(v).startswith("skipped")}
+    for step, why in skipped.items():
+        print(f"NOTE step '{step}': {why}")
     if failed:
         for step, err in failed.items():
             print(f"FAILED step '{step}': {err}", file=sys.stderr)

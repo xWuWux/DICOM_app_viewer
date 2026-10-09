@@ -43,7 +43,30 @@ CONTAINER_NAME_RE = re.compile(
 )
 GUAC_USER_RE = re.compile(r"^stu_([A-Za-z0-9][A-Za-z0-9_.-]{0,63})$")
 
-STEP_OK = "ok"  # per-step report marker; anything else in a report is an error string
+STEP_OK = "ok"  # per-step report marker
+STEP_SKIPPED_PREFIX = "skipped"  # "skipped (<why>)": deliberate, non-fatal omission
+
+
+def step_ok(value):
+    """True for values that must NOT be retried: success or a documented skip."""
+    return value == STEP_OK or str(value).startswith(STEP_SKIPPED_PREFIX)
+
+
+def sibling_containers(docker, student_id, exclude_container):
+    """Other guac-weasis-<student>-* containers still present (any state).
+    The guard behind PR #187 review item 1: the guacamole USER and the
+    token-revocation-by-student are PER-STUDENT objects -- removing either
+    while a newer session of the same student runs kills that live session,
+    because provisioning reuses the same username."""
+    others = []
+    for c in docker_list_sessions(docker):
+        try:
+            other_student, _ = parse_container_name(c["name"])
+        except NamespaceViolation:
+            continue
+        if other_student == student_id and c["name"] != exclude_container:
+            others.append(c["name"])
+    return others
 
 
 class NamespaceViolation(Exception):
@@ -182,13 +205,27 @@ def guac_delete_connection_by_name(opener, base_url, token, name):
 
 
 def guac_active_usernames(opener, base_url, token):
-    """Usernames with a currently OPEN connection (core REST v1, Guacamole
-    1.6). Raises APIError on any problem -- CALLERS must treat "unknown" as
+    """Usernames with a currently OPEN connection.
+
+    Endpoint VERIFIED against the guacamole-client 1.6.0 tag (PR #187
+    review): the CORE webapp ships ActiveConnectionDirectoryResource under
+    /api/session/data/{dataSource}/activeConnections (a DirectoryResource
+    GET -> JSON object keyed by connection identifier; each entry carries
+    "username" and "connectionIdentifier" per APIActiveConnection / the UI
+    type app/rest/types/ActiveConnection.js). The /api/v1/... shape was the
+    optional REST auth extension, which this deployment does NOT run.
+    Raises APIError on any problem -- CALLERS must treat "unknown" as
     ACTIVE (never kill a session on a missing signal)."""
     data = http_json(
-        opener, "GET", f"{base_url}api/v1/session/activeConnections?token={token}"
+        opener,
+        "GET",
+        f"{base_url}api/session/data/postgresql/activeConnections?token={token}",
     )
-    return {entry.get("username") for entry in data or [] if entry.get("username")}
+    return {
+        entry.get("username")
+        for entry in (data or {}).values()
+        if entry.get("username")
+    }
 
 
 # --------------------------------------------------------------------------
@@ -291,16 +328,24 @@ def teardown_session(
     user + connection, grading-api token. Container/student/session all
     derived from `container_name` (one trusted shape, no mixed inputs).
 
-    -> dict of step-name -> "ok" or an error string. Steps are independent:
-    a guacamole 500 must not leave the container running. The CLI exits
-    non-zero when any step reports a failure; the reaper retries on its
-    next pass because nothing was forgotten.
+    PER-STUDENT objects (the guacamole user, the token revocation by
+    student) are skipped -- report value 'skipped (...)' -- while ANY
+    other guac-weasis-<student>-* container still exists (review item 1 on
+    PR #187: a new session of the same student shares the user and lives
+    under the same revocation scope). The per-SESSION connection object is
+    always deleted: it is named after this exact container.
+
+    -> dict of step-name -> "ok", "skipped (<why>)" or an error string.
+    Steps are independent: a guacamole 500 must not leave the container
+    running. Callers use step_ok() to decide retries; nothing forgotten.
     """
     if not guac_url.endswith("/"):
         guac_url += "/"
     student_id, _session_id = parse_container_name(container_name)
     guac_username = GUAC_USER_PREFIX + student_id
+    siblings = sibling_containers(docker, student_id, container_name)
     report = {}
+    shared_login = {}
 
     def step(name, fn):
         try:
@@ -309,30 +354,57 @@ def teardown_session(
         except Exception as exc:  # noqa: BLE001 - every step reports, none aborts
             report[name] = f"{type(exc).__name__}: {exc}"
         if verbose:
-            print(f"  [{report[name] if report[name] == STEP_OK else 'FAILED'}] {name}")
+            status = "ok" if step_ok(report[name]) else "FAILED"
+            print(
+                f"  [{status}] {name}"
+                + ("" if report[name] == STEP_OK else f" ({report[name]})")
+            )
+
+    def login():
+        shared_login["token"] = guac_login(opener, guac_url, admin_user, admin_pass)
 
     step("container", lambda: docker_rm(docker, container_name))
+    step("guacamole_login", login)
 
-    def guac_part():
-        token = guac_login(opener, guac_url, admin_user, admin_pass)
-        guac_delete_user(opener, guac_url, token, guac_username)
-        guac_delete_connection_by_name(opener, guac_url, token, container_name)
+    def delete_connection():
+        if "token" not in shared_login:
+            raise RuntimeError("guacamole login failed")
+        guac_delete_connection_by_name(
+            opener, guac_url, shared_login["token"], container_name
+        )
 
-    step("guacamole", guac_part)
+    step("guacamole_connection", delete_connection)
 
-    def revoke_part():
-        if not coordinator_key:
-            # A reaper run without the coordinator key CANNOT revoke; the
-            # operator must see that explicitly, and the token's own TTL
-            # remains the only expiry. Report, never crash.
-            raise RuntimeError(
-                "GRADING_COORDINATOR_KEY not configured: token left to expire on its own"
-            )
-        revoke_token_for_student(opener, grading_api_url, coordinator_key, student_id)
-
-    if grading_api_url:
-        step("grading_token", revoke_part)
+    if siblings:
+        report["guacamole_user"] = (
+            f"{STEP_SKIPPED_PREFIX} (student has other sessions: {', '.join(sorted(siblings))})"
+        )
     else:
-        report["grading_token"] = "skipped (no GRADING_API_URL)"
+
+        def delete_user():
+            if "token" not in shared_login:
+                raise RuntimeError("guacamole login failed")
+            guac_delete_user(opener, guac_url, shared_login["token"], guac_username)
+
+        step("guacamole_user", delete_user)
+
+    if not grading_api_url:
+        report["grading_token"] = STEP_SKIPPED_PREFIX + " (no GRADING_API_URL)"
+    elif not coordinator_key:
+        # An operator choice, not a failure: loud in the report every pass,
+        # never a retry storm (the reaper pre-filters this too).
+        report["grading_token"] = (
+            STEP_SKIPPED_PREFIX
+            + " (no GRADING_COORDINATOR_KEY; token expires on its TTL)"
+        )
+    elif siblings:
+        report["grading_token"] = f"{STEP_SKIPPED_PREFIX} (student has other sessions)"
+    else:
+        step(
+            "grading_token",
+            lambda: revoke_token_for_student(
+                opener, grading_api_url, coordinator_key, student_id
+            ),
+        )
 
     return report

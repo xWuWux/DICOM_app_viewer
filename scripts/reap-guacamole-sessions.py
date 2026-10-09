@@ -221,7 +221,12 @@ class Reaper:
             grading_api_url=effective_api,
             coordinator_key=self.coordinator_key or None,
         )
-        bad = {step: err for step, err in report.items() if err != gs.STEP_OK}
+        bad = {step: err for step, err in report.items() if not gs.step_ok(err)}
+        skipped = {
+            step: err for step, err in report.items() if str(err).startswith("skipped")
+        }
+        if skipped:
+            self.log(f"note for {container_name}: {skipped}")
         if bad:
             # Keep the state entry: next pass sees the container again and
             # retries whatever is still there (every library step is

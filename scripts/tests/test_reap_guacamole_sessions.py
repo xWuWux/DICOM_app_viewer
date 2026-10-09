@@ -61,18 +61,34 @@ class FakeDocker:
             if not self.raw_mode:
                 names = [n for n in names if n.startswith(gs.CONTAINER_PREFIX)]
             rows = [f"{n}|{self.containers[n]}" for n in names]
-            return subprocess.CompletedProcess(args=argv, returncode=0, stdout="\n".join(rows) + "\n" if rows else "", stderr="")
+            return subprocess.CompletedProcess(
+                args=argv,
+                returncode=0,
+                stdout="\n".join(rows) + "\n" if rows else "",
+                stderr="",
+            )
         if argv[0] == "rm":
             name = argv[-1]
             if name in self.containers:
                 del self.containers[name]
-                return subprocess.CompletedProcess(args=argv, returncode=0, stdout=name + "\n", stderr="")
-            return subprocess.CompletedProcess(args=argv, returncode=1, stdout="", stderr="Error response from daemon: No such container: " + name)
+                return subprocess.CompletedProcess(
+                    args=argv, returncode=0, stdout=name + "\n", stderr=""
+                )
+            return subprocess.CompletedProcess(
+                args=argv,
+                returncode=1,
+                stdout="",
+                stderr="Error response from daemon: No such container: " + name,
+            )
         if argv[0] == "inspect":
             name = argv[-1]
             if name in self.started:
-                return subprocess.CompletedProcess(args=argv, returncode=0, stdout=self.started[name], stderr="")
-            return subprocess.CompletedProcess(args=argv, returncode=1, stdout="", stderr="no such")
+                return subprocess.CompletedProcess(
+                    args=argv, returncode=0, stdout=self.started[name], stderr=""
+                )
+            return subprocess.CompletedProcess(
+                args=argv, returncode=1, stdout="", stderr="no such"
+            )
         raise AssertionError("unexpected docker argv: " + str(argv))
 
 
@@ -94,10 +110,16 @@ class FakeGuac:
         self.calls.append((method, url.split("?")[0]))
         if url.endswith("api/tokens"):
             return FakeResp(json.dumps({"authToken": "ADMIN-TOKEN"}).encode())
-        if "api/v1/session/activeConnections" in url:
+        if "activeConnections" in url:
+            # path asserted WHERE it is used: core REST, not the v1 extension
+            assert "/api/session/data/postgresql/activeConnections" in url
             if self.active is None:
                 raise http_error(url)
-            return FakeResp(json.dumps([{"username": u} for u in self.active]).encode())
+            payload = {
+                f"tunnel{i}": {"connectionIdentifier": "x", "username": u}
+                for i, u in enumerate(sorted(self.active))
+            }
+            return FakeResp(json.dumps(payload).encode())
         if "postgresql/users" in url and method == "GET":
             return FakeResp(json.dumps({u: {} for u in self.users}).encode())
         if "postgresql/users/" in url and method == "DELETE":
@@ -109,8 +131,16 @@ class FakeGuac:
                 raise http_error(url, 404)
             self.users.pop(who)
             return FakeResp(b"{}")
-        if "postgresql/connections" in url and method == "GET" and "/connections/" not in url:
-            return FakeResp(json.dumps({i: {"name": n} for i, n in self.connections.items()}).encode())
+        if (
+            "postgresql/connections" in url
+            and method == "GET"
+            and "/connections/" not in url
+        ):
+            return FakeResp(
+                json.dumps(
+                    {i: {"name": n} for i, n in self.connections.items()}
+                ).encode()
+            )
         if "/connections/" in url and method == "DELETE":
             cid = url.split("/connections/")[1].split("?")[0]
             if cid not in self.connections:
@@ -302,7 +332,67 @@ def test_library_teardown_is_idempotent_second_run_reports_not_raises():
         admin_pass="b",
     )
     first = gs.teardown_session(name, **common)
-    assert all(v == gs.STEP_OK for v in first.values()) or first.get("grading_token", "").startswith("skipped")
+    assert all(v == gs.STEP_OK for v in first.values()) or first.get(
+        "grading_token", ""
+    ).startswith("skipped")
     second = gs.teardown_session(name, **common)
     # container already rm'd and user already gone: steps must pass silently
     assert second["container"] == gs.STEP_OK
+
+
+def test_sibling_session_of_same_student_survives_old_session_teardown():
+    # Review item 1 on PR #187: stu_<student> and revoke-by-student are
+    # PER-STUDENT objects. Tearing down the OLD session must not kill the
+    # NEWER one: user delete and revocation are skipped while a sibling
+    # guac-weasis-<student>-* container remains.
+    old_c = "guac-weasis-STU_A-101"
+    new_c = "guac-weasis-STU_A-102"
+    docker = FakeDocker(
+        containers={old_c: "running", new_c: "running"},
+        started={old_c: iso(T0 - 49 * 3600), new_c: iso(T0 - 1 * 3600)},
+    )
+    guac = FakeGuac(
+        users={"stu_STU_A": {}},
+        connections={"7": old_c, "8": new_c},
+        active={"stu_STU_A"},
+    )
+    r, logs = make_reaper(docker, guac, [T0])
+    r.run()
+    assert old_c not in docker.containers and new_c in docker.containers
+    assert guac.connections == {"8": new_c}  # per-SESSION connection deleted
+    assert "stu_STU_A" in guac.users  # per-STUDENT user kept
+    assert guac.revoked == []  # nothing revoked while a session lives
+    assert r.state.get(new_c)  # survivor tracked for future passes
+    # next pass: the survivor ages out -> now the student-scoped objects go
+    docker.started[new_c] = iso(T0 - 49 * 3600)
+    r.run()
+    assert new_c not in docker.containers
+    assert "stu_STU_A" not in guac.users
+    assert guac.revoked == ["STU_A"]
+
+
+def test_teardown_cli_layer_skips_are_not_failures():
+    # library-level: sibling present -> user/revoke reported as skipped,
+    # everything else ok; step_ok accepts both
+    old_c = "guac-weasis-STU_B-201"
+    docker = FakeDocker(
+        containers={old_c: "running", "guac-weasis-STU_B-202": "running"},
+        started={old_c: iso(T0), "guac-weasis-STU_B-202": iso(T0)},
+    )
+    guac = FakeGuac(users={"stu_STU_B": {}}, connections={"1": old_c}, active=set())
+    report = gs.teardown_session(
+        old_c,
+        opener=guac,
+        docker=docker,
+        guac_url="http://fake.local/guacamole/",
+        admin_user="a",
+        admin_pass="b",
+        grading_api_url="http://fake.local:8080",
+        coordinator_key="K" * 40,
+    )
+    assert report["container"] == gs.STEP_OK
+    assert report["guacamole_connection"] == gs.STEP_OK
+    assert report["guacamole_user"].startswith("skipped")
+    assert report["grading_token"].startswith("skipped")
+    assert all(gs.step_ok(v) for v in report.values())
+    assert "stu_STU_B" in guac.users and guac.revoked == []
