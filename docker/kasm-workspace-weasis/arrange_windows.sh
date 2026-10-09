@@ -42,9 +42,30 @@
 #      progress lives server-side, so a relaunch loses nothing). Rate-limited:
 #      at most MAX_WEASIS_RELAUNCHES times per session and never twice within
 #      WEASIS_COOLDOWN_S, so a Weasis that crashes on start cannot spin.
+#   5. FOLLOWS THE CASE POINTER (issue #185). Weasis is started once, on the first
+#      case. When the student submits and moves on, the panel (browser-side) shows
+#      the next case but nothing told Weasis. So every ARRANGE_CASE_POLL_EVERY-th
+#      pass this script fetches /api/case (same endpoint and X-Grading-Token header
+#      the panel uses), builds the weasis:// URI with weasis_case_uri.py (the same
+#      helper custom_startup.sh used for the first study) and, when it differs from
+#      the study Weasis was last given, launches `Weasis <uri>`: weasis:// is
+#      single-instance IPC, so the running Weasis opens the new study.
+#      Failure handling (each one logged, none fatal, the current study stays):
+#        - API unreachable or not JSON: keep the current study, retry on the next poll
+#          (logged on the 1st failure and every 10th, so a long outage is not a flood);
+#        - complete case / no study UID / invalid UID: nothing to open, change nothing;
+#        - the hand-over process exits non-zero: retried, at most MAX_SEND_RETRIES
+#          times per study, then logged and given up (the Weasis-crash relaunch above
+#          still opens the CURRENT study, because WEASIS_URI is updated first);
+#        - Weasis window not present: only remember the new study; the relaunch
+#          above starts Weasis on it (never a second, competing instance).
+#      The token is passed to curl on stdin (never in argv) and is never logged.
+#      Needs VIEWER_URL, ORTHANC_URL and GRADING_TOKEN in the environment; if any
+#      is missing the feature is disabled with one log line.
 # Deterrence, not prevention, like the watermark.
 #
-# Test seams (all unset in production): ARRANGE_POLL_INTERVAL_S,
+# Test seams (all unset in production): ARRANGE_CASE_POLL_EVERY (passes between
+# polls), ARRANGE_CASE_CURL_TIMEOUT_S, WEASIS_URI_HELPER, and: ARRANGE_POLL_INTERVAL_S,
 # ARRANGE_MAX_ITERATIONS (0 = run forever), ARRANGE_PANEL_CMD,
 # ARRANGE_WEASIS_BIN / ARRANGE_WEASIS_URI (what to relaunch), ARRANGE_WEASIS_COOLDOWN_S.
 set -uo pipefail  # not -e: a miss here shouldn't take down custom_startup.sh's other background jobs
@@ -58,6 +79,15 @@ WEASIS_BIN="${ARRANGE_WEASIS_BIN:-/opt/weasis/bin/Weasis}"
 WEASIS_URI="${ARRANGE_WEASIS_URI:-}"
 WEASIS_COOLDOWN_S="${ARRANGE_WEASIS_COOLDOWN_S:-20}"
 MAX_WEASIS_RELAUNCHES=5
+
+# Issue #185: follow the grading-api case pointer.
+CASE_POLL_EVERY="${ARRANGE_CASE_POLL_EVERY:-3}"            # passes between polls (3 x 2 s = ~6 s)
+CASE_CURL_TIMEOUT_S="${ARRANGE_CASE_CURL_TIMEOUT_S:-5}"
+MAX_SEND_RETRIES=3
+WEASIS_URI_HELPER="${WEASIS_URI_HELPER:-/opt/grading-panel/weasis_case_uri.py}"
+VIEWER_URL="${VIEWER_URL:-}"
+ORTHANC_URL="${ORTHANC_URL:-}"
+GRADING_TOKEN="${GRADING_TOKEN:-}"
 
 # First window id whose wmctrl title contains $1 (the title goes in via -v,
 # never interpolated into the awk program).
@@ -102,6 +132,83 @@ place() {
     fi
     wmctrl -r "$1" -b remove,maximized_vert,maximized_horz 2>/dev/null
     wmctrl -r "$1" -e 0,"$2",0,"$cw","$ch" 2>/dev/null
+}
+
+# Issue #185: poll /api/case; when the study changes, hand the new weasis:// URI to
+# the running Weasis. State lives in globals (this script is one long loop).
+case_fetch_failures=0
+current_uid=""
+send_pid=""
+send_uri=""
+send_failures=0
+follow_enabled=1
+if [ -z "$VIEWER_URL" ] || [ -z "$ORTHANC_URL" ] || [ -z "$GRADING_TOKEN" ]; then
+    follow_enabled=0
+    echo "arrange_windows.sh: VIEWER_URL/ORTHANC_URL/GRADING_TOKEN not all set -- Weasis will NOT follow case changes" >&2
+fi
+
+# Start `Weasis <uri>` in the background and remember it so the next poll can
+# check how it ended. A second launch normally forwards the URI to the running
+# Weasis and exits 0; if Weasis was not running it simply becomes the instance.
+send_study() {
+    "$WEASIS_BIN" "$1" &
+    send_pid=$!
+    send_uri="$1"
+}
+
+# Check the previous hand-over: a non-zero exit is a failure, retried a few times.
+check_previous_send() {
+    [ -n "$send_pid" ] || return 0
+    kill -0 "$send_pid" 2>/dev/null && return 0   # still running: it IS the Weasis instance
+    local rc=0
+    wait "$send_pid" 2>/dev/null || rc=$?
+    send_pid=""
+    if [ "$rc" -eq 0 ]; then
+        send_failures=0
+        return 0
+    fi
+    send_failures=$((send_failures + 1))
+    if [ "$send_failures" -lt "$MAX_SEND_RETRIES" ]; then
+        echo "arrange_windows.sh: handing the new study to Weasis failed (exit ${rc}), retry ${send_failures}/${MAX_SEND_RETRIES}" >&2
+        send_study "$send_uri"
+    else
+        echo "arrange_windows.sh: handing the new study to Weasis failed ${send_failures} times (last exit ${rc}); giving up on this study" >&2
+    fi
+}
+
+follow_case() {
+    [ "$follow_enabled" = "1" ] || return 0
+    check_previous_send
+    local json uri new_uid
+    if ! json=$(curl -fsS -m "$CASE_CURL_TIMEOUT_S" --config - "${VIEWER_URL}api/case" \
+        < <(printf 'header = "X-Grading-Token: %s"\n' "$GRADING_TOKEN") 2>/dev/null); then
+        case_fetch_failures=$((case_fetch_failures + 1))
+        if [ "$case_fetch_failures" -eq 1 ] || [ $((case_fetch_failures % 10)) -eq 0 ]; then
+            echo "arrange_windows.sh: grading-api /api/case unreachable (${case_fetch_failures} failures in a row) -- keeping the current study" >&2
+        fi
+        return 0
+    fi
+    case_fetch_failures=0
+    local rc=0
+    uri=$(python3 "$WEASIS_URI_HELPER" uri "$json" "$ORTHANC_URL" 2>/dev/null) || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo "arrange_windows.sh: /api/case returned something that is not a case (helper exit ${rc}) -- keeping the current study" >&2
+        return 0
+    fi
+    # Empty = complete case or no study: leave Weasis alone.
+    [ -n "$uri" ] || return 0
+    [ "$uri" != "$WEASIS_URI" ] || return 0
+
+    new_uid=$(python3 "$WEASIS_URI_HELPER" uid "$json" 2>/dev/null)
+    echo "arrange_windows.sh: case changed -- Weasis now shows study ${new_uid} (was: ${current_uid:-the study from startup})"
+    current_uid="$new_uid"
+    WEASIS_URI="$uri"   # also what the crash relaunch below will open
+    send_failures=0
+    if [ -n "$(win_id "Weasis")" ]; then
+        send_study "$uri"
+    else
+        echo "arrange_windows.sh: Weasis window not present -- the relaunch logic will open study ${new_uid}"
+    fi
 }
 
 # No title-bar minimise/maximise/shade buttons (best effort).
@@ -209,6 +316,10 @@ while true; do
                 fi
             fi
         fi
+    fi
+
+    if [ $((iteration % CASE_POLL_EVERY)) -eq 0 ]; then
+        follow_case
     fi
 
     if [ "$MAX_ITERATIONS" -gt 0 ] && [ "$iteration" -ge "$MAX_ITERATIONS" ]; then

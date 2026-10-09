@@ -46,6 +46,7 @@ EOF
   chmod +x "$STUB_DIR/curl"
 
   export PATH="$STUB_DIR:$PATH"
+  export WEASIS_URI_HELPER="$BATS_TEST_DIRNAME/weasis_case_uri.py"
   export WEASIS_BIN="$STUB_DIR/weasis"
   export WEASIS_ARGS_FILE="$BATS_TEST_TMPDIR/weasis-args.txt"
   export CURL_ARGS_FILE="$BATS_TEST_TMPDIR/curl-args.txt"
