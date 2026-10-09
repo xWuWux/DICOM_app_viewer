@@ -46,6 +46,14 @@ Requires:
 Usage:
   GRADING_COORDINATOR_KEY=... python3 scripts/provision-guacamole-session.py --student-id STU_12345
 
+SECURITY: stdout is a LIVE CREDENTIAL -- the emitted link embeds this
+session's auto-login password. Hand it to exactly one student; never tee
+it, commit it or paste it into tickets/transcripts (the 2022-09-22
+incident lesson recorded in create-session.py applies; what differs is
+SCOPE: this secret is born with the session and dies with it via
+rollback/teardown/reaper, unlike the long-lived key that leaked then).
+Operator-facing guidance ships in docs/GUACAMOLE.md (#183).
+
 Companion teardown script: scripts/teardown-guacamole-session.py
 """
 
@@ -389,6 +397,18 @@ def _provision():
 
     link = f"{guac_url}#/?username={urllib.parse.quote(guac_username)}&password={urllib.parse.quote(guac_password)}"
 
+    # INTENTIONAL credential output (PR #191 CodeQL alert
+    # py/clear-text-logging-sensitive-data, assessed and kept): the link IS
+    # this CLI's deliverable -- Guacamole's documented auto-login shape
+    # (module docstring), and structurally the same trade the Kasm flow
+    # already ships: create-session.py prints its bearer-credential
+    # kasm_url (issue #122's "the link IS the credential") while refusing
+    # to print the raw grading TOKEN. House rules post-2022-09-22 forbid
+    # printing LONG-LIVED secrets; this one is single-session-scoped,
+    # minted seconds ago, and revoked or TTL-expired alongside the
+    # session (rollback here, reaper/teardown otherwise). CodeQL has no
+    # native inline suppression -- dismiss the alert as by-design, do NOT
+    # "fix" the print (it would break the tool's only purpose).
     print(
         json.dumps(
             {
