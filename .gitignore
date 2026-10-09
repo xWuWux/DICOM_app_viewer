@@ -23,13 +23,13 @@ docker/viewer/tests/__snapshot_failures__/
 session.md
 /*.txt
 
-# Fetched by scripts/fetch-public-samples.sh — not committed, re-fetched from
+# Fetched by scripts/fetch-public-samples.sh - not committed, re-fetched from
 # Orthanc's public demo server on demand (see that script's own comments).
 # The small pydicom fixtures directly under sample-data/ ARE committed.
 /sample-data/brainix/
 
 # A real, multi-hundred-slice CT study (970 instances, ~494MB) from
-# dicomlibrary.com's own public "DICOM Samples" gallery — confirmed
+# dicomlibrary.com's own public "DICOM Samples" gallery - confirmed
 # anonymized directly via pydicom tags before use (PatientName
 # "Anonymized^^", PatientID "0", no institution/physician/accession) --
 # not scriptable like brainix/ above: dicomlibrary.com's download link is

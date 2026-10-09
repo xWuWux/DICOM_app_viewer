@@ -20,7 +20,7 @@ server {
     server_name _;
     root /usr/share/nginx/html;
 
-    # Watermarked wrapper page — this is what the Kasm workspace opens in kiosk mode.
+    # Watermarked wrapper page - this is what the Kasm workspace opens in kiosk mode.
     location = / {
         index watermark.html;
     }
@@ -95,14 +95,14 @@ server {
 
 server {
     # Auth-transparent proxy to Orthanc, at its own origin's root (so asset
-    # paths still work) but with Basic Auth injected server-side — an iframe
+    # paths still work) but with Basic Auth injected server-side - an iframe
     # can't answer a login challenge, so the un-proxied Orthanc origin just
     # renders blank. Orthanc's own auth stays ON (defense in depth); this is
     # the only thing allowed to see these credentials.
     # ORTHANC_AUTH_B64 is computed at container start by
     # 15-compute-orthanc-auth.envsh from ORTHANC_USER/ORTHANC_PASSWORD, then
     # substituted into this file by the base image's own envsubst-on-templates
-    # entrypoint step — nothing real is hardcoded in this committed file.
+    # entrypoint step - nothing real is hardcoded in this committed file.
     listen 8043;
     server_name _;
 
