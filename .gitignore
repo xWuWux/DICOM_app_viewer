@@ -66,3 +66,11 @@ Dokumentacja/DICOM_Q&A.txt
 .coverage
 .coverage.*
 coverage.xml
+
+# Real study data and everything derived from it (issue #87): the answer key, the
+# clinical reference reports and the real study UIDs. The GitHub repo is public.
+# ./local is mounted read-only into grading-api (GRADING_CASES_FILE=/local/cases.json).
+local/*
+!local/.gitkeep
+Dokumentacja/DICOM_Images/
+Dokumentacja/Opisy_badan/

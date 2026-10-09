@@ -220,6 +220,15 @@ class TestGradingPanelStates:
         assert_snapshot(panel_locator)
 
 
+    def test_session_expired_screen(self, page, flow_page, student_id, panel_locator, assert_snapshot, base_url):
+        """Issue #145: no token anywhere (fresh tab, no fragment) -> the approved message, no retry button."""
+        page.clock.set_fixed_time(FROZEN_TIME)
+        page.set_viewport_size(VIEWPORT)
+        page.goto(f"{base_url}/{flow_page}?student_id={student_id}&session_id=vr")
+        page.wait_for_selector("#session-expired", timeout=15000)
+        assert_snapshot(panel_locator)
+
+
 class TestSubmitErrorRecovery:
     """Not a visual-snapshot test (no assert_snapshot here) -- a
     functional check of onSubmit()'s error handling itself (issue #61).

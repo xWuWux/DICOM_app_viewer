@@ -60,8 +60,13 @@ services:
       # on purpose, same reasoning as ORTHANC_PASSWORD above: fail loudly
       # if it isn't set, not silently run with no secret configured.
       - GRADING_COORDINATOR_KEY=${GRADING_COORDINATOR_KEY:?Set GRADING_COORDINATOR_KEY in .env -- see .env.example}
+      # Optional (issue #87): real cases from a local, git-ignored file instead of the
+      # placeholder seed -- see README 'Real study data (local only)'. Empty = placeholders.
+      - GRADING_CASES_FILE=${GRADING_CASES_FILE:-}
     volumes:
       - grading-db:/data
+      # ./local holds cases.json (answer key + reports + study UIDs): git-ignored, read-only here.
+      - ./local:/local:ro
     networks:
       - ipcmc-internal
 
