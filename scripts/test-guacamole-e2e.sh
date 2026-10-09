@@ -18,7 +18,7 @@
 # Needs the full stack already running:
 #   docker compose -f docker-compose.yml -f docker-compose.guacamole.yml up -d --build
 # and docker/guacamole-weasis:poc already built:
-#   docker build -t ipcmc/guacamole-weasis:poc docker/guacamole-weasis
+#   docker build --build-context kasm=docker/kasm-workspace-weasis -t ipcmc/guacamole-weasis:poc docker/guacamole-weasis
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
