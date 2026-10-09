@@ -11,6 +11,7 @@ work, not yet started.
 
 import os
 import sqlite3
+import sys
 import time
 
 # main.py reads db.TOKEN_TTL_SECONDS; validation lives in config.py (#97).
@@ -21,6 +22,20 @@ from .logging_config import get_logger
 DB_PATH = os.environ.get("GRADING_DB_PATH", "/data/grading.db")
 
 logger = get_logger(__name__)
+
+
+def _fatal_config_error(message):
+    """Clean one-line operator abort, same contract as config.py's import-time
+    handler (issue #160 review N1): stdout stays reserved for structured JSON
+    logs, the message goes to stderr, exit code is 2. Raising a bare
+    SystemExit(str) from inside init_db() -- which runs in lifespan(), inside
+    uvicorn's task group -- resurfaces it as a BaseExceptionGroup traceback
+    with exit code 1: the message is still there but buried, and scripts
+    cannot distinguish "bad configuration" (2) from "crash" (1).
+    """
+    print(message, file=sys.stderr)
+    raise SystemExit(2) from None
+
 
 # How long a minted session token stays valid -- see config.py for the
 # (now validated) reading of GRADING_TOKEN_TTL_SECONDS; re-exported above
@@ -150,10 +165,10 @@ def _backup_before_migration(conn):
         os.chmod(backup_path, 0o600)
     except (sqlite3.Error, OSError):
         logger.exception("pre_migration_backup_failed")
-        raise SystemExit(
+        _fatal_config_error(
             f"CONFIGURATION ERROR: could not write the pre-migration backup "
             f"({backup_path}); refusing to migrate real data without a copy (issue #85)."
-        ) from None
+        )
     logger.info("pre_migration_backup_written", extra={"backup_path": backup_path})
 
 
@@ -238,11 +253,11 @@ def _migrate_existing_schema(conn):
                 # under its own name) and the _backup_before_migration
                 # copy is on disk.
                 logger.exception("cases_version_migration_failed")
-                raise SystemExit(
+                _fatal_config_error(
                     "CONFIGURATION ERROR: could not migrate the cases table to the "
                     "versioned schema (issue #96); the database is unchanged. "
                     "See the traceback above for the underlying sqlite3 error."
-                ) from None
+                )
             finally:
                 conn.isolation_level = ""
                 conn.execute("PRAGMA legacy_alter_table=OFF")
@@ -547,7 +562,7 @@ def init_db():
             seed_rows = load_cases(cases_file, STAGES, {key for key, _ in CATEGORY_LABELS})
         except CasesFileError as exc:
             conn.close()
-            raise SystemExit(f"CONFIGURATION ERROR: GRADING_CASES_FILE: {exc}") from None
+            _fatal_config_error(f"CONFIGURATION ERROR: GRADING_CASES_FILE: {exc}")
         conn.executemany(
             """INSERT INTO cases
                (stage, order_index, orthanc_study_uid, title,

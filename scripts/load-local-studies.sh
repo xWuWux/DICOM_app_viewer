@@ -83,4 +83,7 @@ printf '%s\n' "$results" | { grep -v -e '^RESULT' -e '^WHY' || true; }
 printf '%s\n' "$results" | { grep '^WHY' || true; } | sed 's/^WHY /  failure reason: /'
 read -r _ done_n failed_n <<<"$(printf '%s\n' "$results" | grep '^RESULT')"
 echo "done: $done_n uploaded, $failed_n failed"
+if [ "${failed_n:-1}" -eq 0 ]; then
+  echo "next: python3 scripts/verify-cases-in-orthanc.py <cases.json>  (counts-only cross-check that every case's study actually landed, issue #160 S1)"
+fi
 [ "${failed_n:-1}" -eq 0 ]

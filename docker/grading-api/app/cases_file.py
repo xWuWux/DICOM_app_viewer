@@ -19,7 +19,12 @@ exactly what must not be logged (issue #93's lesson).
 import json
 import re
 
-STUDY_UID_RE = re.compile(r"[0-9.]{1,128}")  # DICOM UI alphabet; a leading dot is tolerated on purpose
+# DICOM UI alphabet, at most 128 characters, and it must END in a digit: a
+# dots-only UID (".", "..") or a trailing dot identifies nothing and was
+# accepted by the first shape (issue #160 review N3). A LEADING dot stays
+# tolerated on purpose -- the received real exports carry a stray one on every
+# UID (issue #162), and rejecting it here would refuse our own input pipeline.
+STUDY_UID_RE = re.compile(r"[0-9.]{0,127}[0-9]")
 _FIELDS = {
     "stage",
     "order_index",

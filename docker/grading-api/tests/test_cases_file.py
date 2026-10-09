@@ -116,15 +116,34 @@ def test_init_db_seeds_from_the_file_instead_of_the_placeholders(tmp_path, monke
     assert not any("PLACEHOLDER" in str(r) for r in rows)
 
 
-def test_invalid_file_stops_startup_with_a_value_free_message(tmp_path, monkeypatch):
+def test_invalid_file_stops_startup_with_a_value_free_message(tmp_path, monkeypatch, capsys):
     data = _valid()
     data[0]["ground_truth_category"] = "9"
     monkeypatch.setattr(db_module, "DB_PATH", str(tmp_path / "g.db"))
     monkeypatch.setenv("GRADING_CASES_FILE", _write(tmp_path, data))
     with pytest.raises(SystemExit) as exc:
         db_module.init_db()
-    assert "GRADING_CASES_FILE" in str(exc.value)
-    assert SENTINEL_REPORT not in str(exc.value) and SENTINEL_UID not in str(exc.value)
+    # N1 follow-up (#160 review): the abort must match config.py -- stderr +
+    # exit code 2. A bare SystemExit(str) raised inside lifespan() comes back
+    # through uvicorn's task group as a BaseExceptionGroup traceback (code 1),
+    # indistinguishable from a crash.
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "CONFIGURATION ERROR" in err and "GRADING_CASES_FILE" in err
+    assert SENTINEL_REPORT not in err and SENTINEL_UID not in err
+    assert "Traceback" not in err
+
+
+@pytest.mark.parametrize("uid", ["", ".", "..", "...", "1.", "1.2.", "1.2.3."])
+def test_dots_only_or_trailing_dot_study_uid_is_rejected(tmp_path, uid):
+    # N3 follow-up (#160 review): the old [0-9.]{1,128} fullmatch called "."
+    # and "1.2." valid UIDs. A LEADING dot stays accepted on purpose -- the
+    # real exports carry one (issue #162); the SENTINEL_UID used by every
+    # other test in this file is exactly that shape.
+    data = _valid()
+    data[0]["orthanc_study_uid"] = uid
+    with pytest.raises(CasesFileError, match="not a DICOM UID"):
+        load_cases(_write(tmp_path, data), STAGES, CATS)
 
 
 def test_a_second_start_does_not_reseed_and_warns(tmp_path, monkeypatch, caplog):
