@@ -120,6 +120,11 @@ EOF
   [ "$(wc -l < "$PANEL_LAUNCHES")" -eq 0 ]
 }
 
+# History (root cause of the original flake, CI runs 37774983212 / 37772985998:
+# same SHA, push-run green, PR-run red): this test used to delete the panel from
+# WINDOWS_FILE for 0.25 s against a 0.2 s poll interval -- on a loaded runner two
+# consecutive checks could both land in the gap and (correctly) trigger the
+# relaunch the assertion forbade. VANISH_PASSES below removes timers entirely.
 @test "a window that vanishes for a single pass is not treated as closed" {
   export VANISH_PASSES="3"          # missing in pass 3 only, present in passes 1-2 and 4-8
   export ARRANGE_MAX_ITERATIONS="8"
