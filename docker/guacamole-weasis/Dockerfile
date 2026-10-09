@@ -6,8 +6,11 @@
 # review. Apache Guacamole is Apache-licensed with no such cap.
 #
 # Deliberately basic-functionality only, per explicit scope for this PoC:
-# NO watermark overlay, NO Weasis export/import lockdown, NO window
-# auto-tiling. This is NOT a security-hardened image the way
+# NO Weasis export/import lockdown (owner decision 2026-10-09: this
+# alternative is about hosting, not copy/export security), NO window
+# auto-tiling (issue #180). The forensic watermark IS included since
+# issue #179: it is a mandatory control (CLAUDE.md), and its files are
+# REUSED from the Kasm image, not copied (see the COPY --from=kasm below). This is NOT a security-hardened image the way
 # docker/kasm-workspace-weasis/ is -- don't point it at real patient data.
 #
 # Base: plain ubuntu:24.04, not any Kasm-maintained image -- the whole
@@ -43,6 +46,10 @@ RUN apt-get update && \
       gvfs \
       gvfs-daemons \
       python3 \
+      python3-gi \
+      python3-gi-cairo \
+      gir1.2-gtk-3.0 \
+      picom \
       curl \
       ca-certificates \
       fonts-dejavu-core && \
@@ -105,6 +112,15 @@ ENV ORTHANC_URL="http://${REMOTE_HOST}:8043/"
 
 RUN useradd -m -s /bin/bash student
 ENV HOME=/home/student
+
+# Issue #179: the forensic watermark (overlay, watchdog, compositor config) is
+# the Kasm image's own code, taken from its directory through the NAMED build
+# context "kasm" so there is exactly one copy of it in the repository.
+# Build with:  docker build --build-context kasm=docker/kasm-workspace-weasis \
+#                -t <tag> docker/guacamole-weasis
+# (scripts/guacamole-iac.sh, build-test.sh and test-guacamole-integration.sh do).
+COPY --from=kasm overlay.py watchdog.sh picom.conf /opt/watermark/
+RUN chmod +x /opt/watermark/watchdog.sh
 
 COPY xstartup /home/student/.vnc/xstartup
 COPY launch-session.sh /opt/startup/launch-session.sh

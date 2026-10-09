@@ -50,7 +50,7 @@ if ! docker network inspect kasm_default_network >/dev/null 2>&1; then
 fi
 
 echo "--- building docker/guacamole-weasis:poc ---"
-docker build -t ipcmc/guacamole-weasis:poc docker/guacamole-weasis || { echo "build failed"; exit 1; }
+docker build --build-context kasm=docker/kasm-workspace-weasis -t ipcmc/guacamole-weasis:poc docker/guacamole-weasis || { echo "build failed"; exit 1; }
 
 echo "--- docker compose up (core + guacamole infra) ---"
 docker compose -f docker-compose.yml -f docker-compose.guacamole.yml up -d --build \
