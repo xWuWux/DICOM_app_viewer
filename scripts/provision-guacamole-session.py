@@ -46,11 +46,21 @@ Requires:
 Usage:
   GRADING_COORDINATOR_KEY=... python3 scripts/provision-guacamole-session.py --student-id STU_12345
 
+SECURITY: stdout is a LIVE CREDENTIAL -- the emitted link embeds this
+session's auto-login password. Hand it to exactly one student; never tee
+it, commit it or paste it into tickets/transcripts (the 2022-09-22
+incident lesson recorded in create-session.py applies; what differs is
+SCOPE: this secret is born with the session and dies with it via
+rollback/teardown/reaper, unlike the long-lived key that leaked then).
+Operator-facing guidance ships in docs/GUACAMOLE.md (#183).
+
 Companion teardown script: scripts/teardown-guacamole-session.py
 """
+
 import argparse
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -59,13 +69,91 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+# issue #182: rollback shares ONE naming/shape truth with the reaper and
+# teardown (merged in #187) -- a half-provisioned session must be undoable
+# by exactly the code that reaps fully-provisioned ones.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import guacamole_session as gs  # noqa: E402
+
 # issue #52: a narrow custom seccomp profile, not blanket
 # `seccomp=unconfined` -- see docker/guacamole-weasis/seccomp/
 # build-profile.py's own docstring for how this was derived and verified.
 _SECCOMP_PROFILE_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "..", "docker", "guacamole-weasis", "seccomp", "profile.json",
+    "..",
+    "docker",
+    "guacamole-weasis",
+    "seccomp",
+    "profile.json",
 )
+
+
+class ProvisionAborted(Exception):
+    """A provisioning step failed. main() responds by running every undo
+    registered so far, in reverse order (issue #182, the compensation
+    pattern create-session.py uses for the Kasm flow)."""
+
+
+# Steps register their undo ONLY after their step succeeded. One-shot CLI,
+# so a process-level list is safe; main() owns its lifecycle (clear on
+# start, drain on abort, clear without running after success -- a live
+# session must never be undone).
+_UNDO = []
+
+
+def _rollback(reason):
+    print(f"provisioning failed: {reason}", file=sys.stderr)
+    print(
+        f"rolling back {len(_UNDO)} completed step(s), most recent first:",
+        file=sys.stderr,
+    )
+    failed = []
+    while _UNDO:
+        label, undo = _UNDO.pop()
+        try:
+            undo()
+            print(f"  undone: {label}", file=sys.stderr)
+        except Exception as exc:  # noqa: BLE001 - one bad undo must not skip the rest
+            failed.append(label)
+            print(
+                f"  COULD NOT UNDO {label}: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
+    if failed:
+        print(
+            "leftovers needing attention: "
+            + ", ".join(failed)
+            + " -- scripts/teardown-guacamole-session.py <container-name> is "
+            "idempotent and sibling-aware; grading tokens not revoked expire "
+            "on their TTL.",
+            file=sys.stderr,
+        )
+
+
+def _undo_token(grading_api_url, coordinator_key, student_id, container_name):
+    """Revoke is PER-STUDENT (grading-api's one-live-token rule), so an
+    unrelated live session of the same student must not lose ITS token --
+    same sibling rule #187's teardown obeys. Unknown siblings counts as
+    'present': the un-revoked leftover token dies on its TTL, which is
+    strictly safer than killing a live session's grading."""
+    try:
+        siblings = gs.sibling_containers(gs.real_docker, student_id, container_name)
+    except Exception as exc:  # noqa: BLE001 - fail closed, see docstring
+        print(
+            f"  sibling check failed ({exc}); treating siblings as present",
+            file=sys.stderr,
+        )
+        siblings = ["<unknown>"]
+    if siblings:
+        print(
+            f"  skipped token revoke: student has other sessions ({', '.join(siblings)}); "
+            "the orphan token expires on its TTL instead",
+            file=sys.stderr,
+        )
+        return
+    gs.revoke_token_for_student(
+        gs.real_opener, grading_api_url, coordinator_key, student_id
+    )
 
 
 def api_call(method, url, data=None, headers=None, fatal=True, label="API"):
@@ -78,24 +166,42 @@ def api_call(method, url, data=None, headers=None, fatal=True, label="API"):
             raw = resp.read()
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as e:
-        message = f"{label} error calling {url}: {e.code} {e.read().decode()}"
+        # Credential-hygiene rule: EVERY guacamole URL carries
+        # ?token=<admin token>, and Guacamole echoes request objects back in
+        # error bodies -- connection attributes carry the VNC password. Any
+        # 4xx/5xx would otherwise write a live admin token and echoed
+        # password to stderr/cron/CI logs (the #182 rollback re-reports these
+        # messages verbatim). Same discipline as guacamole_session.http_json:
+        # scrub the token param and truncate the echoed body at the ONE
+        # site that builds API error text.
+        safe_url = re.sub(r"([?&])token=[^&]*", r"\1token=<redacted>", url)
+        # Truncation alone is NOT sanitization: a short echoed object fits
+        # entirely inside 200 chars. Scrub password fields and any token
+        # params inside the body itself before excerpting.
+        body = e.read().decode(errors="replace")
+        body = re.sub(r'("password"\s*:\s*)"[^"]*"', r'\1"<redacted>"', body)
+        body = re.sub(r"token=[^&\s\"']+", "token=<redacted>", body)
+        message = f"{label} error calling {safe_url}: {e.code} {body[:200]}"
         if fatal:
-            sys.exit(message)
+            raise ProvisionAborted(message)
         print(f"  (non-fatal) {message}", file=sys.stderr)
         return None
 
 
 def guac_login(base_url, username, password):
     resp = api_call(
-        "POST", f"{base_url}api/tokens",
-        data=urllib.parse.urlencode({"username": username, "password": password}).encode(),
+        "POST",
+        f"{base_url}api/tokens",
+        data=urllib.parse.urlencode(
+            {"username": username, "password": password}
+        ).encode(),
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         label="Guacamole login",
     )
     return resp["authToken"]
 
 
-def main():
+def _provision():
     parser = argparse.ArgumentParser()
     parser.add_argument("--student-id", required=True)
     parser.add_argument("--session-id", default=None, help="defaults to a timestamp")
@@ -116,12 +222,26 @@ def main():
 
     # 1. grading-api token -- identical mechanism to create-session.py.
     session_created = api_call(
-        "POST", f"{grading_api_url.rstrip('/')}/api/session",
+        "POST",
+        f"{grading_api_url.rstrip('/')}/api/session",
         data={"student_id": student_id, "session_id": session_id},
-        headers={"Content-Type": "application/json", "X-Coordinator-Key": coordinator_key},
+        headers={
+            "Content-Type": "application/json",
+            "X-Coordinator-Key": coordinator_key,
+        },
         label="grading-api",
     )
     grading_token = session_created["token"]
+    # container_name is defined a few lines below; the closure reads it at
+    # UNDO time, by which point it is always bound.
+    _UNDO.append(
+        (
+            "grading token (revoked only if this student has no other live session)",
+            lambda: _undo_token(
+                grading_api_url, coordinator_key, student_id, container_name
+            ),
+        )
+    )
 
     # 2. Fresh per-student container. Its name doubles as the VNC
     # "hostname" Guacamole connects to -- Docker's embedded DNS resolves
@@ -137,11 +257,27 @@ def main():
     # same secret both ends of that VNC handshake need to agree on.
     vnc_password = secrets.token_hex(4)
     container_name = f"guac-weasis-{student_id}-{session_id}"
-    subprocess.run(["docker", "rm", "-f", container_name], capture_output=True, check=False)
+    subprocess.run(
+        ["docker", "rm", "-f", container_name], capture_output=True, check=False
+    )
+    # Undo registered BEFORE the run: a failing `docker run -d` can still
+    # have created the container (image pull ok, start failed), and even a
+    # half-created one holds the name that would poison every later retry.
+    _UNDO.append(
+        (
+            f"container {container_name}",
+            lambda: gs.docker_rm(gs.real_docker, container_name),
+        )
+    )
     run_result = subprocess.run(
         [
-            "docker", "run", "-d", "--name", container_name,
-            "--network", docker_network,
+            "docker",
+            "run",
+            "-d",
+            "--name",
+            container_name,
+            "--network",
+            docker_network,
             # No -p/--publish -- this container's VNC port must only ever
             # be reachable from guacd over docker_network, never a
             # published host port (issue #53; see
@@ -165,17 +301,23 @@ def main():
             # processes start under this profile exactly as they do under
             # unconfined, and separately confirmed bpf/keyctl/io_uring/
             # userfaultfd/perf_event_open all still return EPERM under it).
-            "--security-opt", f"seccomp={_SECCOMP_PROFILE_PATH}",
-            "-e", f"STUDENT_ID={student_id}",
-            "-e", f"SESSION_ID={session_id}",
-            "-e", f"GRADING_TOKEN={grading_token}",
-            "-e", f"VNC_PASSWORD={vnc_password}",
+            "--security-opt",
+            f"seccomp={_SECCOMP_PROFILE_PATH}",
+            "-e",
+            f"STUDENT_ID={student_id}",
+            "-e",
+            f"SESSION_ID={session_id}",
+            "-e",
+            f"GRADING_TOKEN={grading_token}",
+            "-e",
+            f"VNC_PASSWORD={vnc_password}",
             image,
         ],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if run_result.returncode != 0:
-        sys.exit(f"docker run failed: {run_result.stderr}")
+        raise ProvisionAborted(f"docker run failed: {run_result.stderr}")
 
     # Best-effort, not a hard readiness gate (matches create-session.py's
     # own non-fatal-readiness-check philosophy for the Kasm flow) -- gives
@@ -196,17 +338,31 @@ def main():
     # duplicate username. Best-effort, not fatal if there's nothing to
     # clean up yet.
     api_call(
-        "DELETE", f"{guac_url}api/session/data/postgresql/users/{guac_username}?token={admin_token}",
-        fatal=False, label="Guacamole (pre-cleanup)",
+        "DELETE",
+        f"{guac_url}api/session/data/postgresql/users/{guac_username}?token={admin_token}",
+        fatal=False,
+        label="Guacamole (pre-cleanup)",
     )
     api_call(
-        "POST", f"{guac_url}api/session/data/postgresql/users?token={admin_token}",
+        "POST",
+        f"{guac_url}api/session/data/postgresql/users?token={admin_token}",
         data={"username": guac_username, "password": guac_password, "attributes": {}},
         headers={"Content-Type": "application/json"},
         label="Guacamole (create user)",
     )
+    # Deleting the user cascades its permission grants, so this one undo
+    # also covers a later failed permission PATCH.
+    _UNDO.append(
+        (
+            f"guacamole user {guac_username}",
+            lambda: gs.guac_delete_user(
+                gs.real_opener, guac_url, admin_token, guac_username
+            ),
+        )
+    )
     connection = api_call(
-        "POST", f"{guac_url}api/session/data/postgresql/connections?token={admin_token}",
+        "POST",
+        f"{guac_url}api/session/data/postgresql/connections?token={admin_token}",
         data={
             "parentIdentifier": "ROOT",
             "name": container_name,
@@ -216,31 +372,76 @@ def main():
             # (that one's Guacamole's own web-login password for this
             # student's account) -- same vnc_password the container's own
             # VNC_PASSWORD env var was given, above.
-            "parameters": {"hostname": container_name, "port": "5901", "password": vnc_password},
+            "parameters": {
+                "hostname": container_name,
+                "port": "5901",
+                "password": vnc_password,
+            },
             "attributes": {},
         },
         headers={"Content-Type": "application/json"},
         label="Guacamole (create connection)",
     )
-    connection_id = connection["identifier"]
+    # By-NAME delete (library): correct even when the response body is
+    # malformed and no identifier was ever parsed out of it.
+    _UNDO.append(
+        (
+            f"guacamole connection {container_name}",
+            lambda: gs.guac_delete_connection_by_name(
+                gs.real_opener, guac_url, admin_token, container_name
+            ),
+        )
+    )
+    try:
+        connection_id = connection["identifier"]
+    except (TypeError, KeyError) as exc:
+        raise ProvisionAborted("create-connection returned no identifier") from exc
 
     api_call(
-        "PATCH", f"{guac_url}api/session/data/postgresql/users/{guac_username}/permissions?token={admin_token}",
-        data=[{"op": "add", "path": f"/connectionPermissions/{connection_id}", "value": "READ"}],
+        "PATCH",
+        f"{guac_url}api/session/data/postgresql/users/{guac_username}/permissions?token={admin_token}",
+        data=[
+            {
+                "op": "add",
+                "path": f"/connectionPermissions/{connection_id}",
+                "value": "READ",
+            }
+        ],
         headers={"Content-Type": "application/json"},
         label="Guacamole (grant permission)",
     )
 
     link = f"{guac_url}#/?username={urllib.parse.quote(guac_username)}&password={urllib.parse.quote(guac_password)}"
 
-    print(json.dumps({
-        "student_id": student_id,
-        "session_id": session_id,
-        "container_name": container_name,
-        "guacamole_username": guac_username,
-        "connection_id": connection_id,
-        "link": link,
-    }, indent=2))
+    # This link is the deliverable AND a live credential: it embeds this
+    # session's auto-login secret, which disappears the moment the session
+    # does (rollback here, teardown/reaper otherwise, or its TTL). Operator
+    # handling rules live in the module docstring; do not pipe stdout into
+    # logs, tickets, or commits.
+    print(
+        json.dumps(
+            {
+                "student_id": student_id,
+                "session_id": session_id,
+                "container_name": container_name,
+                "guacamole_username": guac_username,
+                "connection_id": connection_id,
+                "link": link,
+            },
+            indent=2,
+        )
+    )
+
+
+def main():
+    _UNDO.clear()
+    try:
+        _provision()
+    except ProvisionAborted as exc:
+        _rollback(str(exc))
+        _UNDO.clear()  # a failed run must never leave live undos for anything else to trip on
+        sys.exit(1)
+    _UNDO.clear()  # success: the session is LIVE -- its registered undos are dropped, NOT run
 
 
 if __name__ == "__main__":
