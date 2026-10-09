@@ -35,6 +35,7 @@ def scan(root):
     import pydicom
 
     studies = collections.defaultdict(list)  # study uid -> [(relpath, identity, series, sop, instance_no)]
+    empty_uid = []  # images with no StudyInstanceUID at all (issue #160 review N2)
     for dp, _, files in os.walk(root):
         for f in files:
             if not f.lower().endswith(".dcm"):
@@ -45,10 +46,17 @@ def scan(root):
             except Exception:
                 continue
             ident = (str(ds.get("PatientID", "")), str(ds.get("PatientName", "")))
-            studies[str(ds.get("StudyInstanceUID", ""))].append(
+            uid = str(ds.get("StudyInstanceUID", "")).strip()
+            if not uid:
+                # An empty UID must NOT become one pseudo-study: majority
+                # repair would then relabel images from unrelated studies as
+                # if they belonged together. They are counted and refused.
+                empty_uid.append(os.path.relpath(p, root))
+                continue
+            studies[uid].append(
                 (os.path.relpath(p, root), ident, str(ds.get("SeriesInstanceUID", "")), str(ds.get("SOPInstanceUID", "")), ds.get("InstanceNumber"))
             )
-    return studies
+    return studies, empty_uid
 
 
 def plan(studies):
@@ -86,13 +94,16 @@ def main(argv=None) -> int:
     if not os.path.isdir(a.dir):
         print("ERROR: directory does not exist", file=sys.stderr)
         return 2
-    studies = scan(a.dir)
-    if not studies:
+    studies, empty_uid = scan(a.dir)
+    if not studies and not empty_uid:
         print("ERROR: no readable .dcm files", file=sys.stderr)
         return 2
     offenders, refused, mixed = plan(studies)
-    total = sum(len(v) for v in studies.values())
+    total = sum(len(v) for v in studies.values()) + len(empty_uid)
     print(f"scanned {total} images in {len(studies)} studies; studies with more than one patient identity: {mixed}; images to correct: {len(offenders)}; studies refused: {refused}")
+    if empty_uid:
+        print(f"REFUSED: {len(empty_uid)} image(s) carry no StudyInstanceUID and cannot be attributed to any study; not repairing those (issue #160 review N2)", file=sys.stderr)
+        return 2
     if refused:
         print("REFUSED: some odd images collide with the study's other images (duplicate instance UID/number), so they may not be the same acquisition; not repairing those", file=sys.stderr)
         return 2

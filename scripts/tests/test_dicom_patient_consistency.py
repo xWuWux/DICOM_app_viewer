@@ -100,3 +100,23 @@ def test_a_tie_between_identities_is_refused(tmp_path):
 @pytest.mark.parametrize("arg", ["/nonexistent-dir-xyz"])
 def test_missing_directory(arg):
     assert mod.main([arg]) == 2
+
+
+def test_images_without_a_study_uid_are_refused_never_one_pseudo_study(tmp_path, capsys):
+    # issue #160 review N2: empty StudyInstanceUIDs used to collapse into one
+    # bucket, so the majority repair would relabel images from DIFFERENT
+    # studies as if they were one study's odd images.
+    make(tmp_path / "x" / "1.dcm", "Pat_A", "", ".7.1", ".7.1.1", 1)
+    make(tmp_path / "y" / "1.dcm", "Pat_B", "", ".8.1", ".8.1.1", 1)
+    rc = mod.main([str(tmp_path), "--fix-out", str(tmp_path / "fx")])
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert "no StudyInstanceUID" in captured.err
+    assert "Pat_" not in captured.out + captured.err
+    assert not (tmp_path / "fx").exists()
+
+
+def test_empty_study_uid_also_refused_in_report_mode(tmp_path, capsys):
+    make(tmp_path / "x" / "1.dcm", "Pat_A", "", ".7.1", ".7.1.1", 1)
+    assert mod.main([str(tmp_path)]) == 2
+    assert "no StudyInstanceUID" in capsys.readouterr().err

@@ -23,6 +23,24 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Follow-ups to #160 (findings N1/N2/N3/S1 from its review).**
+  N1: startup configuration failures (pre-migration backup, cases-table
+  migration, malformed GRADING_CASES_FILE) now abort like config.py -- one
+  clean stderr line, exit code 2; previously a bare SystemExit(str) raised
+  inside lifespan() resurfaced through uvicorn's task group as a
+  BaseExceptionGroup traceback with exit code 1. N2:
+  dicom-patient-consistency.py now REFUSES images that carry no
+  StudyInstanceUID instead of collapsing them into one pseudo-study whose
+  majority label would relabel unrelated studies. N3: cases-file study UIDs
+  must end in a digit -- dots-only (".") and trailing-dot UIDs are rejected
+  (the leading-dot quirk of the received exports, issue #162, stays
+  tolerated on purpose). S1: new scripts/verify-cases-in-orthanc.py
+  re-checks after loading that every cases-file study is actually served by
+  Orthanc -- counts + stage/order codes only, duplicate study records
+  (the #162 split signature) reported as a warning. API_VERSION unchanged
+  (no API-surface change; startup exit code is operator-facing, reviewer to
+  rule if it counts).
+
 - **Reload no longer strands the student on HTTP 401 (issue #145).** `watermark.html` and `grading-panel.html` keep the
   token in `sessionStorage` (this tab only, gone when it closes, never sent anywhere) after reading the URL
   fragment, so F5 / Ctrl+R / a restored tab keep working; the fragment is still erased from the address bar (#94).
