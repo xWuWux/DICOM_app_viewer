@@ -9,5 +9,5 @@ pytest==9.0.3
 # copied verbatim, never parsed by anything at runtime), so this is test-
 # only, same reasoning as pytest above.
 pyyaml==6.0.3
-pydicom==3.0.1
+pydicom==3.0.2
 openpyxl==3.1.5
