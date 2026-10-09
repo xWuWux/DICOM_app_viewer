@@ -30,6 +30,15 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   `scripts/dicom-patient-consistency.py` (detects/repairs, as copies, studies whose images carry
   more than one PatientID, which Orthanc would split into duplicated series). `./local/` is mounted
   read-only into grading-api; `local/*` and the data folders are git-ignored.
+- **CI gate: `needs`-list drift guard + robust entry types (issue #135).** `scripts/ci-gate.py`
+  now parses the job ids out of `.github/workflows/ci.yml` (stdlib regex over the `jobs:`
+  block, no PyYAML) and exits 2 when `NEEDS_JSON` and the workflow disagree in either
+  direction -- the drift vector that could re-open the #124 class of bug (a job added without
+  `needs:` staying invisible to `ci-success`). Malformed entry values (e.g. `{"lint":"success"}`)
+  now print a clean `<job>: invalid-entry` line and block instead of raising `AttributeError`;
+  `"result": null` is reported as `missing` like an absent result. Gate stays fail-closed:
+  missing/unreadable workflow file or a `jobs:` block that cannot be found also refuse to pass.
+
 - **Kiosk window-keeping for the Weasis workspace (issue #151).** `arrange_windows.sh` now
   (a) sizes both windows by their OUTER frame (they used to overflow the screen by the
   title-bar height and overlap by the side borders), (b) removes the title-bar
