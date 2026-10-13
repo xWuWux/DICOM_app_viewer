@@ -14,6 +14,11 @@
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
+# --preflight runs ONLY the safety guard below and exits (0 clear / 2 refuse)
+# -- pinned by scripts/test-degraded-modes.bats with a stubbed docker binary.
+PREFLIGHT_ONLY=0
+if [ "${1:-}" = "--preflight" ]; then PREFLIGHT_ONLY=1; fi
+
 # SAFETY (review of #219, pattern from #214): run under a DEDICATED compose
 # project so `down -v` can only ever delete THIS script's own volumes --
 # never the ones of the repo's default project, where a real-data stack may
@@ -47,6 +52,10 @@ if printf '%s\n' "$names" | grep -q '^ipcmc-'; then
   exit 2
 fi
 echo "guard: clear -- no ipcmc-* containers present"
+if [ "$PREFLIGHT_ONLY" -eq 1 ]; then
+  trap - EXIT
+  exit 0
+fi
 
 if [ ! -f .env ]; then
   echo "ORTHANC_PASSWORD=$(openssl rand -hex 16)" > .env
