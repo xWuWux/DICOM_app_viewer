@@ -69,11 +69,18 @@ git fetch origin && git merge origin/master            # bring the stack's check
 
 # 1. Back up the grading database (the new version may migrate it; it also writes its own backup next to it)
 mkdir -p local/backups && chmod 700 local/backups
+# The database runs in WAL mode: the freshest commits can still sit in grading.db-wal, so grading-api is
+# stopped first and ALL grading.db* files are copied into one timestamped directory -- copying only
+# grading.db can produce a backup that misses recent answers. Step 2 starts the service again.
+docker compose -f docker-compose.yml -f docker-compose.guacamole.yml stop grading-api
+TS=$(date +%Y%m%dT%H%M%S)
 docker run --rm -v wt-data_grading-db:/data:ro -v "$PWD/local/backups":/out alpine \
-  sh -c 'cp /data/grading.db /out/grading-$(date +%Y%m%dT%H%M%S).db'
+  sh -c "mkdir -p /out/grading-$TS && cp -a /data/grading.db* /out/grading-$TS/"
 docker run --rm -v "$PWD/local/backups":/out alpine chown -R $(id -u):$(id -g) /out
 
-# 2. Rebuild and restart the stack (never add -v: that would delete the volumes)
+# 2. Rebuild and restart the stack (never add -v: that would delete the volumes).
+# No -p is needed here: the Compose project is the stack directory name (wt-data) -- see section 9
+# if you ever move the directory.
 docker compose -f docker-compose.yml -f docker-compose.guacamole.yml up -d --build
 
 # 3. Rebuild the two workspace images (Kasm session image and Guacamole session image)
@@ -127,7 +134,8 @@ It prints a summary (completion, accuracy and time per doctor, a confusion matri
 | `no clipboard tool found` | Guacamole: open the printed link file. Kasm: add `--write-link FILE` to the command |
 | Weasis opens with no study and almost no toolbar | The session image is old. Do section 3 (rebuild the images), then start a NEW doctor |
 | Nothing in the panel but "Błąd ładowania" | Check `curl -s localhost:8080/api/healthz`; if it answers, wait 10 seconds and press "Spróbuj ponownie" |
-| The panel says the session expired | The doctor's token is gone (revoked by `--end-previous`, or older than 8 hours). Start a new doctor |
+| The panel says the session expired | The doctor's token is gone (revoked by `--end-previous`, or older than 8 hours by default --
+ unless GRADING_TOKEN_TTL_SECONDS in the stack .env says otherwise). Start a new doctor |
 | Kasm: "no free resources" or the 6th session is refused | Community Edition cap of 5 sessions: end old sessions first |
 | Guacamole page asks for a login | You opened `http://localhost:8090/guacamole/` directly. Use the session link from the clipboard or the link file instead |
 | The stack does not start after `git merge` | Run `docker compose ... up -d --build` again and read `docker logs ipcmc-grading-api`. A message that starts with `CONFIGURATION ERROR` says what to fix |
