@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
 # the SAME commit that adds a CHANGELOG.md entry (the review contract for
 # this repo: no behavior-visible change lands without one), and the
 # matching git tag is cut at release time by the release owner.
-API_VERSION = "1.1.0"
+API_VERSION = "1.2.0"
 
 app = FastAPI(
     title="IP_CMC Grading API",
@@ -761,6 +761,34 @@ def finalize(body: FinalizeBody):
         conn.commit()
         logger.info("exam_finalized")
         return {"finalized": True, "already_finalized": False}
+    finally:
+        conn.close()
+
+
+class SessionEndBody(BaseModel):
+    token: str
+
+
+@app.post("/session/end")
+def end_session(body: SessionEndBody):
+    """The doctor ends their own session after approving the review (the end-session button of the panel).
+
+    Revokes THIS token only: the recorded answers and the progress stay exactly as they are (they are
+    research data); only access is closed, so the link and the window loop in the session (which
+    notices the 401 and closes Weasis) stop working. Allowed only once the review has been approved,
+    so it cannot be clicked mid-exam by accident. After it the token no longer resolves, so a second
+    call answers 401: the panel treats that as "already ended".
+    """
+    conn = db.get_connection()
+    try:
+        student_id = _resolve_token(conn, body.token)
+        progress = _get_or_create_progress(conn, student_id)
+        if progress["stage"] != "complete" or progress["finalized_at"] is None:
+            raise AppError(409, "SESSION_END_NOT_FINALIZED", "The session can be ended after the review is approved")
+        conn.execute("DELETE FROM sessions WHERE token = ?", (body.token,))
+        conn.commit()
+        logger.info("session_ended")
+        return {"ended": True}
     finally:
         conn.close()
 

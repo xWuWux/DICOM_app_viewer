@@ -47,6 +47,8 @@
     background:#2d6cdf; color:#fff; border:0; border-radius:4px; cursor:pointer; font-size:14px;
   }
   #grading-panel button:hover { background:#3a7bee; }
+  #grading-panel button.secondary { background:#444; }
+  #grading-panel button.secondary:hover { background:#555; }
   .feedback-correct { color:#4caf50; }
   .feedback-incorrect { color:#e05252; }
   .error { color:#e05252; font-weight:bold; }
@@ -269,17 +271,26 @@
     return div.innerHTML;
   }
 
-  // issue #201: bold the Lung-RADS category mentions in a piece of text.
-  // INPUT MUST ALREADY BE escapeHtml()-ed: the only markup this adds is
-  // <strong class="lr">, so nothing in a report (or any data) can inject HTML.
-  // Matches "Lung-RADS 4A", "Lung-RADS kategoria 3", "LR-4B", "LR 2S" and the
-  // Polish "kategoria/kategorii/kategorie/kategorię 4A" (category 0-3, 4A, 4B, 4X, optional S).
-  // The real reports' exact wording is not known to the developers (they are never
-  // opened), so the pattern is deliberately one constant: extend it from the
-  // owner's feedback, do not scatter variants.
-  const LUNG_RADS_MENTION = /\b((?:Lung-?RADS|Lung-?Rads|LR)[\s-]*(?:[Kk]ategori[aięy]\s*)?(?:[0-3]|4[ABX])(?:\s?S)?|[Kk]ategori[aięy]\s+(?:[0-3]|4[ABX])(?:\s?S)?)(?![0-9A-Za-z])/g;
+  // issue #201 + doctors' request after the first Kasm run (2026-10-13): make a report easy to scan.
+  // Bold (1) every Lung-RADS category mention and (2) every number, with its unit when it has one.
+  // INPUT MUST ALREADY BE escapeHtml()-ed: the only markup this adds is <strong class="lr">, so
+  // nothing in a report (or any data) can inject HTML. One pass over the text with one alternation,
+  // so a match is never wrapped twice and a category mention that contains a digit stays ONE piece.
+  //   category: "Lung-RADS 4A", "Lung-RADS: kategoria 3S", "LR-4B S", "kat. 2", "kategorii 4X", a lone "4A"
+  //   number:   "8", "3,5", "12 x 10 mm", "35 HU", "70%", "1,2 cm3", "12.03.2024" (a digit glued to a letter, as in "CT2", is left alone)
+  // The real reports' exact wording is not known to the developers (they are never opened), so the
+  // patterns are ONE constant: extend it from the owner's feedback, do not scatter variants.
+  const REPORT_EMPHASIS = new RegExp(
+    "\\b(?:Lung-?RADS|LR)[\\s:,.-]*(?:[Kk]ategori[aięy]|[Kk]at\\.?)?[\\s:,.-]*(?:[0-3]|4[ABXabx])(?:\\s?S)?(?![0-9A-Za-z])" +
+    "|\\b[Kk]ategori[aięy]\\s+(?:[0-3]|4[ABXabx])(?:\\s?S)?(?![0-9A-Za-z])" +
+    "|\\b4[ABXabx]S?(?![0-9A-Za-z])" +
+    "|\\b\\d+(?:[.,]\\d+)*(?:\\s?[x\u00d7]\\s?\\d+(?:[.,]\\d+)*)*(?:\\s?(?:mm3|cm3|mm\u00b3|cm\u00b3|mm|cm|ml|mL|HU|mg|kg|\u00b5m|%|\u00b0)(?![A-Za-z]))?",
+    "g"
+  );
   function boldLungRads(escaped) {
-    return escaped.replace(LUNG_RADS_MENTION, '<strong class="lr">$1</strong>');
+    return String(escaped)
+      .replace(/&nbsp;/g, " ") // a no-break space would otherwise split "8&nbsp;mm" from its unit
+      .replace(REPORT_EMPHASIS, (m) => `<strong class="lr">${m}</strong>`);
   }
 
   // issue #99: exception-/server-derived strings are never interpolated
@@ -437,7 +448,7 @@
       const cls = result.correct ? "feedback-correct" : "feedback-incorrect";
       const label = result.correct ? "Poprawnie" : "Niepoprawnie";
       html = `<h3 class="${cls}">${label}</h3>
-        <p>Kategoria referencyjna: <strong class="lr">${escapeHtml(result.ground_truth_category)}${result.ground_truth_modifier_s ? " (S)" : ""}</strong></p>`;
+        <p><strong class="lr">Kategoria referencyjna: ${escapeHtml(result.ground_truth_category)}${result.ground_truth_modifier_s ? " (S)" : ""}</strong></p>`;
     } else {
       html = `<h3>Odpowiedź zapisana.</h3><p>Brak informacji zwrotnej w module testowym.</p>`;
     }
@@ -538,6 +549,49 @@
     }
   }
 
+  // ---- "Zakończ sesję" (doctors' request after the first Kasm run) ---------------------------------
+  // Offered on the final screen only. The server revokes this doctor's token (POST /api/session/end,
+  // allowed only after the review was approved); the window loop in the session notices the
+  // revoked token and closes Weasis, so nothing can be viewed afterwards. The recorded answers stay.
+  function showSessionEnded() {
+    try { sessionStorage.removeItem(TOKEN_KEY); } catch (_storageBlocked) { /* nothing stored */ }
+    token = "";
+    panel.innerHTML = `<h2 id="session-ended">Sesja zakończona</h2>
+      <p>Dziękujemy za udział. Twoje odpowiedzi zostały zapisane. Możesz zamknąć to okno.</p>`;
+  }
+
+  function askEndSession(box) {
+    box.innerHTML = `<p>Czy na pewno zakończyć sesję? Po zakończeniu nie będzie można wrócić do badania ani do wyników.</p>
+      <button id="end-session-yes">Tak, zakończ sesję</button>
+      <button id="end-session-no" class="secondary">Anuluj</button>
+      <p id="end-session-error" class="error"></p>`;
+    document.getElementById("end-session-no").addEventListener("click", () => renderEndSessionButton(box));
+    document.getElementById("end-session-yes").addEventListener("click", async () => {
+      const yes = document.getElementById("end-session-yes");
+      yes.disabled = true; // one click, one request
+      try {
+        const res = await fetch("/api/session/end", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        if (res.ok || res.status === 401) { // 401: the session is already over, which is what was asked for
+          showSessionEnded();
+          return;
+        }
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      } catch (err) {
+        document.getElementById("end-session-error").textContent = `Nie udało się zakończyć sesji: ${err.message}`;
+        yes.disabled = false;
+      }
+    });
+  }
+
+  function renderEndSessionButton(box) {
+    box.innerHTML = `<button id="end-session-btn" class="secondary">Zakończ sesję</button>`;
+    document.getElementById("end-session-btn").addEventListener("click", () => askEndSession(box));
+  }
+
   async function showReveal() {
     try {
       const data = await apiGetJson("/api/results");
@@ -551,14 +605,14 @@
       }
       const pct = data.accuracy !== null ? `${Math.round(data.accuracy * 100)}%` : "brak danych";
       let html = `<h2 id="results-title">Wyniki końcowe</h2>
-        <p>Wynik testu: ${escapeHtml(data.test_correct)} / ${escapeHtml(data.test_total)} (${escapeHtml(pct)})</p>${scoreSummary(data)}`;
+        <p>Wynik testu: ${escapeHtml(data.test_correct)} / ${escapeHtml(data.test_total)} (${escapeHtml(pct)})</p>${scoreSummary(data)}<div id="end-session-box"></div>`;
       for (const item of data.items) {
         html += `<div class="answer-box">${itemHeading(item)}<h4>Twoja odpowiedź</h4>${answerHtml(item)}`;
         if (item.correct !== null) {
           const cls = item.correct ? "feedback-correct" : "feedback-incorrect";
           html += `<h4 class="${cls}">${item.correct ? "Poprawnie" : "Niepoprawnie"}</h4>`;
         }
-        html += `<p>Kategoria referencyjna: <strong class="lr">${escapeHtml(item.ground_truth_category)}${item.ground_truth_modifier_s ? " (S)" : ""}</strong></p>
+        html += `<p><strong class="lr">Kategoria referencyjna: ${escapeHtml(item.ground_truth_category)}${item.ground_truth_modifier_s ? " (S)" : ""}</strong></p>
           <div class="answer-box reference"><p>${boldLungRads(escapeHtml(item.reference_report))}</p></div></div>`;
       }
       // issue #98: starting over deletes the recorded answers, so the server only offers it when
@@ -567,6 +621,7 @@
         html += `<button id="restart-btn">Rozpocznij od początku</button>`;
       }
       panel.innerHTML = html;
+      renderEndSessionButton(document.getElementById("end-session-box"));
       const restartButton = document.getElementById("restart-btn");
       if (restartButton) restartButton.addEventListener("click", async () => {
         try {

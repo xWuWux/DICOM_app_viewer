@@ -212,18 +212,29 @@ follow_setup() {
   : > "$CURL_COUNT"; : > "$CURL_ARGV"
   cat > "$STUB_DIR/curl" <<'STUB'
 #!/usr/bin/env bash
+# Stands in for `curl -sS -m T -o FILE -w '%{http_code}' --config - URL`: writes the body to FILE and
+# prints the HTTP status. One answer per poll from $CASES_FILE (the last line repeats): a JSON text
+# (HTTP 200), FAIL (connection error: prints 000, exit 7), BAD (HTML, 200), UNAUTH (HTTP 401),
+# HTTP500 (HTTP 500).
 printf '%s\n' "$@" >> "$CURL_ARGV"
 cat > /dev/null
+out=""
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do [ "${args[$i]}" = "-o" ] && out="${args[$((i + 1))]}"; done
 echo x >> "$CURL_COUNT"
 n=$(wc -l < "$CURL_COUNT")
 total=$(wc -l < "$CASES_FILE")
 [ "$n" -gt "$total" ] && n=$total
 line=$(sed -n "${n}p" "$CASES_FILE")
 case "$line" in
-  FAIL) exit 22 ;;
-  BAD) printf '<html>502</html>' ;;
-  *) printf '%s' "$line" ;;
+  FAIL) printf '000'; exit 7 ;;
+  UNAUTH) body='{"error_code":"AUTH_INVALID_TOKEN","message":"Invalid or unknown token"}'; code=401 ;;
+  HTTP500) body='{"error_code":"SERVER_ERROR"}'; code=500 ;;
+  BAD) body='<html>502</html>'; code=200 ;;
+  *) body="$line"; code=200 ;;
 esac
+[ -n "$out" ] && printf '%s' "$body" > "$out"
+printf '%s' "$code"
 STUB
   cat > "$STUB_DIR/weasis_stub" <<'STUB'
 #!/usr/bin/env bash
@@ -326,4 +337,70 @@ launches() { grep -c '^launched:' "$WEASIS_LAUNCHES" || true; }
   [ "$(launches)" -eq 0 ]
   [ ! -s "$CURL_COUNT" ]
   [[ "$output" == *"will NOT follow case changes"* ]]
+}
+
+
+# ---- the session ends: Weasis is closed and never relaunched ---------------------------------------
+end_setup() {
+  follow_setup
+  export END_CALLS="$BATS_TEST_TMPDIR/end_calls.txt"; : > "$END_CALLS"
+  cat > "$STUB_DIR/end_stub" <<'STUB'
+#!/usr/bin/env bash
+echo "end" >> "$END_CALLS"
+STUB
+  chmod +x "$STUB_DIR/end_stub"
+  export ARRANGE_END_CMD="$STUB_DIR/end_stub"
+}
+end_calls() { grep -c '^end$' "$END_CALLS" || true; }
+
+@test "session end: two consecutive 401s close Weasis once and stop polling" {
+  end_setup
+  export ARRANGE_MAX_ITERATIONS=8
+  printf '%s\n' "$UID_A" UNAUTH UNAUTH "$UID_B" > "$CASES_FILE"
+  run bash "$SCRIPT"
+  [ "$(end_calls)" -eq 1 ]
+  [[ "$output" == *"the session is over"* ]]
+  [ "$(wc -l < "$CURL_COUNT")" -eq 3 ]   # polled 3 times (ok, 401, 401), never again
+  [ "$(launches)" -eq 0 ]                # and the new study of the 4th line was never sent
+}
+
+@test "session end: a single 401 changes nothing" {
+  end_setup
+  printf '%s\n' "$UID_A" UNAUTH "$UID_A" > "$CASES_FILE"
+  run bash "$SCRIPT"
+  [ "$(end_calls)" -eq 0 ]
+  [[ "$output" != *"the session is over"* ]]
+}
+
+@test "session end: a failure or a 500 between two 401s resets the count (only consecutive 401s end a session)" {
+  end_setup
+  printf '%s\n' UNAUTH FAIL UNAUTH HTTP500 UNAUTH "$UID_A" > "$CASES_FILE"
+  run bash "$SCRIPT"
+  [ "$(end_calls)" -eq 0 ]
+}
+
+@test "session end: an erroring API (500) or an unreachable one never closes Weasis" {
+  end_setup
+  export ARRANGE_MAX_ITERATIONS=10
+  printf '%s\n' HTTP500 HTTP500 HTTP500 FAIL FAIL > "$CASES_FILE"
+  run bash "$SCRIPT"
+  [ "$(end_calls)" -eq 0 ]
+  [[ "$output" == *"keeping the current study"* ]]
+}
+
+@test "session end: after the session is over a vanished Weasis window is NOT relaunched" {
+  end_setup
+  export WEASIS_GONE_FROM=4 ARRANGE_MAX_ITERATIONS=12
+  printf '%s\n' UNAUTH UNAUTH > "$CASES_FILE"
+  run bash "$SCRIPT"
+  [ "$(end_calls)" -eq 1 ]
+  [ "$(launches)" -eq 0 ]
+}
+
+@test "session end: the token is still only on curl's stdin, never in argv or the log" {
+  end_setup
+  printf '%s\n' UNAUTH UNAUTH > "$CASES_FILE"
+  run bash "$SCRIPT"
+  ! grep -q "secret-token-xyz" "$CURL_ARGV"
+  [[ "$output" != *"secret-token-xyz"* ]]
 }

@@ -227,7 +227,10 @@ differs (`watermark.html` for Chrome, `grading-panel.html` for Weasis):
    `GET /results` returns nothing but `{complete, finalized: false}` until
    then; `POST /reset` clears the approval. The Lung-RADS category names and
    category mentions in the reference reports are shown in **bold**
-   (issue #201).
+   (issue #201) -- and so is every number with its unit in a report (`8 mm`, `35 HU`, `70%`), and the whole
+   "Kategoria referencyjna" line. After the results the doctor can press **"Zakończ sesję"**: the server revokes their
+   token (`POST /session/end`, only after approving the review; the answers stay) and the window loop in the session
+   closes Weasis.
 
 **In the Chrome flow**, the grading panel lives in `watermark.html` as a
 sidebar next to the DICOM viewer iframe (same page, no separate route) — on
