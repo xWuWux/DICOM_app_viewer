@@ -17,24 +17,27 @@ a session link. Every command below was run on the real stack on this date.
 
 | What | Where |
 |---|---|
-| The running stack (a Git worktree of this repository) | `/tmp/wt-data` (**/tmp is cleared on reboot**; see section 9 before restarting the PC) |
-| Settings and secrets for the stack | `/tmp/wt-data/.env` (never commit it) |
-| Real case list (answer key, reports, study UIDs) | `/tmp/wt-data/local/cases.json` (git-ignored, mode 0600) |
+| The running stack (a Git worktree of this repository) | `~/ipcmc-live` (on disk, survives a restart; see section 9) |
+| Settings and secrets for the stack | `~/ipcmc-live/.env` (never commit it) |
+| Real case list (answer key, reports, study UIDs) | `~/ipcmc-live/local/cases.json` (git-ignored, mode 0600) |
 | Real studies and the grading database | Docker volumes `wt-data_orthanc-storage` and `wt-data_grading-db` (they survive `docker compose down`) |
 | Kasm API key file | `~/.config/ipcmc/kasm.env` (mode 0600; lines `KASM_API_KEY`, `KASM_API_KEY_SECRET`, `KASM_SERVER`, `KASM_IMAGE_ID`) |
-| Your database backups | `/tmp/wt-data/local/backups/` |
-| Guacamole session links | `/tmp/wt-data/local/session-links/` |
-| Exports of results | `/tmp/wt-data/local/exports/<time>/` |
+| Your database backups | `~/ipcmc-live/local/backups/` |
+| Guacamole session links | `~/ipcmc-live/local/session-links/` |
+| Exports of results | `~/ipcmc-live/local/exports/<time>/` |
 
 Addresses: the Kasm console and sessions at `https://localhost` (self-signed certificate: accept the browser warning), Guacamole at
 `http://localhost:8090/guacamole/`, the grading API through the viewer at `http://localhost:8080/api/`.
 
 ## 2. Start a doctor (the normal case, stack already running)
 
-Open a terminal in the stack directory and check the stack first:
+Shortcut (from any directory): `ipcmc-up` starts the stack if needed, waits until it is healthy and prints its status;
+`ipcmc-guac` and `ipcmc-kasm` run the `demo-next-doctor.py` commands below. All three live in `~/.local/bin`.
+
+Or open a terminal in the stack directory and check the stack first:
 
 ```
-cd /tmp/wt-data
+cd ~/ipcmc-live
 curl -s localhost:8080/api/healthz          # must print {"status":"ok"}
 docker ps --format '{{.Names}} {{.Status}}' | grep ipcmc     # six containers, "(healthy)" where there is a health check
 ```
@@ -64,7 +67,7 @@ an hour of inactivity; the session link of a doctor is single-use in the sense t
 Do this whenever a PR that changes the app was merged, or before an important demo.
 
 ```
-cd /tmp/wt-data
+cd ~/ipcmc-live
 git fetch origin && git merge origin/master            # bring the stack's checkout to the latest master
 
 # 1. Back up the grading database (the new version may migrate it; it also writes its own backup next to it)
@@ -79,8 +82,7 @@ docker run --rm -v wt-data_grading-db:/data:ro -v "$PWD/local/backups":/out alpi
 docker run --rm -v "$PWD/local/backups":/out alpine chown -R $(id -u):$(id -g) /out
 
 # 2. Rebuild and restart the stack (never add -v: that would delete the volumes).
-# No -p is needed here: the Compose project is the stack directory name (wt-data) -- see section 9
-# if you ever move the directory.
+# No -p is needed here: COMPOSE_PROJECT_NAME=wt-data in .env keeps the existing wt-data_* volumes -- see section 9.
 docker compose -f docker-compose.yml -f docker-compose.guacamole.yml up -d --build
 
 # 3. Rebuild the two workspace images (Kasm session image and Guacamole session image)
@@ -111,7 +113,7 @@ Sessions that are already open keep running the OLD images; start new doctors af
 ## 5. Show the results (for the radiologist and the project manager)
 
 ```
-cd /tmp/wt-data
+cd ~/ipcmc-live
 python3 scripts/export-results.py            # demo doctors (DEMO_*) from the running stack
 ```
 It prints a summary (completion, accuracy and time per doctor, a confusion matrix of true category against the doctor's answer, per case) and writes
@@ -152,8 +154,8 @@ It prints a summary (completion, accuracy and time per doctor, a confusion matri
 
 ## 9. Before you restart the PC
 
-`/tmp` is cleared on reboot, and the stack directory, `.env`, `local/cases.json` and the backups live there. The **volumes** survive, but the files do not.
-Before a restart, copy `/tmp/wt-data/.env`, `/tmp/wt-data/local/cases.json` and `/tmp/wt-data/local/backups/` to a permanent private folder (for example
-`~/ipcmc-private/`, mode 0700). To make the stack permanent, create a normal checkout of the repository, copy those files into it, and set
-`COMPOSE_PROJECT_NAME=wt-data` in its `.env` so that Compose keeps using the same volumes (without it a new directory means new, empty volumes).
-Ask for help before doing this the first time.
+The stack lives in `~/ipcmc-live` on disk, so a restart keeps it. After a restart run `ipcmc-up` (Docker starts first; WSL may need a moment).
+Its `.env` sets `COMPOSE_PROJECT_NAME=wt-data`: the volumes were created under that name when the stack lived in `/tmp/wt-data`, and without
+the setting Compose would derive the project from the directory name and start with new, empty volumes. Never remove that line.
+Keep copies of `.env`, `local/cases.json` and `local/backups/` in `~/ipcmc-private/` (mode 0700): that is what rebuilt the stack the last time.
+`local/demo-counter` holds the last `DEMO_nnn` number; if it is lost, set it to the highest `DEMO_` id in the database so no doctor is reused.
