@@ -23,6 +23,12 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- nginx `/api/` rate limit is now the `API_RATE_LIMIT` template variable (default
+  **10r/s unchanged in every deployment compose**, defaulted in the container
+  entrypoint so an unset variable can never produce an invalid config); the
+  visual-regression harness runs its throwaway stack at 50r/s and reports the
+  measured peak `/api` rps of each run (issue #226).
+
 - **Panel UI polish (owner request, 2026-10-13).** (1) A stage indicator --
   "Nauka → Ocena → Test" chips with the current stage emphasized -- now sits
   above the case form and the per-case feedback on BOTH panel pages

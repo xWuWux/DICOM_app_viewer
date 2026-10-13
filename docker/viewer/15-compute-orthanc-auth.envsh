@@ -5,3 +5,10 @@
 # base64 string baked into a file committed to git.
 export ORTHANC_AUTH_B64
 ORTHANC_AUTH_B64="$(printf '%s:%s' "${ORTHANC_USER:-orthanc}" "${ORTHANC_PASSWORD:?ORTHANC_PASSWORD must be set (see .env.example)}" | base64 -w0)"
+
+# Edge rate limit for /api/ (default is the PRODUCTION value; only test harnesses
+# may raise it via environment -- the deployment composes pass it through with this
+# same default, and 20-envsubst-on-templates.sh can therefore never see the variable
+# unset and emit a rate=${API_RATE_LIMIT} literal into the nginx config).
+: "${API_RATE_LIMIT:=10r/s}"
+export API_RATE_LIMIT
