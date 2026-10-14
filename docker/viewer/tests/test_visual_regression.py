@@ -101,6 +101,21 @@ def _open(page, base_url: str, path: str, token: str, student_id: str, session_i
     page.evaluate("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
 
 
+def _pin_exam_timer(page):
+    """The test-stage /api/case carries real server-clock elapsed seconds (API 1.3.0), which
+    differ run to run. Pin them (same idea as the frozen watermark clock): pass the real
+    response through, overwrite only `timer`. The frozen page clock keeps the ticking still."""
+
+    def handler(route):
+        resp = route.fetch()
+        body = resp.json()
+        if "timer" in body:
+            body["timer"] = {"case_elapsed_seconds": 125, "exam_elapsed_seconds": 3725}
+        route.fulfill(response=resp, body=json.dumps(body))
+
+    page.route("**/api/case", handler)
+
+
 def _submit_learning(page):
     page.fill("#text-input", "Przykładowa ocena studenta -- tekst wolny, nieoceniany.")
     page.click("#submit-btn")
@@ -214,6 +229,7 @@ class TestGradingPanelStates:
         assert_snapshot(panel_locator)
 
     def test_test_stage_form(self, page, flow_page, student_id, token, panel_locator, assert_snapshot, base_url):
+        _pin_exam_timer(page)
         _open(page, base_url, flow_page, token, student_id, "vr")
         _submit_learning(page)
         _advance_to_next_case(page)

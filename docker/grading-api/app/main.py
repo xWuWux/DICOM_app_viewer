@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
 # the SAME commit that adds a CHANGELOG.md entry (the review contract for
 # this repo: no behavior-visible change lands without one), and the
 # matching git tag is cut at release time by the release owner.
-API_VERSION = "1.2.0"
+API_VERSION = "1.3.0"
 
 app = FastAPI(
     title="IP_CMC Grading API",
@@ -452,9 +452,37 @@ def get_case(x_grading_token: str | None = Header(default=None, alias="X-Grading
         }
         if case["stage"] in ("assessment", "test"):
             response["category_options"] = db.CATEGORY_LABELS
+        if case["stage"] == "test":
+            response["timer"] = _exam_timer(conn, student_id, progress)
         return response
     finally:
         conn.close()
+
+
+def _exam_timer(conn, student_id: str, progress) -> dict:
+    """Exam-panel timer (API 1.3.0): elapsed seconds on the current test case and in the
+    whole test stage, both measured on THIS server's clock -- the same basis as the
+    recorded time_spent_seconds (issue #29), never the browser's editable Date.now().
+    The panel only ticks the display forward between fetches.
+
+    The test stage's start is derived, not stored: entering the stage stamps
+    case_assigned_at for its first case (_advance_progress), and every later test case's
+    assignment time is that row's submitted_at - time_spent_seconds. So the earliest
+    test submission's assignment time is the stage start; before any test submission it
+    is the current case_assigned_at. Wall-clock time: a pause (PC closed) keeps counting,
+    exactly like time_spent_seconds does -- pause semantics are an open owner decision.
+    """
+    now = db.now()
+    row = conn.execute(
+        "SELECT MIN(submitted_at - COALESCE(time_spent_seconds, 0)) FROM submissions "
+        "WHERE student_id = ? AND stage = 'test'",
+        (student_id,),
+    ).fetchone()
+    exam_started_at = row[0] if row and row[0] is not None else progress["case_assigned_at"]
+    return {
+        "case_elapsed_seconds": max(0, int(now - progress["case_assigned_at"])),
+        "exam_elapsed_seconds": max(0, int(now - exam_started_at)),
+    }
 
 
 class SubmitBody(BaseModel):
