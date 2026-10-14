@@ -23,6 +23,13 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **API 1.3.0: exam-panel timer (owner request, 2026-10-14).** On the test stage `GET /case` adds
+  `timer: {case_elapsed_seconds, exam_elapsed_seconds}`, measured on grading-api's clock (the same basis as
+  the recorded `time_spent_seconds`, #29). The exam start is derived from existing data (the first test
+  case's assignment time), so no schema change. Both panels (`grading-panel.html`, `watermark.html`) show
+  "Czas przypadku" and "Czas testu" in a small row under the stage bar; the browser only ticks the display
+  between fetches. Wall-clock: a pause keeps counting (pause rules are an open owner decision). No timer on
+  the learning and assessment stages.
 - **API 1.2.0: end-of-exam review, approval and ending a session.** Backfills the entry that #204 lacked and adds
   today's endpoint. New: `GET /review` (the doctor's own answers, no ground truth), `POST /finalize` (one-way,
   idempotent approval, 409 until the exam is complete), `POST /session/end` (the doctor revokes their own token after

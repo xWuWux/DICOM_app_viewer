@@ -1056,3 +1056,68 @@ def test_submit_rolls_back_the_submission_if_advance_progress_fails(client, mint
         "exactly the bug issue #60 reports"
     )
     assert client.get("/case", headers={"X-Grading-Token": token}).json()["stage"] == "assessment"
+
+
+# ---- exam-panel timer (API 1.3.0) --------------------------------------------
+
+
+def _reach_test_stage(client, token):
+    for stage in ("learning", "assessment"):
+        body = {"token": token, "case_id": _case_id(client, token), "stage": stage}
+        if stage == "learning":
+            body["text"] = "x"
+        else:
+            body["category"] = "3"
+            body["modifier_s"] = False
+        assert client.post("/submit", json=body).status_code == 200
+
+
+def test_timer_only_on_the_test_stage(client, mint_token):
+    token = mint_token("stu_timer_stages")
+    assert "timer" not in client.get("/case", headers={"X-Grading-Token": token}).json()  # learning
+    body = {"token": token, "case_id": _case_id(client, token), "stage": "learning", "text": "x"}
+    client.post("/submit", json=body)
+    assert "timer" not in client.get("/case", headers={"X-Grading-Token": token}).json()  # assessment
+
+
+def test_timer_counts_on_the_server_clock_from_entering_the_test_stage(client, mint_token, monkeypatch):
+    clock = {"t": 1_700_000_000.0}
+    monkeypatch.setattr(db_module, "now", lambda: clock["t"])
+    token = mint_token("stu_timer_1")
+    _reach_test_stage(client, token)  # stamps case_assigned_at = t for the first test case
+
+    clock["t"] += 125
+    timer = client.get("/case", headers={"X-Grading-Token": token}).json()["timer"]
+    assert timer == {"case_elapsed_seconds": 125, "exam_elapsed_seconds": 125}
+
+
+def test_timer_exam_total_spans_cases_while_case_time_restarts(client, mint_token, monkeypatch):
+    """Two test cases: the per-case timer restarts at the second case, the exam total
+    keeps counting from the moment the stage was entered (derived from the first test
+    submission, nothing new stored)."""
+    conn = db_module.get_connection()
+    try:
+        first = conn.execute("SELECT * FROM cases WHERE stage = 'test' ORDER BY order_index LIMIT 1").fetchone()
+        conn.execute(
+            "INSERT INTO cases (stage, order_index, orthanc_study_uid, title, ground_truth_category, "
+            "ground_truth_modifier_s, reference_report) VALUES ('test', ?, '1.2.3.999', 'Drugi', '2', 0, 'r')",
+            (first["order_index"] + 1,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    clock = {"t": 1_700_000_000.0}
+    monkeypatch.setattr(db_module, "now", lambda: clock["t"])
+    token = mint_token("stu_timer_2")
+    _reach_test_stage(client, token)
+
+    clock["t"] += 300  # 5 min on the first test case
+    case_id = _case_id(client, token)
+    body = {"token": token, "case_id": case_id, "stage": "test", "category": "4A", "modifier_s": True}
+    assert client.post("/submit", json=body).status_code == 200
+
+    clock["t"] += 40  # 40 s into the second test case
+    resp = client.get("/case", headers={"X-Grading-Token": token}).json()
+    assert resp["position"] == 2
+    assert resp["timer"] == {"case_elapsed_seconds": 40, "exam_elapsed_seconds": 340}
