@@ -167,6 +167,9 @@ services:
       start_period: 10s
     environment:
       - ORTHANC_PASSWORD=${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD in .env -- see .env.example}
+      # Production edge limit for /api/ -- deliberately NOT relaxable by accident: only a
+      # harness that exports API_RATE_LIMIT itself changes it (see scripts/test-visual-regression.sh).
+      - API_RATE_LIMIT=${API_RATE_LIMIT:-10r/s}
     ports:
       - "${BIND_ADDR:-0.0.0.0}:8080:8080"
       - "${BIND_ADDR:-0.0.0.0}:8043:8043"
