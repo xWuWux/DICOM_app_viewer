@@ -23,6 +23,16 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **API 1.4.0: study browsing in the learning and assessment stages (owner request, 2026-10-14).** New
+  `GET /studies` (the studies the doctor may open: learning cases in learning, learning + assessment cases in
+  assessment; titles and positions only, no ground truth or UIDs) and `POST /view` (view pointer; the current case
+  clears it; 403 `VIEW_NOT_ALLOWED` outside that set and always on the test stage). `GET /case` adds `browsable` and,
+  while another study is open, `view_study_uid`, which `weasis_case_uri.py` prefers, so Weasis follows it through the
+  existing `/api/case` poll in both flows. View only: answering stays in order on the current case; every case
+  transition clears the pointer. `/orthanc-authz` allows every browsable study in learning/assessment and only the
+  current study in the test stage. Schema: nullable `progress.view_case_id`, added after the usual pre-migration
+  backup. Both panels show a "Pokaż badanie" list under the stage bar. Also: `weasis_case_uri.bats` was never run by
+  `scripts/test-shell-scripts.sh` (so not in CI); it is now.
 - **API 1.3.0: exam-panel timer (owner request, 2026-10-14).** On the test stage `GET /case` adds
   `timer: {case_elapsed_seconds, exam_elapsed_seconds}`, measured on grading-api's clock (the same basis as
   the recorded `time_spent_seconds`, #29). The exam start is derived from existing data (the first test

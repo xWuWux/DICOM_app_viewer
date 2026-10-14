@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
 # the SAME commit that adds a CHANGELOG.md entry (the review contract for
 # this repo: no behavior-visible change lands without one), and the
 # matching git tag is cut at release time by the release owner.
-API_VERSION = "1.3.0"
+API_VERSION = "1.4.0"
 
 app = FastAPI(
     title="IP_CMC Grading API",
@@ -356,6 +356,39 @@ def _get_case(conn, stage: str, order_index: int):
     ).fetchone()
 
 
+# Study browsing (owner request 2026-10-14): in the learning and assessment stages the doctor may
+# OPEN (view only) the study of any case of the stages reached so far; answering stays in order,
+# on the current case only. The test stage stays locked to the current case (exam integrity).
+BROWSABLE_STAGES = {"learning": ("learning",), "assessment": ("learning", "assessment")}
+
+
+def _browsable_cases(conn, stage: str) -> list:
+    """Current-version case rows the doctor may open in `stage`, in course order. [] = locked."""
+    stages = BROWSABLE_STAGES.get(stage, ())
+    if not stages:
+        return []
+    marks = ",".join("?" * len(stages))
+    rows = conn.execute(
+        f"SELECT c.* FROM cases c WHERE c.stage IN ({marks}) AND c.version = "
+        "(SELECT MAX(c2.version) FROM cases c2 WHERE c2.stage = c.stage AND c2.order_index = c.order_index)",
+        stages,
+    ).fetchall()
+    order = {s: i for i, s in enumerate(db.STAGES)}
+    return sorted(rows, key=lambda r: (order.get(r["stage"], 99), r["order_index"]))
+
+
+def _viewed_case(conn, progress, current):
+    """The case whose study Weasis should show: the view pointer when it is still browsable,
+    otherwise the current case."""
+    view_id = progress["view_case_id"]
+    if view_id is None or current is None or view_id == current["id"]:
+        return current
+    for row in _browsable_cases(conn, progress["stage"]):
+        if row["id"] == view_id:
+            return row
+    return current
+
+
 def _advance_progress(conn, student_id: str, stage: str, order_index: int):
     """Move to the next case in this stage, or the next stage, or 'complete'.
 
@@ -372,7 +405,7 @@ def _advance_progress(conn, student_id: str, stage: str, order_index: int):
     next_case = _get_case(conn, stage, order_index + 1)
     if next_case is not None:
         conn.execute(
-            "UPDATE progress SET case_order_index = ?, case_assigned_at = ? WHERE student_id = ?",
+            "UPDATE progress SET case_order_index = ?, case_assigned_at = ?, view_case_id = NULL WHERE student_id = ?",
             (order_index + 1, db.now(), student_id),
         )
     else:
@@ -380,13 +413,15 @@ def _advance_progress(conn, student_id: str, stage: str, order_index: int):
         if stage_idx + 1 < len(db.STAGES):
             next_stage = db.STAGES[stage_idx + 1]
             conn.execute(
-                "UPDATE progress SET stage = ?, case_order_index = 0, case_assigned_at = ? WHERE student_id = ?",
+                "UPDATE progress SET stage = ?, case_order_index = 0, case_assigned_at = ?, view_case_id = NULL "
+                "WHERE student_id = ?",
                 (next_stage, db.now(), student_id),
             )
             logger.info("stage_advanced", extra={"from_stage": stage, "to_stage": next_stage})
         else:
             conn.execute(
-                "UPDATE progress SET stage = 'complete', case_order_index = 0, case_assigned_at = ? "
+                "UPDATE progress SET stage = 'complete', case_order_index = 0, case_assigned_at = ?, "
+                "view_case_id = NULL "
                 "WHERE student_id = ?",
                 (db.now(), student_id),
             )
@@ -454,6 +489,13 @@ def get_case(x_grading_token: str | None = Header(default=None, alias="X-Grading
             response["category_options"] = db.CATEGORY_LABELS
         if case["stage"] == "test":
             response["timer"] = _exam_timer(conn, student_id, progress)
+        response["browsable"] = case["stage"] in BROWSABLE_STAGES
+        viewed = _viewed_case(conn, progress, case)
+        if viewed["id"] != case["id"]:
+            # Weasis (arrange_windows.sh -> weasis_case_uri.py) opens this one instead of the
+            # current case's study; the form keeps answering the CURRENT case.
+            response["view_case_id"] = viewed["id"]
+            response["view_study_uid"] = viewed["orthanc_study_uid"]
         return response
     finally:
         conn.close()
@@ -765,6 +807,63 @@ def review(x_grading_token: str | None = Header(default=None, alias="X-Grading-T
         conn.close()
 
 
+@app.get("/studies")
+def list_studies(x_grading_token: str | None = Header(default=None, alias="X-Grading-Token")):
+    """Studies the doctor may open in the current stage (learning/assessment), in course order.
+    Titles and positions only: no ground truth, no reference report, no study UID."""
+    if not x_grading_token:
+        raise AppError(401, "AUTH_INVALID_TOKEN", "Missing X-Grading-Token header")
+    conn = db.get_connection()
+    try:
+        student_id = _resolve_token(conn, x_grading_token)
+        progress = _get_or_create_progress(conn, student_id)
+        current = None
+        if progress["stage"] != "complete":
+            current = _get_case(conn, progress["stage"], progress["case_order_index"])
+        viewed = _viewed_case(conn, progress, current)
+        items = []
+        for row in _browsable_cases(conn, progress["stage"]):
+            items.append(
+                {
+                    "case_id": row["id"],
+                    "stage": row["stage"],
+                    "position": row["order_index"] + 1,
+                    "title": row["title"],
+                    "current": current is not None and row["id"] == current["id"],
+                    "viewing": viewed is not None and row["id"] == viewed["id"],
+                }
+            )
+        return {"browsable": bool(items), "items": items}
+    finally:
+        conn.close()
+
+
+class ViewBody(BaseModel):
+    token: str
+    case_id: int
+
+
+@app.post("/view")
+def view_study(body: ViewBody):
+    """Point Weasis at another browsable case's study (view only). The current case's id clears
+    the pointer. Refused outside the browsable set, and always on the test stage."""
+    conn = db.get_connection()
+    try:
+        student_id = _resolve_token(conn, body.token)
+        progress = _get_or_create_progress(conn, student_id)
+        allowed = {row["id"] for row in _browsable_cases(conn, progress["stage"])}
+        if body.case_id not in allowed:
+            raise AppError(403, "VIEW_NOT_ALLOWED", "This study cannot be opened now")
+        current = _get_case(conn, progress["stage"], progress["case_order_index"])
+        pointer = None if current is not None and body.case_id == current["id"] else body.case_id
+        conn.execute("UPDATE progress SET view_case_id = ? WHERE student_id = ?", (pointer, student_id))
+        conn.commit()
+        logger.info("study_viewed", extra={"stage": progress["stage"], "case_id": body.case_id})
+        return {"viewing_case_id": body.case_id, "current": pointer is None}
+    finally:
+        conn.close()
+
+
 class FinalizeBody(BaseModel):
     token: str
 
@@ -927,15 +1026,16 @@ def orthanc_authz(x_original_uri: str | None = Header(default=None, alias="X-Ori
         case = _get_case(conn, progress["stage"], progress["case_order_index"])
         if case is None:
             raise AppError(403, "AUTHZ_NO_STUDY", "No study assigned")
-        uid = case["orthanc_study_uid"]
+        # Study browsing: learning/assessment may read every browsable study; test only its own.
+        uids = {case["orthanc_study_uid"]} | {r["orthanc_study_uid"] for r in _browsable_cases(conn, progress["stage"])}
     finally:
         conn.close()
     if path == "/dicom-web/studies":
         # QIDO search: only a query that names THIS study and nothing broader.
         params = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
-        if params.get("StudyInstanceUID") != uid and params.get("0020000D") != uid:
-            raise AppError(403, "AUTHZ_FORBIDDEN", "Search must name the assigned study")
+        if params.get("StudyInstanceUID") not in uids and params.get("0020000D") not in uids:
+            raise AppError(403, "AUTHZ_FORBIDDEN", "Search must name an allowed study")
         return Response(status_code=204)
-    if _study_path_re(uid).match(path):
+    if any(_study_path_re(uid).match(path) for uid in uids):
         return Response(status_code=204)
     raise AppError(403, "AUTHZ_FORBIDDEN", "Path is outside the assigned study")
