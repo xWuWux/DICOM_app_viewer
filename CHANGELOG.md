@@ -25,7 +25,8 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 - nginx `/api/` rate limit is now the `API_RATE_LIMIT` template variable (default
   **10r/s unchanged in every deployment compose**, defaulted in the container
-  entrypoint so an unset variable can never produce an invalid config); the
+  entrypoint so an unset variable can never produce an invalid config, and a malformed one is refused
+  at container start with a clear message before nginx could fail opaquely); the
   visual-regression harness runs its throwaway stack at 50r/s and reports the
   measured peak `/api` rps of each run (issue #226).
 - **API 1.2.0: end-of-exam review, approval and ending a session.** Backfills the entry that #204 lacked and adds

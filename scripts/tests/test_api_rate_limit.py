@@ -6,6 +6,8 @@ its own throwaway stack only. These assertions fail if any of the four links
 in that chain is edited away.
 """
 
+import os
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -35,6 +37,28 @@ def test_both_deployment_composes_pass_it_through_with_the_production_default():
         # could silently weaken or invalidate the deployment limit;
         assigns = [l.strip() for l in text.splitlines() if "API_RATE_LIMIT=" in l]
         assert assigns == ["- API_RATE_LIMIT=${API_RATE_LIMIT:-10r/s}"], (compose.name, assigns)
+
+
+def test_envsh_refuses_a_malformed_rate_before_nginx_would_fail():
+    # nginx would refuse to start on a bad rate anyway (an opaque config
+    # error in the logs); the sourced entrypoint hook must name the
+    # variable and the accepted shape instead. bash: the nginx image runs
+    # docker-entrypoint.d/*.envsh files in bash, unlike plain .sh parts.
+    def source_envsh(rate):
+        return subprocess.run(
+            ["bash", "-c", f'source "{ENVSH}"'],
+            env={**os.environ, "ORTHANC_PASSWORD": "test", "API_RATE_LIMIT": rate},
+            capture_output=True,
+            text=True,
+        )
+
+    bad = source_envsh("banana")
+    assert bad.returncode != 0
+    assert "API_RATE_LIMIT" in bad.stderr and "r/s" in bad.stderr
+    # the accepted shapes keep passing silently
+    for good in ("10r/s", "50r/m"):
+        ok = source_envsh(good)
+        assert ok.returncode == 0, (good, ok.stderr)
 
 
 def test_visual_regression_harness_raises_it_for_its_own_stack_only():

@@ -11,4 +11,10 @@ ORTHANC_AUTH_B64="$(printf '%s:%s' "${ORTHANC_USER:-orthanc}" "${ORTHANC_PASSWOR
 # same default, and 20-envsubst-on-templates.sh can therefore never see the variable
 # unset and emit a rate=${API_RATE_LIMIT} literal into the nginx config).
 : "${API_RATE_LIMIT:=10r/s}"
+# Fail here with a readable message instead of letting nginx refuse to
+# start later with its own opaque config error.
+if [[ ! "$API_RATE_LIMIT" =~ ^[0-9]+r/[sm]$ ]]; then
+  echo "API_RATE_LIMIT must be <number>r/s or <number>r/m, got: '$API_RATE_LIMIT'" >&2
+  exit 1
+fi
 export API_RATE_LIMIT
