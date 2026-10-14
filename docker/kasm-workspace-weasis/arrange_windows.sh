@@ -62,9 +62,15 @@
 #      The token is passed to curl on stdin (never in argv) and is never logged.
 #      Needs VIEWER_URL, ORTHANC_URL and GRADING_TOKEN in the environment; if any
 #      is missing the feature is disabled with one log line.
+#   6. CLOSES WEASIS WHEN THE SESSION ENDS. The doctor's "Zakończ sesję" (or an expired or
+#      revoked token) makes GET /api/case answer HTTP 401. Two consecutive 401s (never one,
+#      never any other status: an unreachable or erroring API means "keep what is shown")
+#      mean the session is over: Weasis is terminated (ARRANGE_END_CMD, default
+#      `pkill -TERM -f /opt/weasis`), never relaunched again, and the polling stops. The panel
+#      window stays and shows its own "session ended" or "expired" message. Logged once.
 # Deterrence, not prevention, like the watermark.
 #
-# Test seams (all unset in production): ARRANGE_CASE_POLL_EVERY (passes between
+# Test seams (all unset in production): ARRANGE_END_CMD, ARRANGE_CASE_POLL_EVERY (passes between
 # polls), ARRANGE_CASE_CURL_TIMEOUT_S, WEASIS_URI_HELPER, and: ARRANGE_POLL_INTERVAL_S,
 # ARRANGE_MAX_ITERATIONS (0 = run forever), ARRANGE_PANEL_CMD,
 # ARRANGE_WEASIS_BIN / ARRANGE_WEASIS_URI (what to relaunch), ARRANGE_WEASIS_COOLDOWN_S.
@@ -84,6 +90,7 @@ MAX_WEASIS_RELAUNCHES=5
 CASE_POLL_EVERY="${ARRANGE_CASE_POLL_EVERY:-3}"            # passes between polls (3 x 2 s = ~6 s)
 CASE_CURL_TIMEOUT_S="${ARRANGE_CASE_CURL_TIMEOUT_S:-5}"
 MAX_SEND_RETRIES=3
+END_CMD="${ARRANGE_END_CMD:-pkill -TERM -f /opt/weasis}"
 WEASIS_URI_HELPER="${WEASIS_URI_HELPER:-/opt/grading-panel/weasis_case_uri.py}"
 VIEWER_URL="${VIEWER_URL:-}"
 ORTHANC_URL="${ORTHANC_URL:-}"
@@ -137,6 +144,8 @@ place() {
 # Issue #185: poll /api/case; when the study changes, hand the new weasis:// URI to
 # the running Weasis. State lives in globals (this script is one long loop).
 case_fetch_failures=0
+unauthorized_streak=0
+session_over=0
 current_uid=""
 send_pid=""
 send_uri=""
@@ -179,9 +188,30 @@ check_previous_send() {
 follow_case() {
     [ "$follow_enabled" = "1" ] || return 0
     check_previous_send
-    local json uri new_uid
-    if ! json=$(curl -fsS -m "$CASE_CURL_TIMEOUT_S" --config - "${VIEWER_URL}api/case" \
-        < <(printf 'header = "X-Grading-Token: %s"\n' "$GRADING_TOKEN") 2>/dev/null); then
+    [ "$session_over" = "0" ] || return 0
+    local json uri new_uid code body_file
+    body_file=$(mktemp)
+    code=$(curl -sS -m "$CASE_CURL_TIMEOUT_S" -o "$body_file" -w '%{http_code}' --config - "${VIEWER_URL}api/case" \
+        < <(printf 'header = "X-Grading-Token: %s"\n' "$GRADING_TOKEN") 2>/dev/null) || code=000
+    json=$(cat "$body_file" 2>/dev/null)
+    rm -f "$body_file"
+    if [ "$code" = "401" ]; then
+        # the token no longer resolves: revoked ("Zakończ sesję") or expired
+        unauthorized_streak=$((unauthorized_streak + 1))
+        if [ "$unauthorized_streak" -ge 2 ]; then
+            session_over=1
+            echo "arrange_windows.sh: the session is over (HTTP 401 twice: ended or expired) -- closing Weasis, no relaunch, no more polling"
+            # shellcheck disable=SC2086  # END_CMD is a command line, split on purpose
+            $END_CMD >/dev/null 2>&1 || true
+        fi
+        return 0
+    fi
+    unauthorized_streak=0
+    case "$code" in
+        2[0-9][0-9]) ;;
+        *) json="" ;;
+    esac
+    if [ -z "$json" ]; then
         case_fetch_failures=$((case_fetch_failures + 1))
         if [ "$case_fetch_failures" -eq 1 ] || [ $((case_fetch_failures % 10)) -eq 0 ]; then
             echo "arrange_windows.sh: grading-api /api/case unreachable (${case_fetch_failures} failures in a row) -- keeping the current study" >&2
@@ -295,7 +325,9 @@ while true; do
         weasis_missing=$((weasis_missing + 1))
         if [ "$weasis_missing" -ge 2 ]; then
             now=$SECONDS
-            if [ "$weasis_relaunches" -ge "$MAX_WEASIS_RELAUNCHES" ]; then
+            if [ "$session_over" = "1" ]; then
+                :  # the session ended on purpose: Weasis stays closed
+            elif [ "$weasis_relaunches" -ge "$MAX_WEASIS_RELAUNCHES" ]; then
                 :  # gave up (already logged once below); a human has to look at this session
             elif [ $((now - weasis_last_launch)) -lt "$WEASIS_COOLDOWN_S" ]; then
                 :  # too soon after the last relaunch; try again on a later pass
