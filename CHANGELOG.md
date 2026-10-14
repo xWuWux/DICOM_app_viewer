@@ -28,6 +28,19 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   entrypoint so an unset variable can never produce an invalid config); the
   visual-regression harness runs its throwaway stack at 50r/s and reports the
   measured peak `/api` rps of each run (issue #226).
+- **API 1.2.0: end-of-exam review, approval and ending a session.** Backfills the entry that #204 lacked and adds
+  today's endpoint. New: `GET /review` (the doctor's own answers, no ground truth), `POST /finalize` (one-way,
+  idempotent approval, 409 until the exam is complete), `POST /session/end` (the doctor revokes their own token after
+  approving; 409 before; the answers stay; a second call is 401), plus `reset_enabled` in `/review` and `/results` and
+  the setting `GRADING_RESET_ENABLED` (default off: `POST /reset` answers 403 `RESET_DISABLED`). **Behaviour change:**
+  `GET /results` returns only `{complete, finalized: false}` until the review is approved (it used to return the test
+  ground truth as soon as the exam was complete); after approval it also returns `items` for every case. The
+  schema gains the nullable `progress.finalized_at` (additive migration, pre-migration backup first).
+- **Panel (doctors' request after the first Kasm run, 2026-10-13).** In the reference report every Lung-RADS category
+  mention AND every number, with its unit when it has one (`8 mm`, `12 x 10 mm`, `35 HU`, `70%`, `12.03.2024`), is bold;
+  the whole line "Kategoria referencyjna: 4A (S)" is bold. The final screen gains "Zakończ sesję" (ask once, then end):
+  the token is revoked, the panel shows "Sesja zakończona", and the window loop in the session closes Weasis after two
+  consecutive HTTP 401s from `/api/case` and never relaunches it (an erroring or unreachable API never closes it).
 - **Degraded modes documented and pinned by tests (issue #115).**
   `docs/DEGRADED_MODES.md` records, per critical dependency (grading-api,
   SQLite lock, Orthanc, Kasm/Guacamole incl. the CE 5-session cap, the

@@ -13,8 +13,23 @@ import pytest
 PAGES = ["watermark.html", "grading-panel.html"]
 REPORT = (
     "Lung-RADS 4A. Kategoria 3 jako zmiana pozorna; LR-4B S oraz kategorii 4X. "
-    "Brak: Lung-RADS 5, 4Ax, category 2. <script>window.__pwned = 1</script> <b>x</b>"
+    "Zmiana 12 x 10 mm (35 HU), 70%, 3,5 cm3, kontrola 12.03.2024, w CT2. "
+    "<script>window.__pwned = 1</script> <b>x</b>"
 )
+# What is bold in REPORT, in order: the category mentions AND every number with its unit (doctors'
+# request after the first Kasm run). "CT2" (a digit glued to a letter) and the plain words stay as they are.
+EXPECTED_BOLD = [
+    "Lung-RADS 4A",
+    "Kategoria 3",
+    "LR-4B S",
+    "kategorii 4X",
+    "12 x 10 mm",
+    "35 HU",
+    "70%",
+    "3,5 cm3",
+    "12.03.2024",
+    "1",  # the "1" of the visible text "window.__pwned = 1": markup in a report is shown as TEXT, and its digits are numbers too
+]
 LABELS = [["2", "Kategoria 2 – zmiany łagodne"], ["4A", "Kategoria 4A – podejrzane"]]
 
 
@@ -47,7 +62,7 @@ def test_reference_report_marks_the_scale_in_bold_and_nothing_else(page, base_ur
     page.click("#submit-btn")
     page.wait_for_selector(".answer-box.reference")
     bold = page.locator(".answer-box.reference strong.lr").all_inner_texts()
-    assert bold == ["Lung-RADS 4A", "Kategoria 3", "LR-4B S", "kategorii 4X"]
+    assert bold == EXPECTED_BOLD
 
 
 @pytest.mark.parametrize("path", PAGES)
@@ -85,5 +100,29 @@ def test_assessment_shows_the_reference_category_in_bold_and_the_choices_bold(pa
     page.select_option("#category-input", "2")
     page.click("#submit-btn")
     page.wait_for_selector("#next-btn")
-    assert page.locator("strong.lr").all_inner_texts() == ["4A (S)"]
+    assert page.locator("strong.lr").all_inner_texts() == ["Kategoria referencyjna: 4A (S)"]  # the WHOLE line
     assert int(page.evaluate("getComputedStyle(document.querySelector('strong.lr')).fontWeight")) >= 700
+
+
+EMPHASIS_CASES = [
+    ("Guzek 8 mm w segmencie 6, Lung-RADS 4A.", ["8 mm", "6", "Lung-RADS 4A"]),
+    ("Zmiana 12,5 x 10 mm, wzrost o 20%.", ["12,5 x 10 mm", "20%"]),
+    ("Gestosc 35 HU, objetosc 1,2 cm3, 3 mm3.", ["35 HU", "1,2 cm3", "3 mm3"]),
+    ("Kategoria 4A (S), potem 4B i 4X.", ["Kategoria 4A", "4B", "4X"]),
+    ("Lung-RADS: kat. 2; kategoria Lung-RADS 3S", ["Lung-RADS: kat. 2", "Lung-RADS 3S"]),
+    ("8&nbsp;mm", ["8 mm"]),
+    ("Bez liczb i bez kategorii.", []),
+    ("CT2, B12 i X9 nie sa liczbami.", []),
+]
+
+
+@pytest.mark.parametrize("path", PAGES)
+@pytest.mark.parametrize("text,expected", EMPHASIS_CASES)
+def test_numbers_with_units_and_category_mentions_are_bold_and_nothing_else(page, base_url, path, text, expected):
+    _mock_api(page, "learning", {"reference_report": text.replace("&nbsp;", "\u00a0")})
+    _open(page, base_url, path)
+    page.fill("#text-input", "x")
+    page.click("#submit-btn")
+    page.wait_for_selector(".answer-box.reference")
+    assert page.locator(".answer-box.reference strong.lr").all_inner_texts() == expected
+    assert int(page.evaluate("getComputedStyle(document.querySelector('.answer-box.reference p')).fontWeight")) < 700 or not expected
