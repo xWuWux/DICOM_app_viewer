@@ -1,5 +1,7 @@
 # Rate limiting zone (issue #4: missing rate limiting)
-limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
+# API_RATE_LIMIT is defaulted by docker-entrypoint.d/15-compute-orthanc-auth.envsh
+# (never unset -> never an invalid config); deployment composes pin the 10r/s default.
+limit_req_zone $binary_remote_addr zone=api_limit:10m rate=${API_RATE_LIMIT};
 
 # issue #94: an args-free access-log format. The default combined format
 # logs $request (the raw request LINE, query string included) -- any
