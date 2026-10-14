@@ -23,6 +23,10 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **README test catalog: test counts removed, policy stated (issue #144).** The hand-written
+  "(N tests)" figures had drifted (21 declared vs 37 collected for `test_state_machine.py`, 20 vs
+  116 BATS tests). The catalog now describes what each suite guards, says why there are no counts,
+  and `scripts/lint.sh` fails if a count reappears in the `## Testing` section.
 - **API 1.2.0: end-of-exam review, approval and ending a session.** Backfills the entry that #204 lacked and adds
   today's endpoint. New: `GET /review` (the doctor's own answers, no ground truth), `POST /finalize` (one-way,
   idempotent approval, 409 until the exam is complete), `POST /session/end` (the doctor revokes their own token after
