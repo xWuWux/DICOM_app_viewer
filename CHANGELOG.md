@@ -23,6 +23,12 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- nginx `/api/` rate limit is now the `API_RATE_LIMIT` template variable (default
+  **10r/s unchanged in every deployment compose**, defaulted in the container
+  entrypoint so an unset variable can never produce an invalid config, and a malformed one is refused
+  at container start with a clear message before nginx could fail opaquely); the
+  visual-regression harness runs its throwaway stack at 50r/s and reports the
+  measured peak `/api` rps of each run (issue #226).
 - **API 1.2.0: end-of-exam review, approval and ending a session.** Backfills the entry that #204 lacked and adds
   today's endpoint. New: `GET /review` (the doctor's own answers, no ground truth), `POST /finalize` (one-way,
   idempotent approval, 409 until the exam is complete), `POST /session/end` (the doctor revokes their own token after

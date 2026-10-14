@@ -50,6 +50,11 @@ if ! docker network inspect kasm_default_network >/dev/null 2>&1; then
 fi
 
 echo "--- docker compose up ---"
+# The suite is a CLIENT of its own stack's edge rate limit: bursts of panel loads
+# legitimately tripped 10r/s and the 429s were being logged as UI flakes (#226, run
+# 38380410077 evidence). Raise the limit for THIS throwaway stack only -- deployment
+# compose defaults stay 10r/s.
+export API_RATE_LIMIT="${API_RATE_LIMIT:-50r/s}"
 docker compose up -d --build || { echo "compose up failed"; exit 1; }
 
 echo "--- waiting for grading-api ---"
@@ -79,5 +84,14 @@ if [ "$status" -eq 0 ]; then
     bash -c "pip install --quiet -r requirements-dev.txt && pytest -q --base-url http://localhost:8080 $*" \
     || status=1
 fi
+
+# Measured, not estimated (#226): the busiest single second of /api requests
+# this run generated, straight from the throwaway stack's own access log.
+# The number belongs in the rate-limit row of docs/DEGRADED_MODES.md.
+echo "--- measured /api load of this run (viewer access log) ---"
+docker logs ipcmc-viewer 2>/dev/null | awk '
+  /\/api\// { ts = substr($4, 2, 20); n[ts]++; if (n[ts] > max) { max = n[ts]; peak = ts } }
+  END { if (max) printf "peak /api requests in one second: %d (at %s)\n", max, peak; else print "no /api lines found in the viewer access log" }' \
+  || echo "could not read the viewer access log (stack already down?)"
 
 exit "$status"
