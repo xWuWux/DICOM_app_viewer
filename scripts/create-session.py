@@ -512,6 +512,10 @@ def main():
             # them apart (issue #142): 128 + signal number for SIGTERM/SIGHUP
             # (143/129, the shell convention for death by signal), 1 for Ctrl-C,
             # as most CLIs do. Compensation has already run above.
+            # Deliberately sys.exit(128 + signum), not re-raising the signal with
+            # its default action: $? is the same 143/129, but the run is reported
+            # as a normal exit (no "Terminated" from job control), and the code is
+            # testable in-process as SystemExit.code (issue #142, criterion 4).
             signum = getattr(exc, "signum", None)
             if signum is None:
                 sys.exit("interrupted")
