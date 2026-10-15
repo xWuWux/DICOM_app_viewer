@@ -95,7 +95,8 @@ def _inv(uid, series=1, instances=1, records=1):
 
 
 def test_fixture_expectations_over_a_committed_fixture():
-    exp = mod.fixture_expectations([str(FIXTURE_CT)])
+    exp, no_uid = mod.fixture_expectations([str(FIXTURE_CT)])
+    assert no_uid == []
     assert len(exp) == 1
     entry = next(iter(exp.values()))
     assert entry["files"] == ["CT_small.dcm"]
@@ -103,7 +104,7 @@ def test_fixture_expectations_over_a_committed_fixture():
 
 
 def test_check_fixtures_matched_ok_missing_names_the_file(capsys):
-    exp = mod.fixture_expectations([str(FIXTURE_CT)])
+    exp, _ = mod.fixture_expectations([str(FIXTURE_CT)])
     uid = next(iter(exp))
     assert mod.check_fixtures(exp, _inv(uid)) == 0
     assert mod.check_fixtures(exp, {}) == 1
@@ -129,3 +130,76 @@ def test_check_fixtures_grouping_mismatch(capsys):
 def test_main_requires_exactly_one_mode(capsys):
     assert mod.main([]) == 2
     assert mod.main(["cases.json", "--fixtures", "x.dcm"]) == 2
+
+
+# ---- the #160 shared-tags bug: real response shapes, keyword-free contract --
+# Orthanc's /studies/{id}/shared-tags is keyed by HEX tags ("0020,000d");
+# reading it by keyword returned "" for every study, so cases mode matched 0
+# against any real Orthanc since it shipped. These mocks use the VERIFIED
+# 26.9.1 shapes (spot-checked against a throwaway instance, issue #238 A
+# review) so they cannot drift back into the fantasy shape that hid the bug.
+
+REAL_UID = "1.2.840.113619.2.55.3.1234"  # plausible CT_small-shape public uid
+
+
+def _fake_orthanc(monkeypatch, records=1):
+    calls = []
+
+    def fake_get_json(base, auth, path, timeout):
+        calls.append(path)
+        if path == "/studies":
+            return [f"s{i}" for i in range(records)]
+        if path.startswith("/studies/") and path.endswith("/series"):
+            return [{"ID": "se1", "Instances": ["in1", "in2"], "Status": "Complete"}]
+        if path.startswith("/studies/"):
+            return {"ID": path.split("/")[2], "MainDicomTags": {"StudyInstanceUID": REAL_UID}}
+        raise AssertionError(f"unexpected path {path}")
+
+    monkeypatch.setattr(mod, "_get_json", fake_get_json)
+    return calls
+
+
+def test_fetchers_use_maindicomtags_not_shared_tags(monkeypatch):
+    calls = _fake_orthanc(monkeypatch)
+    assert mod.fetch_study_uids("b", "u", "p") == [REAL_UID]
+    assert mod.fetch_study_inventory("b", "u", "p") == {REAL_UID: {"series": 1, "instances": 2, "records": 1}}
+    # the regression contract itself: no request may EVER touch shared-tags
+    assert not any("shared-tags" in c for c in calls)
+
+
+def test_shared_tags_hex_shape_is_untouched(monkeypatch):
+    # even if an Orthanc returned keyword-keyed shared-tags (the old mock
+    # fantasy), the code must not depend on it -- proved by _get_json above
+    # never requesting the endpoint; here we additionally verify a detail
+    # response WITHOUT MainDicomTags degrades to "" rather than KeyError.
+    monkeypatch.setattr(mod, "_get_json", lambda b, a, p, t: {"ID": "s0"})
+    assert mod.fetch_study_uids("b", "u", "p") == [""]
+
+
+def test_uid_only_fixture_names_the_real_cause(tmp_path, capsys):
+    import pydicom
+
+    ds = pydicom.dcmread(str(FIXTURE_CT))
+    del ds.StudyInstanceUID
+    broken = tmp_path / "no-uid.dcm"
+    ds.save_as(str(broken))
+    assert mod.main(["--fixtures", str(broken)]) == 2
+    # credentials ARE required before the network attempt; supply one so the
+    # failure we assert on is the StudyInstanceUID message, not the auth one
+    import os as _os
+
+    _os.environ.setdefault("ORTHANC_PASSWORD", "sentinel-not-used")
+    capsys.readouterr()
+    assert mod.main(["--fixtures", str(broken)]) == 2
+    assert "no StudyInstanceUID" in capsys.readouterr().err
+
+
+def test_unreadable_fixture_names_files_not_orthanc(tmp_path, capsys):
+    garbage = tmp_path / "garbage.dcm"
+    garbage.write_bytes(b"not dicom at all")
+    import os as _os
+
+    _os.environ.setdefault("ORTHANC_PASSWORD", "sentinel-not-used")
+    assert mod.main(["--fixtures", str(garbage)]) == 2
+    err = capsys.readouterr().err
+    assert "garbage.dcm" in err and "Orthanc" not in err

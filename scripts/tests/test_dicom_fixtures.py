@@ -17,8 +17,8 @@ samples never enter CI) it pins, in the order the pipeline consumes them:
      very guards above -- proof the guards are not vacuous.
 
 Orthanc-side coverage (studies actually SERVED with matching grouping) lives in
-scripts/test-dicom-orthanc-coverage.py, run by scripts/smoke-test.sh -- it needs
-the live stack and has no business in this offline file.
+`scripts/verify-cases-in-orthanc.py --fixtures`, run by scripts/smoke-test.sh --
+it needs the live stack and has no business in this offline file.
 """
 
 import importlib.util

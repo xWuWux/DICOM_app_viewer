@@ -41,6 +41,15 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   Existing coverage this leans on rather than rewraps:
   `scripts/tests/test_dicom_patient_consistency.py`, the grading-api cases-file
   tests, and the loader UID bats tests.
+  Building the fixture gate exposed that cases mode had NEVER worked against a
+  real Orthanc (fixes #249, broken since #160): `/studies/{id}/shared-tags` is
+  keyed by HEX tags ("0020,000d"), so the keyword lookup read "" for every
+  study and matched 0 -- while the unit mocks used a shape the endpoint never
+  returns. Both fetchers now read `GET /studies/{id}` -> `MainDicomTags`, and a
+  regression test forbids ever requesting shared-tags again. Verified against a
+  throwaway instance of the compose-pinned 26.9.1: positive match, not-loaded
+  fixture fails, unreadable/UID-less fixtures fail closed naming the real
+  cause, and cases mode matches again.
 - **`scripts/create-session.py` exits 143 on SIGTERM and 129 on SIGHUP (issue #142).** A cancelled run (CI job
   cancellation, closed terminal) now looks different from a failed one: 128 + signal number, the shell convention.
   Ctrl-C keeps exit 1. Unchanged: the token is still revoked before exiting, and the operator still sees the single

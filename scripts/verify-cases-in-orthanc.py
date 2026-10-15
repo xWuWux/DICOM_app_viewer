@@ -52,21 +52,28 @@ def _basic_auth(user, password):
     return "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()
 
 
+def _study_uid_of(base, auth, study_id, timeout):
+    """StudyInstanceUID of one study record.
+
+    Reads GET /studies/{id} -> MainDicomTags (keyword-keyed, plain string).
+    NOT /studies/{id}/shared-tags: that endpoint is keyed by HEX tags
+    ("0020,000d"), so a keyword lookup there returns empty for EVERY study
+    -- the bug that silently made cases mode match 0 against any real
+    Orthanc since #160 (its unit tests mocked shared-tags in a shape the
+    endpoint never returns). A regression test now pins the keyword-free
+    contract by refusing any shared-tags request outright."""
+    detail = _get_json(base, auth, f"/studies/{study_id}", timeout)
+    value = (detail.get("MainDicomTags") or {}).get("StudyInstanceUID", "")
+    if isinstance(value, list):  # defensive: some VRs arrive as lists
+        value = str(value[0]) if value else ""
+    return str(value).strip()
+
+
 def fetch_study_uids(base, user, password, timeout=30):
     """StudyInstanceUID of every study record Orthanc serves (duplicates kept)."""
     auth = _basic_auth(user, password)
-
-    def get(path):
-        return _get_json(base, auth, path, timeout)
-
-    uids = []
-    for study_id in get("/studies"):
-        tags = get(f"/studies/{study_id}/shared-tags")
-        value = tags.get("StudyInstanceUID", {}).get("Value", "")
-        if isinstance(value, list):  # multi-valued VRs arrive as lists
-            value = str(value[0]) if value else ""
-        uids.append(str(value).strip())
-    return uids
+    study_ids = _get_json(base, auth, "/studies", timeout)
+    return [_study_uid_of(base, auth, study_id, timeout) for study_id in study_ids]
 
 
 def check(cases, orthanc_uids, out=None):
@@ -98,13 +105,18 @@ def fetch_study_inventory(base, user, password, timeout=30):
     auth = _basic_auth(user, password)
     inventory = {}
     for study_id in _get_json(base, auth, "/studies", timeout):
-        uid = _shared_tag(_get_json(base, auth, f"/studies/{study_id}/shared-tags", timeout), "StudyInstanceUID")
+        uid = _study_uid_of(base, auth, study_id, timeout)
+        # real response shape (verified against 26.9.1): a list of dicts with
+        # "ID" and an "Instances" list embedded per entry
         series = _get_json(base, auth, f"/studies/{study_id}/series", timeout)
         instances = 0
         for s in series:
-            sid = s.get("ID") if isinstance(s, dict) else s
-            detail = _get_json(base, auth, f"/series/{sid}", timeout)
-            instances += int(detail.get("CountInstances", 0))
+            if isinstance(s, dict) and s.get("Instances") is not None:
+                instances += len(s["Instances"])
+            else:  # older/other shapes: ask the series resource
+                sid = s.get("ID") if isinstance(s, dict) else s
+                detail = _get_json(base, auth, f"/series/{sid}", timeout)
+                instances += int(detail.get("CountInstances", 0))
         # A second Orthanc record with the SAME StudyInstanceUID is the #162
         # split: never merge it into the first (summed counts could make a
         # broken study look complete), count the records instead.
@@ -115,32 +127,41 @@ def fetch_study_inventory(base, user, password, timeout=30):
     return inventory
 
 
-def _shared_tag(tags, keyword):
-    value = tags.get(keyword, {}).get("Value", "")
-    if isinstance(value, list):
-        value = str(value[0]) if value else ""
-    return str(value)
-
-
 def fixture_expectations(paths):
-    """uid -> {"files": [names], "instances": n, "series": n} over .dcm files.
+    """-> (expected: uid -> {"files", "instances", "series"}, no_uid: [names])
 
     Lazily imports pydicom; lazy import + same module as cases mode is
     deliberate: one Orthanc client, one output policy, no second fetcher to
-    drift (issue #238 review point 2)."""
+    drift (issue #238 review point 2). Files that fail to parse raise with
+    their names (committed, public -- naming them is safe); files readable
+    but without a StudyInstanceUID are returned separately so main() can
+    fail closed with a message that names the REAL cause instead of
+    reporting them as "not served" studies.
+    """
     import pydicom
 
     expected = {}
+    no_uid = []
+    unreadable = []
     for p in paths:
-        ds = pydicom.dcmread(p, stop_before_pixels=True)
+        try:
+            ds = pydicom.dcmread(p, stop_before_pixels=True)
+        except Exception:
+            unreadable.append(os.path.basename(str(p)))
+            continue
         uid = str(ds.get("StudyInstanceUID", "")).strip()
+        if not uid:
+            no_uid.append(os.path.basename(str(p)))
+            continue
         entry = expected.setdefault(uid, {"files": [], "instances": 0, "series": set()})
         entry["files"].append(os.path.basename(str(p)))
         entry["instances"] += 1
         entry["series"].add(str(ds.get("SeriesInstanceUID", "")))
+    if unreadable:
+        raise ValueError("unreadable fixture files: " + ", ".join(sorted(unreadable)))
     for entry in expected.values():
         entry["series"] = len(entry["series"])
-    return expected
+    return expected, no_uid
 
 
 def check_fixtures(expected, inventory, out=None):
@@ -191,7 +212,11 @@ def main(argv=None) -> int:
                         break
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cases_file", nargs="?", help="JSON built by scripts/build-cases-file.py (read locally, never printed)")
+    ap.add_argument(
+        "cases_file",
+        nargs="?",
+        help="JSON built by scripts/build-cases-file.py (read locally, never printed)",
+    )
     ap.add_argument(
         "--fixtures",
         nargs="+",
@@ -216,11 +241,23 @@ def main(argv=None) -> int:
         print("ERROR: no Orthanc password (ORTHANC_PASSWORD env or .env) -- see .env.example", file=sys.stderr)
         return 2
     if a.fixtures:
+        # LOCAL files are read FIRST, outside the network try: a corrupt or
+        # UID-less fixture must fail with its own message, never masquerade as
+        # an Orthanc connection error (issue #238 A review).
         try:
-            expected = fixture_expectations(a.fixtures)
+            expected, no_uid = fixture_expectations(a.fixtures)
+        except Exception as exc:  # ValueError naming the files; never file CONTENTS
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+        if no_uid:
+            names = ", ".join(sorted(no_uid))
+            print(f"ERROR: fixtures with no StudyInstanceUID: {names}", file=sys.stderr)
+            return 2
+        try:
             inventory = fetch_study_inventory(base, user, password)
         except Exception:  # bare one-line reason: no tracebacks with request URLs in them
-            print(f"ERROR: cannot read study list from {base} (is Orthanc up, are the credentials right?)", file=sys.stderr)
+            reason = "is Orthanc up, are the credentials right?"
+            print(f"ERROR: cannot read study list from {base} ({reason})", file=sys.stderr)
             return 2
         return 1 if check_fixtures(expected, inventory) else 0
 
@@ -235,7 +272,8 @@ def main(argv=None) -> int:
     try:
         uids = fetch_study_uids(base, user, password)
     except Exception:
-        print(f"ERROR: cannot read study list from {base} (is Orthanc up, are the credentials right?)", file=sys.stderr)
+        reason = "is Orthanc up, are the credentials right?"
+        print(f"ERROR: cannot read study list from {base} ({reason})", file=sys.stderr)
         return 2
     return 1 if check(cases, uids) else 0
 
