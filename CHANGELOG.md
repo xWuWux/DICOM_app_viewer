@@ -23,6 +23,10 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **`scripts/create-session.py` exits 143 on SIGTERM and 129 on SIGHUP (issue #142).** A cancelled run (CI job
+  cancellation, closed terminal) now looks different from a failed one: 128 + signal number, the shell convention.
+  Ctrl-C keeps exit 1. Unchanged: the token is still revoked before exiting, and the operator still sees the single
+  line `interrupted` (no token).
 - **README test catalog: test counts removed, policy stated (issue #144).** The hand-written
   "(N tests)" figures had drifted (21 declared vs 37 collected for `test_state_machine.py`, 20 vs
   116 BATS tests). The catalog now describes what each suite guards, says why there are no counts,
