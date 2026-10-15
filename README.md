@@ -247,6 +247,13 @@ differs (`watermark.html` for Chrome, `grading-panel.html` for Weasis):
    token (`POST /session/end`, only after approving the review; the answers stay) and the window loop in the session
    closes Weasis.
 
+**Study browsing (owner request 2026-10-14, API 1.4.0).** In the learning and assessment stages the panel shows a
+"Pokaż badanie" list of every study of the stages reached so far (learning: learning cases; assessment: learning +
+assessment cases). Picking one moves a server-side view pointer (`POST /view`, list from `GET /studies`); Weasis follows
+it through the same `/api/case` poll that follows case changes (#185), within about 6 s. It is view only: the form keeps
+answering the current case, in order, and every submit resets the pointer. The test stage stays locked to its own study
+(no list, `POST /view` refused, and the scoped Orthanc authorisation `/orthanc-authz` allows only that study again).
+
 **In the Chrome flow**, the grading panel lives in `watermark.html` as a
 sidebar next to the DICOM viewer iframe (same page, no separate route) — on
 loading a case it deep-links the iframe to that one assigned study

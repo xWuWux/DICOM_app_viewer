@@ -64,3 +64,23 @@ O="http://viewer:8043/"
   run python3 "$H" bogus '{}' "$O"
   [ "$status" -eq 2 ]
 }
+
+@test "study browsing: view_study_uid wins over the current case's study (API 1.4.0)" {
+  run python3 "$H" uid '{"orthanc_study_uid":"1.2.840.1","view_study_uid":"1.2.840.7"}'
+  [ "$status" -eq 0 ] && [ "$output" = "1.2.840.7" ]
+  run python3 "$H" uri '{"orthanc_study_uid":"1.2.840.1","view_study_uid":"1.2.840.7"}' "$O"
+  decoded=$(python3 -c "import sys,urllib.parse; print(urllib.parse.unquote(sys.argv[1]))" "$output")
+  [[ "$decoded" == *'studyUID=1.2.840.7"'* ]]
+}
+
+@test "study browsing: an unsafe view_study_uid falls back to the current study, never to nothing" {
+  for v in '"x;rm -rf /"' '"..."' '""' '123' 'null'; do
+    run python3 "$H" uid "{\"orthanc_study_uid\":\"1.2.840.1\",\"view_study_uid\":$v}"
+    [ "$status" -eq 0 ] && [ "$output" = "1.2.840.1" ]
+  done
+}
+
+@test "study browsing: a complete case opens nothing even with a view pointer" {
+  run python3 "$H" uid '{"complete":true,"view_study_uid":"1.2.840.7"}'
+  [ "$status" -eq 0 ] && [ -z "$output" ]
+}
