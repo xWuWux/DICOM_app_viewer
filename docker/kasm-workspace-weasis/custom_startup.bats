@@ -55,6 +55,17 @@ EOF
   export ORTHANC_URL="http://ipcmc-viewer:8043/"
   export GRADING_TOKEN="test-token-abc"
   unset STUDENT_ID SESSION_ID CURL_EXIT_CODE CURL_RESPONSE_JSON
+
+  # issue #153: a stub zenity that records its argv, so a test can prove the
+  # refusal is shown to the user (and with which text) without a real display.
+  cat > "$STUB_DIR/zenity" <<'EOF2'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$ZENITY_ARGS_FILE"
+EOF2
+  chmod +x "$STUB_DIR/zenity"
+  export ZENITY_BIN="$STUB_DIR/zenity"
+  export ZENITY_ARGS_FILE="$BATS_TEST_TMPDIR/zenity-args.txt"
+  export DISPLAY=":1"
   # issue #102 added a retry loop with sleeps; tests pin the seam to 0 so
   # failure-path cases stay fast (production keeps the 2s/4s backoff).
   export API_RETRY_BACKOFF=0
@@ -183,4 +194,62 @@ print(' '.join(urllib.parse.unquote(p) for p in uri.split('+')))
   rm -f "$STUB_DIR/picom"
   run bash "$SCRIPT"
   [ "$status" -eq 0 ]
+}
+
+# ---- issue #153: refusing without a session link is visible, not a black screen ----
+
+@test "issue #153: no GRADING_TOKEN -> one stable REFUSED log line, a dialog for the user, nothing launched" {
+  unset GRADING_TOKEN
+  run bash "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [ "$(grep -c 'custom_startup: REFUSED --' <<<"$output")" -eq 1 ]
+  [[ "$output" == *"GRADING_TOKEN is not set"* ]]
+  grep -q -- '--error' "$ZENITY_ARGS_FILE"
+  grep -q 'Ta sesja wymaga linku przydzielonego przez prowadzącego' "$ZENITY_ARGS_FILE"
+  [ ! -s "$WEASIS_ARGS_FILE" ]
+  [ ! -e "$CURL_ARGS_FILE" ]   # not even a grading-api call without a token
+}
+
+@test "issue #153: an empty GRADING_TOKEN is refused the same way" {
+  export GRADING_TOKEN=""
+  run bash "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"custom_startup: REFUSED --"* ]]
+  [ -s "$ZENITY_ARGS_FILE" ]
+  [ ! -s "$WEASIS_ARGS_FILE" ]
+}
+
+@test "issue #153: without a display the refusal is logged only (no dialog attempt), still fail-closed" {
+  unset GRADING_TOKEN DISPLAY
+  run bash "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"custom_startup: REFUSED --"* ]]
+  [ ! -e "$ZENITY_ARGS_FILE" ]
+  [ ! -s "$WEASIS_ARGS_FILE" ]
+}
+
+@test "issue #153: a missing zenity binary does not change the outcome" {
+  unset GRADING_TOKEN
+  export ZENITY_BIN="$BATS_TEST_TMPDIR/no-such-zenity"
+  run bash "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"custom_startup: REFUSED --"* ]]
+  [ ! -s "$WEASIS_ARGS_FILE" ]
+}
+
+@test "issue #153: a tampered token is refused visibly too, and the token never reaches the dialog" {
+  export GRADING_TOKEN='evil"token\with-injectables'
+  run bash "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"URL-safe"* ]]
+  [ -s "$ZENITY_ARGS_FILE" ]
+  ! grep -q 'evil' "$ZENITY_ARGS_FILE"
+  [[ "$output" != *"evil"* ]]
+}
+
+@test "issue #153: the normal path shows no dialog" {
+  export CURL_RESPONSE_JSON='{"orthanc_study_uid":"1.2.840.1"}'
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [ ! -e "$ZENITY_ARGS_FILE" ]
 }
