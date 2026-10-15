@@ -217,6 +217,9 @@ class TestGradingPanelStates:
         _open(page, base_url, flow_page, token, student_id, "vr")
         _submit_learning(page)
         _advance_to_next_case(page)
+        # The study picker (API 1.4.0) fills in after its own /api/studies fetch: wait for it,
+        # so the snapshot never races it (assessment lists the learning + assessment studies).
+        _wait_for(page, "#study-select", "the study picker on the assessment form")
         assert_snapshot(panel_locator)
 
     def test_assessment_stage_feedback(
