@@ -52,15 +52,36 @@ ORTHANC_URL="${ORTHANC_URL:?set ORTHANC_URL to the internal auth-proxy address}"
 # server-side, so any request could act as any student -- this token is
 # what closes that gap. Required, not defaulted: a session with no token
 # can't do anything useful against grading-api.
-GRADING_TOKEN="${GRADING_TOKEN:?set GRADING_TOKEN to the token minted by grading-api POST /session}"
+#
+# Issue #153: refusing used to be a bare `:?` guard -- correct (fail-closed,
+# #102/#104) but invisible: a workspace started straight from the Kasm
+# dashboard showed a black screen while the log repeated "Unknown Service:
+# custom_startup". refuse_without_link keeps the refusal and adds (1) ONE
+# stable, searchable log line ("custom_startup: REFUSED --") and (2) a
+# dialog the user can read, when a display is there to show it. The dialog
+# blocks until closed; the script then exits non-zero as before -- nothing
+# else (Weasis, panel, watermark) is ever started without a token.
+# ZENITY_BIN is a test seam (unset in production -> zenity on PATH).
+refuse_without_link() {
+  echo "custom_startup: REFUSED -- $1; open this workspace through the session link issued by the coordinator (scripts/create-session.py), not from the Kasm dashboard" >&2
+  local zenity="${ZENITY_BIN:-zenity}"
+  if [ -n "${DISPLAY:-}" ] && command -v "$zenity" >/dev/null 2>&1; then
+    "$zenity" --error --no-wrap --title "Sesja niedostępna" \
+      --text "Ta sesja wymaga linku przydzielonego przez prowadzącego.\n\nZamknij tę kartę i otwórz link otrzymany od prowadzącego." \
+      >/dev/null 2>&1 || true
+  fi
+  exit 1
+}
+if [ -z "${GRADING_TOKEN:-}" ]; then
+  refuse_without_link "GRADING_TOKEN is not set (no session link)"
+fi
 # CR #121 nit: the token is interpolated into a curl --config line wrapped
 # in double quotes; a value containing " or \ could close the quote and
 # inject further curl options. grading-api only ever mints token_urlsafe
 # (base64url) values, so anything else means corruption or tampering --
 # fail fast and loud instead of feeding curl a crafted config.
 if [[ ! "$GRADING_TOKEN" =~ ^[A-Za-z0-9_-]+$ ]]; then
-  echo "ERROR: GRADING_TOKEN contains characters outside the URL-safe alphabet ([A-Za-z0-9_-]) -- refusing to launch" >&2
-  exit 1
+  refuse_without_link "GRADING_TOKEN contains characters outside the URL-safe alphabet ([A-Za-z0-9_-])"
 fi
 
 # issue #102: the previous one-liner `|| CASE_JSON='{"complete": true}'`
