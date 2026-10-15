@@ -288,6 +288,12 @@ def _migrate_existing_schema(conn):
             # _migration_needed() below runs first.
             conn.execute("ALTER TABLE progress ADD COLUMN finalized_at REAL")
             conn.commit()
+        if "view_case_id" not in cols:
+            # Study browsing (learning/assessment): which case's study Weasis shows when the
+            # doctor opened another one from the panel. Additive and nullable; NULL = the
+            # current case. The pre-migration backup of _migration_needed() runs first.
+            conn.execute("ALTER TABLE progress ADD COLUMN view_case_id INTEGER")
+            conn.commit()
 
     if "submissions" in tables:
         has_unique = any(row[2] for row in conn.execute("PRAGMA index_list(submissions)").fetchall())
@@ -388,6 +394,10 @@ def _migration_needed(conn) -> bool:
         row[1] for row in conn.execute("PRAGMA table_info(progress)").fetchall()
     }:
         return True  # issue #202: back up real data before adding the column too
+    if "progress" in tables and "view_case_id" not in {
+        row[1] for row in conn.execute("PRAGMA table_info(progress)").fetchall()
+    }:
+        return True  # study browsing: same rule for the view pointer column
     if "submissions" in tables:
         if not any(row[2] for row in conn.execute("PRAGMA index_list(submissions)").fetchall()):
             return True
@@ -480,6 +490,10 @@ def init_db():
             -- review. NULL = not approved yet: /results then reveals no ground truth and no
             -- score. Deleted together with the row by /reset (a new run starts unapproved).
             finalized_at REAL,
+            -- Study browsing: the case whose study Weasis shows when the doctor opened another
+            -- one from the panel (learning/assessment only). NULL = the current case. Cleared
+            -- on every case transition.
+            view_case_id INTEGER,
             -- issue #99, see cases CHECK: fresh-install scope, API-side
             -- Literal covers existing databases.
             CHECK (stage IN ('learning', 'assessment', 'test', 'complete'))

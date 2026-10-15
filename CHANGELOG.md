@@ -50,6 +50,16 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   throwaway instance of the compose-pinned 26.9.1: positive match, not-loaded
   fixture fails, unreadable/UID-less fixtures fail closed naming the real
   cause, and cases mode matches again.
+- **API 1.4.0: study browsing in the learning and assessment stages (owner request, 2026-10-14).** New
+  `GET /studies` (the studies the doctor may open: learning cases in learning, learning + assessment cases in
+  assessment; titles and positions only, no ground truth or UIDs) and `POST /view` (view pointer; the current case
+  clears it; 403 `VIEW_NOT_ALLOWED` outside that set and always on the test stage). `GET /case` adds `browsable` and,
+  while another study is open, `view_study_uid`, which `weasis_case_uri.py` prefers, so Weasis follows it through the
+  existing `/api/case` poll in both flows. View only: answering stays in order on the current case; every case
+  transition clears the pointer. `/orthanc-authz` allows every browsable study in learning/assessment and only the
+  current study in the test stage. Schema: nullable `progress.view_case_id`, added after the usual pre-migration
+  backup. Both panels show a "Pokaż badanie" list under the stage bar. Also: `weasis_case_uri.bats` was never run by
+  `scripts/test-shell-scripts.sh` (so not in CI); it is now.
 - **A Weasis workspace started without a session link now says so instead of showing a black screen (issue #153).**
   `custom_startup.sh` still refuses to start without `GRADING_TOKEN` (fail-closed, #102/#104), but now logs one stable,
   searchable line (`custom_startup: REFUSED -- ...`) and, when a display is available, shows a zenity dialog: "Ta
