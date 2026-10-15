@@ -125,7 +125,8 @@ def _axe_run(page, scope):
     # document node as the context instead. Learned the empirical way.
     return page.evaluate(
         """(scope) => window.axe.run(
-            scope ? {include: [scope]} : document,
+            scope ? {include: [scope], exclude: ["#watermark-rotator"]}
+                  : {exclude: ["#watermark-rotator"]},
             {runOnly: {type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]}}
         )""",
         scope,

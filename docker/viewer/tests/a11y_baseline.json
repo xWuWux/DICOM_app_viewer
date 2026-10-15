@@ -1,0 +1,4 @@
+{
+  "_policy": "human-owned baseline (issue #238 E): the gate fails on NEW keys only; regenerate ONLY via --update-a11y-baseline in a deliberate run and review the diff with the radiologist",
+  "entries": []
+}
