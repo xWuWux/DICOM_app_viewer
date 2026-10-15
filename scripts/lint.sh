@@ -96,6 +96,23 @@ if [ -z "$kasm_pin" ] || [ "$kasm_pin" != "$guac_pin" ]; then
   status=1
 fi
 
+echo "--- README test catalog carries no test counts (issue #144) ---"
+# Hand-written counts drifted from what pytest/BATS collect; the catalog states the
+# policy and describes what each suite guards instead. Scope: the "## Testing" section.
+in_testing=0
+lineno=0
+while IFS= read -r line; do
+  lineno=$((lineno + 1))
+  case "$line" in
+    "## Testing"*) in_testing=1; continue ;;
+    "## "*) in_testing=0 ;;
+  esac
+  if [ "$in_testing" -eq 1 ] && [[ "$line" =~ [0-9]+[[:space:]]+tests?([^[:alnum:]_]|$) ]]; then
+    echo "README.md:$lineno: test count in the test catalog (see issue #144): $line" >&2
+    status=1
+  fi
+done < README.md
+
 echo "--- text style (docs/STYLE.md): no pictographs, no CJK, ASCII dashes in code, English prose ---"
 python3 scripts/check-text-style.py || status=1
 

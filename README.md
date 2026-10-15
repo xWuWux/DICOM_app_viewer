@@ -972,6 +972,13 @@ stage still run in parallel with each other:
 Every script above is runnable identically on a local machine, not just
 in CI.
 
+The catalog below says what each suite guards, deliberately **without test
+counts** (issue #144): hand-written counts drifted from what pytest/BATS
+actually collect (on 2026-10-14: 21 declared vs 37 collected, 20 vs 116), and keeping them
+honest would need every suite's dependencies in the lint stage. For a
+current number run the suite, or `pytest --collect-only -q` / `bats --count`.
+`scripts/lint.sh` fails if a count like "(N tests)" reappears in this section.
+
 - `scripts/lint.sh` — bash syntax check on every script, `docker compose
   config` validation on all three compose files, and `ruff check`/
   `ruff format --check` against `docker/grading-api` (needs `ruff` on
@@ -996,11 +1003,11 @@ in CI.
   stage stays green by default, not noisy from day one.
 - `scripts/test-grading-api.sh` (issues #8, and the session-token fix) —
   unit tests for `grading-api`'s 3-stage state machine and its session-
-  token authorization (`docker/grading-api/tests/test_state_machine.py`,
-  21 tests), driven through FastAPI's own `TestClient` against a fresh,
+  token authorization (`docker/grading-api/tests/test_state_machine.py`),
+  driven through FastAPI's own `TestClient` against a fresh,
   isolated SQLite file per test — no Docker, no real stack, runs in well
   under a second. Since issue #104 the same runner also covers
-  `docker/grading-api/tests/test_session_revoke.py` (16 tests) for
+  `docker/grading-api/tests/test_session_revoke.py` for
   `POST /session/revoke`: the coordinator gate, both selectors, an
   already-gone token answering `200 revoked:false` rather than 404, that no
   rejection ever echoes the token it was handed, that every successful
@@ -1021,15 +1028,15 @@ in CI.
   it's green: deliberately broke the token-expiry check in `main.py`,
   confirmed exactly one test failed (the one guarding that invariant,
   nothing else), then reverted.
-- `scripts/test-shell-scripts.sh` (issue #16) — BATS tests (20 tests total)
-  for the Kasm workspace launcher scripts. No Docker, no real
+- `scripts/test-shell-scripts.sh` (issue #16) — BATS tests for the Kasm
+  workspace launcher scripts (and the other `.bats` suites it lists). No Docker, no real
   Kasm/Weasis/grading-api needed: the scripts under test gained small,
   production-inert seams (`CHROME_BIN`/`WEASIS_BIN`/`OVERLAY_SCRIPT`/
   `WATCHDOG_LOG`, all unset in production) so a test can stub the actual
   binary — a fake executable that just captures its own argv to a file —
   instead of launching a real browser, Weasis, or GTK overlay.
-  - `docker/kasm-workspace/custom_startup.bats` (7 tests) and
-    `docker/kasm-workspace-weasis/custom_startup.bats` (9 tests): the
+  - `docker/kasm-workspace/custom_startup.bats` and
+    `docker/kasm-workspace-weasis/custom_startup.bats`: the
     Weasis suite also stubs `curl` (via `PATH`) to stand in for
     `grading-api`'s response, while the real `python3` still runs the
     actual `dicom:rs` URI-building logic being tested — that's the whole
@@ -1049,7 +1056,7 @@ in CI.
     present in the stdin header AND absent from curl's argv), never the
     old bare `?student_id=` (the session-token fix's own regression
     coverage here).
-  - `docker/kasm-workspace-weasis/watchdog.bats` (4 tests): since the
+  - `docker/kasm-workspace-weasis/watchdog.bats`: since the
     script under test is a deliberate infinite loop, every test bounds it
     with `timeout` rather than waiting for it to exit on its own. **Found
     and fixed a real bug writing this test**: the logged exit code was
@@ -1061,10 +1068,10 @@ in CI.
     it belongs to. Verified the same way: confirmed the test fails
     against the original code, passes against the fix.
 - `scripts/test-provision-guacamole-session.sh` (issue #53) — unit tests
-  for `scripts/provision-guacamole-session.py` (3 tests), `subprocess.run`
+  for `scripts/provision-guacamole-session.py`, `subprocess.run`
   and `urllib.request.urlopen` both mocked, no Docker/real Guacamole
   needed. pytest's discovery from that directory also runs
-  `scripts/tests/test_create_session.py` (issue #104, 46 tests): every
+  `scripts/tests/test_create_session.py` (issue #104): every
   failure path between minting a grading token and Kasm answering has to
   revoke it, the one path where revoking would be wrong (Kasm already
   answered, so the token is a live session's credential) has to leave it
@@ -1115,8 +1122,8 @@ in CI.
   `--network host`, same as `scripts/test-guacamole-e2e.sh` itself.
 - `scripts/test-visual-regression.sh` — visual regression testing for
   `watermark.html` and `grading-panel.html`: catches any change to what a
-  student actually *sees* (`docker/viewer/tests/test_visual_regression.py`,
-  14 tests — every meaningfully distinct panel state, both flows), not
+  student actually *sees* (`docker/viewer/tests/test_visual_regression.py`:
+  every meaningfully distinct panel state, both flows), not
   just whether the API responses are correct. Uses
   [`pytest-playwright-visual-snapshot`](https://pypi.org/project/pytest-playwright-visual-snapshot/)
   (`pixelmatch` under the hood, the same engine Playwright's own JS visual
