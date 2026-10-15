@@ -33,7 +33,7 @@ results of the load test in section 6 before any purchase.
 - **Session hosts**: Kasm agents or Guacamole session containers. Only these scale with user count.
 
 ## 4. Sizing model (replace placeholders by measurements)
-Per-session cost: `C` vCPU and `R` GB RAM, plus stream bandwidth `B` Mbit/s. Frozen (Kasm paused) sessions hold `R` GB RAM 24/7 until resumed or deleted; stopped sessions hold writable-layer disk only - both unmeasured, see `docs/adr/0001-kasm-session-freeze-mechanism.md` (#159 freeze).
+Per-session cost: `C` vCPU and `R` GB RAM, plus stream bandwidth `B` Mbit/s. Frozen (Kasm paused) sessions hold their live RSS 24/7 until resumed or deleted; measured on the lab image (2 GiB / 1 core limit): 0.2 GB idle, plan up to the full 2 GB per frozen student; stopped sessions hold writable-layer disk only. Pause and stop do not count against the global CE running-session cap, but frozen records keep consuming the owner's per-user 5-session slots until destroyed (`docs/adr/0001-kasm-session-freeze-mechanism.md`, #159 freeze).
 Totals for N=50: vCPU = 50*C, RAM = 50*R (no RAM overcommit: sessions are long-lived), bandwidth = 50*B.
 
 | Profile | C (vCPU) | R (GB) | 50 sessions: vCPU | 50 sessions: RAM | Basis |

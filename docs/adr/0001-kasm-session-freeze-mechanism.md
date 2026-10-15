@@ -1,8 +1,8 @@
 # 0001. Freeze mechanism for Kasm sessions
 
-Status: proposed. Desk research and local experiments are done; the live matrix (last section)
-needs a real Kasm instance, and the owner decisions of issue #159 ((a)-(d)) plus the freeze policy
-step (TTL, identity, timer) still gate any implementation.
+Status: proposed. Desk research, local experiments and the live matrix (last section, run on the
+lab Kasm 1.19.0 CE on 2026-10-15) are done. The owner decisions of issue #159 ((a)-(d)) plus the
+freeze policy step (TTL, identity, timer) still gate any implementation.
 
 ## Context
 
@@ -21,9 +21,13 @@ Facts the spike established (each with its source):
 2. Persistent profiles (volume mount, legacy S3, storage-mapping) persist the home directory
    between sessions; the storage-mapping variant is marked Preview for production use in 1.19.
    Files persist; processes never do (fidelity level 2 at best).
-3. Community Edition is licensed for 5 concurrent sessions
-   (`kasm.com/community-edition`). Whether a paused or stopped session counts as concurrent is NOT
-   documented - live test A below is a go/no-go for the whole feature.
+3. Community Edition license limit is 5 sessions (`kasm.com/community-edition`). The lab run
+   measured how it is enforced: TWO independent limits. (i) A global license limit counts RUNNING
+   sessions only - pause and stop release it. (ii) A per-user limit (`Kasm limit exceeded for user`)
+   counts all not-destroyed session records regardless of state - paused and stopped sessions keep
+   occupying the user's 5 slots; only destroy frees them. The `max_kasms_per_user` group setting
+   (inserted in `group_settings`, services restarted) did not change the observed limit in this
+   build.
 4. The current stack already restores the exam-relevant state at container start:
    `docker/kasm-workspace-weasis/custom_startup.sh` asks grading-api for the student's current
    case and opens it via a `weasis://` URI built by `weasis_case_uri.py` (issue #185); recorded
@@ -42,9 +46,13 @@ Facts the spike established (each with its source):
 Use NATIVE Kasm lifecycle as the freeze primitive, orchestrated by the coordinator (a freeze
 subcommand next to `scripts/end-kasm-session.py`), with two tiers chosen by the live results:
 
-- tier 1, `Pause`: true 1:1 desktop return, accepted only if paused sessions do NOT consume the
-  CE 5-session cap (test A) AND survive a Kasm services restart / host reboot (test C) AND the
-  RAM cost of N frozen students fits the host budget (test E);
+- tier 1, `Pause`: true 1:1 desktop return. Gate results (lab, 2026-10-15): paused sessions do NOT
+  consume the global concurrent-license cap (test A: PASS) but DO consume the owner user's 5-slot
+  per-user record limit (test A: FAIL - frozen sessions accumulate and block new sessions for that
+  user until destroyed); paused sessions survive a Kasm services restart (test C: PASS at service
+  level; host reboot untested, see Consequences); RAM held is the session's real RSS (test E:
+  0.2 GiB idle, cgroup ceiling 2 GiB per session). Net verdict: usable for one-frozen-session-per-
+  student workloads only, with a destroy-based TTL; unusable as an unbounded archive.
 - tier 2, `Stop` + Start-on-return: disk state only; the existing #185 startup path re-opens the
   student's current case automatically, so the exam content returns; the UI text must say unsaved
   desktop state is lost. Chosen as the fallback whenever tier 1 fails any gate.
@@ -72,17 +80,30 @@ documents for the opposite direction).
   exception) stays the hard blocker; no orchestration code before it is decided.
 - Add to `docs/HOSTING_SIZING.md` once measured: one frozen (paused) session = `R` GB RAM held
   24/7; one stopped session = writable-layer disk only. Both rows currently unmeasured.
-- Live matrix (run against the lab Kasm; results go into a comment on #159):
-  - A. cap counting (GO/NO-GO): pause 5 sessions, request a 6th; repeat with stopped;
-  - B. Stop fidelity: open a case with Weasis, Stop, Start, open the link - does the #185 path
-    reopen the same study, what visibly differs;
-  - C. Pause survival: pause, restart Kasm services, reboot host, then Start;
-  - D. N-day idleness: keep a paused session 3 and 7 days; check keepalive/`session_timeout` does
-    not delete it (paused must not look "idle" to the timer);
-  - E. cost: `docker stats` memory of a paused session with one study loaded (fills the
-    HOSTING_SIZING row);
-  - F. link lifecycle: after Pause and after Stop, does `reissue-session-link.py` (#251) still
-    return a working link on Start, and does the old link stay dead.
+- Live matrix results (lab Kasm 1.19.0 CE, image `ipcmc/dicom-viewer:mvp` at 2 GiB / 1 core,
+  2026-10-15; API-driven, results mirrored in the #159 comment):
+  - A. cap counting: PARTIAL GO. Native `pause_kasm`/`resume_kasm`/`stop_kasm` work on CE (not
+    license-gated). Paused and stopped sessions release the global running cap (a 6th request from
+    another user was accepted while 4 sessions of user 1 were paused), but each owner's own 5
+    record slots stay consumed by frozen sessions - "Kasm limit exceeded for user" fires with 5
+    stopped or 5 paused records and 0 running. GO holds only under the policy "one frozen session
+    per student, TTL destroy after N days, per-user headroom respected".
+  - B. Stop fidelity: not run (needs interactive Weasis session automation); the #185 cold-start
+    path remains the assumed recovery; run it before any tier-2 UI copy is promised.
+  - C. Pause survival: PASS across `kasm_api`/`kasm_manager` restarts - `paused` state persisted in
+    `kasms.operational_status`, `resume_kasm` returned the session to running. Docker daemon or
+    host reboot was NOT testable in the lab (Docker Desktop VM); kernel pause state is expected to
+    be lost there, so tier 1 needs the same Start-on-loose-session recovery path as tier 2.
+  - D. N-day idleness (short-proxy, 90 s + structural): while paused, `expiration_date` and
+    `keepalive_date` do NOT advance and no keepalive is issued - a paused session does not age out
+    of the 3600 s idle timer (timer #232 semantics hold for free); a 3/7-day soak is still to run
+    once a policy TTL exists.
+  - E. cost: idle running session = 185-243 MiB resident; paused keeps the same RSS charged
+    (cgroup freeze, not swap-out); plan worst case 2 GiB per frozen student at the image ceiling.
+  - F. link lifecycle: `kasm_url` is unchanged across Pause/Resume and the same link keeps working;
+    a paused session's `get_kasm_status` cannot be read by the manager (empty status) so any link
+    validity check must first resume or consult the DB state.
 
-Not covered: any cost numbers for real Weasis workloads (the host used for experiments has no Kasm
-installation), and behavior of Kasm Enterprise-only features (not applicable; deployment is CE).
+Not covered: fidelity test B with a loaded Weasis study (needs interactive session automation),
+pause survival across a full host reboot (Docker Desktop VM in the lab), multi-day soak runs, and
+behavior of Kasm Enterprise-only features (not applicable; deployment is CE).
