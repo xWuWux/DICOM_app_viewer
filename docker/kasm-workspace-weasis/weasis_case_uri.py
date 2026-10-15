@@ -56,11 +56,7 @@ def parse_case(case_json: str) -> dict:
     return case
 
 
-def study_uid(case: dict) -> str:
-    """The study UID to open, or "" when there is nothing to open."""
-    if case.get("complete"):
-        return ""
-    uid = case.get("orthanc_study_uid")
+def _safe_uid(uid) -> str:
     if not isinstance(uid, str) or not uid or len(uid) > 64 or not _UID_RE.fullmatch(uid):
         return ""
     # A UID made only of dots (".", "..", "...") is not a study identifier and would become a
@@ -69,6 +65,17 @@ def study_uid(case: dict) -> str:
     if not any(ch.isalnum() for ch in uid):
         return ""
     return uid
+
+
+def study_uid(case: dict) -> str:
+    """The study UID to open, or "" when there is nothing to open.
+
+    Study browsing (API 1.4.0): when the doctor opened another study from the panel, /api/case
+    carries view_study_uid and Weasis shows THAT one; the form still answers the current case.
+    An unsafe view_study_uid falls back to the current case's study, never to "nothing"."""
+    if case.get("complete"):
+        return ""
+    return _safe_uid(case.get("view_study_uid")) or _safe_uid(case.get("orthanc_study_uid"))
 
 
 def build_uri(uid: str, orthanc_url: str) -> str:

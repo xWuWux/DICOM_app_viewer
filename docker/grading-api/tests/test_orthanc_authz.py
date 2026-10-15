@@ -3,7 +3,9 @@ Per-session scoping of the Orthanc proxy (issue #195, item 1; spike).
 
 nginx calls GET /orthanc-authz (auth_request) for every /s/<key>/dicom-web/... request.
 <key> = sha256(grading token). 204 = allow, 401 = unknown key, 403 = outside the
-session's CURRENT study. These tests pin the allowlist so a future edit cannot widen it.
+session's allowed studies: in learning/assessment every study of the stages reached so far
+(study browsing, 2026-10-14), in the test stage only the current one. These tests pin the
+allowlist so a future edit cannot widen it further.
 """
 
 import hashlib
@@ -91,18 +93,43 @@ def test_the_key_is_not_the_token_and_the_token_is_not_a_key(client, mint_token)
     assert client.get("/orthanc-authz", headers={"X-Original-URI": f"/s/{token}/dicom-web/studies"}).status_code == 403
 
 
-def test_the_allowed_study_follows_the_case_pointer(client, mint_token):
+def _submit_current(client, token, category="3"):
+    case = client.get("/case", headers={"X-Grading-Token": token}).json()
+    body = {"token": token, "case_id": case["case_id"], "stage": case["stage"]}
+    if case["stage"] == "learning":
+        body["text"] = "x"
+    else:
+        body["category"] = category
+        body["modifier_s"] = False
+    assert client.post("/submit", json=body).status_code == 200
+    return case
+
+
+def test_assessment_may_still_read_learning_studies(client, mint_token):
+    """Study browsing (2026-10-14): learning and assessment may open every study of the stages
+    reached so far, so the learning study stays readable in the assessment stage."""
     token = mint_token("stu_authz_follow")
     key = _key(token)
-    first = client.get("/case", headers={"X-Grading-Token": token}).json()
-    client.post(
-        "/submit",
-        json={"token": token, "case_id": first["case_id"], "stage": first["stage"], "text": "x"},
-    )
+    first = _submit_current(client, token)
     second = client.get("/case", headers={"X-Grading-Token": token}).json()
-    assert second["orthanc_study_uid"] != first["orthanc_study_uid"]
+    assert second["stage"] == "assessment"
     assert _authz(client, key, f"/dicom-web/studies/{second['orthanc_study_uid']}/series").status_code == 204
-    assert _authz(client, key, f"/dicom-web/studies/{first['orthanc_study_uid']}/series").status_code == 403
+    assert _authz(client, key, f"/dicom-web/studies/{first['orthanc_study_uid']}/series").status_code == 204
+
+
+def test_the_test_stage_is_locked_to_its_own_study(client, mint_token):
+    """Exam integrity: once in the test stage only the current study is readable again."""
+    token = mint_token("stu_authz_test_lock")
+    key = _key(token)
+    learning = _submit_current(client, token)
+    assessment = _submit_current(client, token)
+    test_case = client.get("/case", headers={"X-Grading-Token": token}).json()
+    assert test_case["stage"] == "test"
+    assert _authz(client, key, f"/dicom-web/studies/{test_case['orthanc_study_uid']}/series").status_code == 204
+    for earlier in (learning, assessment):
+        assert _authz(client, key, f"/dicom-web/studies/{earlier['orthanc_study_uid']}/series").status_code == 403
+        search = f"/dicom-web/studies?StudyInstanceUID={earlier['orthanc_study_uid']}"
+        assert _authz(client, key, search).status_code == 403
 
 
 def test_a_revoked_or_expired_session_loses_access(client, mint_token):
