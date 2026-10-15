@@ -23,6 +23,11 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **A Weasis workspace started without a session link now says so instead of showing a black screen (issue #153).**
+  `custom_startup.sh` still refuses to start without `GRADING_TOKEN` (fail-closed, #102/#104), but now logs one stable,
+  searchable line (`custom_startup: REFUSED -- ...`) and, when a display is available, shows a zenity dialog: "Ta
+  sesja wymaga linku przydzielonego przez prowadzącego." An empty or tampered token is refused the same way; the token
+  never reaches the dialog or the log. Nothing (Weasis, panel, watermark) starts without a token.
 - **Security Scan stage extended: secrets + every image (issue #238 point D; covers the Fix section of #71,
   its DoD-audit extras remain open there).** `scripts/security-scan.sh`
   gains gitleaks over the FULL committed history (CI clones with `fetch-depth: 0`, so a PR's own commits are
