@@ -1,0 +1,161 @@
+"""scripts/end-kasm-session.py: destroy the kasm, prove it is gone, revoke via the shared library."""
+
+import importlib.util
+import io
+import json
+import urllib.error
+from pathlib import Path
+
+import pytest
+
+SCRIPT = Path(__file__).resolve().parent.parent / "end-kasm-session.py"
+SPEC = importlib.util.spec_from_file_location("end_kasm_session", str(SCRIPT))
+mod = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(mod)
+
+JWT_SENTINEL = "eyJFAKE.jwt.SENTINEL"
+KEY_SENTINEL = "kasm-api-key-SENTINEL"
+SECRET_SENTINEL = "kasm-api-secret-SENTINEL"
+
+
+class Resp:
+    def __init__(self, body):
+        self._body = json.dumps(body).encode()
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class Opener:
+    """Fake urllib.request.urlopen for the Kasm calls: answers by path, records requests."""
+
+    def __init__(self, destroy_code=200, status_mode="gone"):
+        # status_mode: gone (HTTP error), running, deleted, starting
+        self.requests = []
+        self.destroy_code = destroy_code
+        self.status_mode = status_mode
+
+    def __call__(self, req, timeout=None, context=None):
+        self.requests.append(req)
+        url = req.full_url
+        if "destroy_kasm" in url:
+            if self.destroy_code != 200:
+                body = io.BytesIO(json.dumps({"kasm_url": JWT_SENTINEL}).encode())
+                raise urllib.error.HTTPError(url, self.destroy_code, "err", {}, body)
+            return Resp({"success": True})
+        if "get_kasm_status" in url:
+            if self.status_mode == "gone":
+                raise urllib.error.HTTPError(url, 404, "gone", {}, io.BytesIO(b"{}"))
+            state = {"running": "running", "deleted": "deleted", "starting": "starting"}[self.status_mode]
+            return Resp({"kasm": {"operational_status": state}})
+        raise AssertionError(f"unexpected url {url}")
+
+
+@pytest.fixture
+def kasm_env(monkeypatch):
+    monkeypatch.setenv("KASM_SERVER", "https://kasm.invalid")
+    monkeypatch.setenv("KASM_API_KEY", KEY_SENTINEL)
+    monkeypatch.setenv("KASM_API_KEY_SECRET", SECRET_SENTINEL)
+    monkeypatch.delenv("GRADING_API_URL", raising=False)
+    monkeypatch.delenv("GRADING_COORDINATOR_KEY", raising=False)
+
+
+def test_happy_path_without_grading_env(kasm_env, capsys):
+    opener = Opener()
+    code = mod.main(["--kasm-id", "42", "--user-id", "7"], opener=opener)
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "destroy_kasm: ok" in out
+    assert "verify_gone: OK" in out
+    assert "revoke_token: skipped" in out
+
+
+def test_destroy_refused_stops_everything(kasm_env, capsys):
+    opener = Opener(destroy_code=500)
+    code = mod.main(["--kasm-id", "42", "--user-id", "7"], opener=opener)
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "HTTP 500" in captured.err
+    # the response body of a refused destroy can carry a fresh kasm_url
+    assert JWT_SENTINEL not in captured.out + captured.err
+    assert len(opener.requests) == 1  # verify/revoke never ran
+
+
+def test_keys_never_appear_in_any_message(kasm_env, capsys):
+    opener = Opener(destroy_code=404)
+    mod.main(["--kasm-id", "42", "--user-id", "7"], opener=opener)
+    captured = capsys.readouterr()
+    assert KEY_SENTINEL not in captured.out + captured.err
+    assert SECRET_SENTINEL not in captured.out + captured.err
+
+
+def test_verify_catches_a_still_running_session(kasm_env, capsys):
+    opener = Opener(status_mode="running")
+    code = mod.main(["--kasm-id", "42", "--user-id", "7"], opener=opener)
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "still running" in captured.err
+
+
+def test_starting_after_destroy_counts_as_not_gone(kasm_env, capsys):
+    opener = Opener(status_mode="starting")
+    code = mod.main(["--kasm-id", "42", "--user-id", "7"], opener=opener)
+    assert code == 1
+    assert "starting" in capsys.readouterr().err
+
+
+def test_revoke_runs_through_the_shared_library(kasm_env, monkeypatch, capsys):
+    monkeypatch.setenv("GRADING_API_URL", "http://grading.invalid/")
+    monkeypatch.setenv("GRADING_COORDINATOR_KEY", "coordkey")
+    calls = []
+
+    def fake_revoke(student_id, url, key):
+        calls.append((student_id, url, key))
+        return True
+
+    monkeypatch.setattr(mod, "revoke_for_student", fake_revoke)
+    code = mod.main(["--kasm-id", "42", "--user-id", "7", "--student-id", "STU_1"],
+                    opener=Opener())
+    captured = capsys.readouterr()
+    assert code == 0
+    assert calls == [("STU_1", "http://grading.invalid/", "coordkey")]
+    assert "revoke_token: revoked for STU_1" in captured.out
+
+
+def test_revoke_failure_is_loud_with_manual_steps(kasm_env, monkeypatch, capsys):
+    monkeypatch.setenv("GRADING_API_URL", "http://grading.invalid/")
+    monkeypatch.setenv("GRADING_COORDINATOR_KEY", "coordkey")
+
+    def boom(student_id, url, key):
+        raise RuntimeError("grading-api unreachable")
+
+    monkeypatch.setattr(mod, "revoke_for_student", boom)
+    code = mod.main(["--kasm-id", "42", "--user-id", "7", "--student-id", "STU_1"],
+                    opener=Opener())
+    captured = capsys.readouterr()
+    assert code == 1
+    assert 'POST /api/session/revoke with {"student_id": "STU_1"}' in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_student_id_required_when_revoking(kasm_env, monkeypatch, capsys):
+    monkeypatch.setenv("GRADING_API_URL", "http://grading.invalid/")
+    monkeypatch.setenv("GRADING_COORDINATOR_KEY", "coordkey")
+    opener = Opener()
+    code = mod.main(["--kasm-id", "42", "--user-id", "7"], opener=opener)
+    assert code == 2
+    assert "--student-id" in capsys.readouterr().err
+    assert opener.requests == []  # refused before touching Kasm
+
+
+def test_missing_kasm_config_refused(kasm_env, monkeypatch, capsys):
+    monkeypatch.delenv("KASM_SERVER")
+    code = mod.main(["--kasm-id", "42", "--user-id", "7"], opener=Opener())
+    assert code == 2
+    assert "KASM_SERVER" in capsys.readouterr().err
