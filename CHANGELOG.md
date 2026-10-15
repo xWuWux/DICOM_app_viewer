@@ -23,6 +23,16 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Security Scan stage extended: secrets + every image (issue #238 point D; covers the Fix section of #71,
+  its DoD-audit extras remain open there).** `scripts/security-scan.sh`
+  gains gitleaks over the FULL committed history (CI clones with `fetch-depth: 0`, so a PR's own commits are
+  covered too; no working-tree scan on purpose -- locally that tree holds gitignored real secrets), with the
+  built-in rule set of the pinned v8.30.1 binary kept on via [extend] useDefault, and trivy now also
+  builds and scans the three streamed-session images (kasm-workspace, kasm-workspace-weasis, guacamole-weasis)
+  at the same CRITICAL/HIGH `--ignore-unfixed` gate. The three pre-existing history findings are allowed only
+  as individually reasoned fingerprints in `.gitleaksignore` -- one of them an OUTDATED (expired) session token
+  quoted as evidence inside a history document, kept unedited by the owner's decision of 2026-10-15. Dry-runs
+  before wiring: all three session-image bases clean at the gate level (2026-10-15).
 - **README test catalog: test counts removed, policy stated (issue #144).** The hand-written
   "(N tests)" figures had drifted (21 declared vs 37 collected for `test_state_machine.py`, 20 vs
   116 BATS tests). The catalog now describes what each suite guards, says why there are no counts,

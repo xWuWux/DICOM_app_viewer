@@ -994,8 +994,12 @@ current number run the suite, or `pytest --collect-only -q` / `bats --count`.
   analysis for the bash scripts, beyond `lint.sh`'s syntax-only check),
   hadolint (Dockerfile best practices — see `.hadolint.yaml` for the
   threshold and why 2 low-severity findings are intentionally
-  non-blocking), and trivy (known CVEs in pinned dependencies and built
-  images). Every tool here was dry-run against this repo before being
+  non-blocking), trivy (known CVEs in pinned dependencies and every built
+  image -- since issue #238 all five, the three streamed-session images
+  included), and gitleaks (secret scan of the FULL committed history -- in CI that
+  includes every commit a PR contributes; exceptions are one reviewed
+  fingerprint per finding in `.gitleaksignore`, built-in rules kept on via
+  `[extend] useDefault` -- rules and scanner share the one pinned release). Every tool here was dry-run against this repo before being
   wired in, and every real finding it surfaced was fixed first (3 HIGH
   starlette CVEs via a `fastapi`/`uvicorn` bump, several `nginx:alpine`
   base-image CVEs via a version bump + a build-time `apk upgrade`, an
@@ -1192,7 +1196,7 @@ scripts/provision-guacamole-session.py mints a per-student Guacamole session lin
 scripts/teardown-guacamole-session.py tears down a Guacamole session (container + Guacamole user/connection + link file)
 scripts/lint.sh                       stage 1, Lint & Format: bash syntax + compose config + ruff (CI)
 scripts/build-test.sh                 stage 2, Build Test: builds every image in the repo (CI)
-scripts/security-scan.sh              stage 3, Security Scan: bandit + shellcheck + hadolint + trivy (CI)
+scripts/security-scan.sh              stage 3, Security Scan: bandit + shellcheck + hadolint + trivy(5 images) + gitleaks (CI)
 scripts/test-grading-api.sh           stage 4, grading-api unit tests via pytest (CI)
 scripts/test-shell-scripts.sh         stage 4, Kasm + Guacamole launcher script tests via BATS (CI)
 scripts/test-provision-guacamole-session.sh
