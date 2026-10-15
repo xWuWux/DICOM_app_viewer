@@ -1,0 +1,35 @@
+# gitleaks configuration -- issue #238 point D.
+#
+# scripts/security-scan.sh runs gitleaks over the FULL committed history of
+# whatever CI checked out: a PR's own commits are part of that history, so a
+# leak in the diff cannot pass either. The narrow exceptions for the handful
+# of already-merged values live in .gitleaksignore -- one commit:file:rule:line
+# fingerprint per finding with its reason -- because exempting a whole FILE
+# would defeat the point (a future paste of a real secret into a history doc is
+# exactly the accident that must keep being caught: both past leaks here
+# arrived that way).
+#
+# What stays in THIS file is only what is structurally fake for good: literal
+# test sentinels, matched as regexes so they stay excluded when their files
+# move or renumber.
+#
+# keep the built-in rules ON: a custom --config SILENTLY REPLACES them
+# (verified control run: a config with only a title reports "no leaks found"
+# for a tree containing real planted secrets). useDefault = true layers this
+# file's allowlist ON TOP of the built-ins, and the built-ins ARE the upstream
+# config embedded in the pinned binary -- so rules and scanner are one and the
+# same pinned v8.30.1 release. (Do NOT vendor config/gitleaks.toml into the
+# repo instead: the upstream file's own example strings trip its own rules, so
+# the vendored copy makes gitleaks flag ITSELF.)
+
+title = "DICOM_app_viewer gitleaks config (issue #238)"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "#182 credential-scrubbing test sentinels: intentional fake secrets whose whole purpose is proving that real secrets get redacted out of API error text."
+regexes = [
+  'SENTINEL-VNC-PASS-7a11',
+  'SECRETVAL-0123456789abcdefgh',
+]
