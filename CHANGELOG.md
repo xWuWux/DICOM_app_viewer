@@ -23,6 +23,24 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Frontend quality gates on both panel pages (issue #238 point E).**
+  `docker/viewer/tests/test_frontend_quality.py` joins the visual-regression
+  harness (same stack, same Playwright image, run by
+  `scripts/test-visual-regression.sh`): (1) no `console.error` from the
+  panel's own origin and no uncaught page exception while the panel reaches
+  its first rendered state -- gates unconditionally (the Explorer2 iframe on
+  :8043 is origin-filtered out; third-party noise is not ours to gate);
+  (2) axe-core WCAG-conformance rules only (runOny the wcag tags -- NOT
+  axe's advisory best-practice set), explicit include-scope over the
+  student-facing surface: whole page for grading-panel.html, `#grading-panel`
+  only for watermark.html. BASELINE-BOUNDED per the human's decision
+  (2026-10-15): measured findings are committed as a11y_baseline.json, the
+  gate fails only on NEW ones, disappeared entries print, and the baseline
+  groups deliberately-dim elements (forensic watermark, inactive stage
+  chips) apart from genuine contrast-bug candidates for the radiologist
+  review. axe-core is VENDORED -- sha256 + npm-tarball provenance in
+  `docker/viewer/tests/vendor/README` (#67); the text-style checker now
+  excludes `vendor/` paths: provenance outranks style.
 - **A Weasis workspace started without a session link now says so instead of showing a black screen (issue #153).**
   `custom_startup.sh` still refuses to start without `GRADING_TOKEN` (fail-closed, #102/#104), but now logs one stable,
   searchable line (`custom_startup: REFUSED -- ...`) and, when a display is available, shows a zenity dialog: "Ta

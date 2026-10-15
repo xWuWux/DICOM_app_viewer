@@ -1129,6 +1129,12 @@ current number run the suite, or `pytest --collect-only -q` / `bats --count`.
   student actually *sees* (`docker/viewer/tests/test_visual_regression.py`:
   every meaningfully distinct panel state, both flows), not
   just whether the API responses are correct. Uses
+  The same harness also runs the frontend quality gates (issue #238 point
+  E): no console/page errors from the panel's own origin, and axe-core
+  (vendored, sha-pinned) reporting zero WCAG AA violations over the
+  student-facing scope -- whole page for grading-panel.html,
+  `#grading-panel` only for watermark.html (the Explorer2 iframe beside it
+  is third-party markup).
   [`pytest-playwright-visual-snapshot`](https://pypi.org/project/pytest-playwright-visual-snapshot/)
   (`pixelmatch` under the hood, the same engine Playwright's own JS visual
   comparisons use) — the open-source equivalent of what a commercial
@@ -1184,7 +1190,8 @@ docker/guacamole/postgres-init/       Guacamole's own official Apache-licensed J
 docker/guacamole/tests/               full browser-driven E2E tests (scripts/test-guacamole-e2e.sh)
 docker/guacamole-weasis/              basic-functionality-only Weasis+TigerVNC image for the Guacamole flow
                                        -- not security-hardened, see README's own Guacamole section
-docker/viewer/tests/                  visual regression tests (scripts/test-visual-regression.sh) --
+docker/viewer/tests/                  visual regression + console/axe a11y gates
+                                      (scripts/test-visual-regression.sh)
                                        __snapshots__/ (committed baselines), __snapshot_failures__/ (gitignored)
 sample-data/                          public-domain sample DICOM files
 scripts/fetch-public-samples.sh       pulls larger public teaching studies (BRAINIX) into sample-data/
