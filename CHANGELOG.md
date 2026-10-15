@@ -36,10 +36,17 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   operator attestations with audit trails: `--allow-phi-tag TAG=REASON`
   (reason required, echoed) and `--skip-phi-gate` (loud refusal-free skip).
   Output is tag names, counts and one example path -- never a value: a printed
-  identifier would defeat the gate it came from. Public sample loading
-  (`load-sample-studies.sh`) skips the gate deliberately and says why: the
-  committed fixtures are already published and CT_small natively carries fake
-  alternate IDs the gate would (correctly) refuse.
+  identifier would defeat the gate it came from. NO fail-open: files that only
+  force-parsing can read, or that no read can parse, are REFUSED -- Orthanc
+  accepts files pydicom refuses (a preamble-less DICOM with a planted birth
+  date stored HTTP 200 in review), and guessed structure cannot attest
+  anonymity. Nested data is searched to any depth: a tracked tag buried in
+  UNtracked sequences still refuses (decision (4)). PatientName/PatientID are
+  deliberately unchecked -- pseudonyms are the pipeline's own keys; do not
+  "add" them later. Public sample loading (`load-sample-studies.sh`) skips the
+  gate deliberately and says why: the committed fixtures are already published
+  and CT_small natively carries fake alternate IDs the gate would (correctly)
+  refuse.
 - **A Weasis workspace started without a session link now says so instead of showing a black screen (issue #153).**
   `custom_startup.sh` still refuses to start without `GRADING_TOKEN` (fail-closed, #102/#104), but now logs one stable,
   searchable line (`custom_startup: REFUSED -- ...`) and, when a display is available, shows a zenity dialog: "Ta
