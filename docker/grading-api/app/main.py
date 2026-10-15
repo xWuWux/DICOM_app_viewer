@@ -367,12 +367,16 @@ def _browsable_cases(conn, stage: str) -> list:
     stages = BROWSABLE_STAGES.get(stage, ())
     if not stages:
         return []
-    marks = ",".join("?" * len(stages))
-    rows = conn.execute(
-        f"SELECT c.* FROM cases c WHERE c.stage IN ({marks}) AND c.version = "
-        "(SELECT MAX(c2.version) FROM cases c2 WHERE c2.stage = c.stage AND c2.order_index = c.order_index)",
-        stages,
-    ).fetchall()
+    # One fixed statement (no SQL built from strings -- bandit B608): every current-version case,
+    # filtered to the allowed stages here. The case table is small (one row per course case).
+    rows = [
+        r
+        for r in conn.execute(
+            "SELECT c.* FROM cases c WHERE c.version = "
+            "(SELECT MAX(c2.version) FROM cases c2 WHERE c2.stage = c.stage AND c2.order_index = c.order_index)"
+        ).fetchall()
+        if r["stage"] in stages
+    ]
     order = {s: i for i, s in enumerate(db.STAGES)}
     return sorted(rows, key=lambda r: (order.get(r["stage"], 99), r["order_index"]))
 
