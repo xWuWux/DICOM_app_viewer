@@ -19,6 +19,7 @@ bats \
   docker/kasm-workspace-weasis/custom_startup.bats \
   docker/kasm-workspace-weasis/watchdog.bats \
   docker/kasm-workspace-weasis/arrange_windows.bats \
+  docker/kasm-workspace-weasis/weasis_case_uri.bats \
   docker/guacamole-weasis/launch-session.bats \
   scripts/load-local-studies.bats \
   scripts/test-orthanc-proxy-scope.bats \
