@@ -33,6 +33,10 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   current study in the test stage. Schema: nullable `progress.view_case_id`, added after the usual pre-migration
   backup. Both panels show a "Pokaż badanie" list under the stage bar. Also: `weasis_case_uri.bats` was never run by
   `scripts/test-shell-scripts.sh` (so not in CI); it is now.
+- **README test catalog: test counts removed, policy stated (issue #144).** The hand-written
+  "(N tests)" figures had drifted (21 declared vs 37 collected for `test_state_machine.py`, 20 vs
+  116 BATS tests). The catalog now describes what each suite guards, says why there are no counts,
+  and `scripts/lint.sh` fails if a count reappears in the `## Testing` section.
 - **API 1.3.0: exam-panel timer (owner request, 2026-10-14).** On the test stage `GET /case` adds
   `timer: {case_elapsed_seconds, exam_elapsed_seconds}`, measured on grading-api's clock (the same basis as
   the recorded `time_spent_seconds`, #29). The exam start is derived from existing data (the first test
