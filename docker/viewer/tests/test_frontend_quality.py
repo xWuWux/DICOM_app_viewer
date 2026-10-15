@@ -37,6 +37,7 @@ EQ_ prefix to never collide with VR_ baselines in a shared grading-db.
 """
 
 import json
+import os
 import pathlib
 
 import pytest
@@ -119,12 +120,15 @@ def _walk_states(page, base_url, page_path, student_id, token, on_state):
 
 def _axe_run(page, scope):
     page.add_script_tag(path=str(AXE_SCRIPT))
+    # NB: an explicitly-passed undefined context is REJECTED by axe.run
+    # ("arguments are invalid" -- 4.11.4); whole-document audits pass the
+    # document node as the context instead. Learned the empirical way.
     return page.evaluate(
-        """([scope]) => window.axe.run(
-            scope ? {include: [scope]} : undefined,
+        """(scope) => window.axe.run(
+            scope ? {include: [scope]} : document,
             {runOnly: {type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]}}
         )""",
-        [scope],
+        scope,
     )
 
 
@@ -162,12 +166,17 @@ def _key(f):
     return f"{f['page']}|{f['state']}|{f['rule']}|{f['target']}"
 
 
-def _print_table(findings, header):
-    print(header)
-    print(f"{'page':<20} {'state':<20} {'rule':<16} {'impact':<9} {'cnt':<4} {'group':<20} target")
+def _table_text(findings, header):
+    lines = [header,
+             f"{'page':<20} {'state':<20} {'rule':<16} {'impact':<9} {'cnt':<4} {'group':<20} target"]
     for f in findings:
-        print(f"{f['page']:<20} {f['state']:<20} {f['rule']:<16} {str(f['impact']):<9} "
-              f"{f['count']:<4} {f['group']:<20} {f['target'][:44]}")
+        lines.append(f"{f['page']:<20} {f['state']:<20} {f['rule']:<16} {str(f['impact']):<9} "
+                     f"{f['count']:<4} {f['group']:<20} {f['target'][:44]}")
+    return "\n".join(lines)
+
+
+def _print_table(findings, header):
+    print(_table_text(findings, header))
 
 
 def _load_baseline():
@@ -192,19 +201,16 @@ def _merge_write_baseline(request, page_path, findings):
         if k not in {_key(f) for f in findings}:
             del store[k]
     request.session._a11y_merge = store
-    if not getattr(request.session, "_a11y_written", False):
-        request.session._a11y_written = True
-
-        def _write():
-            payload = {
-                "_policy": "human-owned baseline (issue #238 E): the gate fails on NEW keys "
-                           "only; regenerate ONLY via --update-a11y-baseline in a deliberate "
-                           "run and review the diff with the radiologist",
-                "entries": sorted(store.values(), key=lambda e: e["key"]),
-            }
-            BASELINE_FILE.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-
-        request.addfinalizer(_write)
+    # immediate merged write (NOT a function-scoped finalizer: that fired
+    # after the FIRST parametrization and lost the second page's findings --
+    # caught in the first real run). Last writer holds the full union.
+    payload = {
+        "_policy": "human-owned baseline (issue #238 E): the gate fails on NEW keys "
+                   "only; regenerate ONLY via --update-a11y-baseline in a deliberate "
+                   "run and review the diff with the radiologist",
+        "entries": sorted(store.values(), key=lambda e: e["key"]),
+    }
+    BASELINE_FILE.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
 @pytest.mark.parametrize("page_path", ["watermark.html", "grading-panel.html"])
@@ -234,9 +240,16 @@ def test_axe_accessibility_baseline_gate(page, base_url, page_path, axe_scope, r
     findings = _collect(page, base_url, page_path, axe_scope, student_id, token)
     assert ours() == [], _desc(ours())  # the a11y walk itself must stay silent too
 
-    update = request.config.getoption("--update-a11y-baseline", default=False, skip_checks=True)
-    _print_table(findings, f"axe WCAG findings -- {page_path} (scope: {axe_scope or 'whole page'})")
+    update = bool(request.config.getoption("--update-a11y-baseline"))
+    table = _table_text(findings, f"axe WCAG findings -- {page_path} (scope: {axe_scope or 'whole page'})")
+    print(table)
     if update:
+        # pytest -q captures stdout; keep the radiologist table as a file
+        # artifact too (gitignored next to snapshot failures is wrong -- it
+        # lives in the run's workdir instead of the repo):
+        report = pathlib.Path(os.environ.get("A11Y_REPORT_FILE", "/tmp/a11y_report.txt"))
+        with report.open("a", encoding="utf-8") as fh:
+            fh.write(table + "\n")
         _merge_write_baseline(request, page_path, findings)
         return
 
