@@ -23,6 +23,24 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Committed DICOM fixtures are now a tested boundary (issue #238 point A).**
+  `scripts/tests/test_dicom_fixtures.py` guards `sample-data/*.dcm` offline:
+  pipeline-valid identity/grouping UIDs (the study-UID rule is imported live
+  from grading-api's `cases_file.STUDY_UID_RE` and the Weasis URI builder, not
+  restated), pixel buffers consistent with declared geometry and transfer
+  syntax, and a clean run of the patient-consistency majority guards over the
+  whole committed set -- with mutated-copy negative controls (missing
+  StudyInstanceUID refused, never collapsed; one study two patients caught;
+  lying geometry caught) so the guards cannot rot vacuously.
+  `scripts/verify-cases-in-orthanc.py` gains a `--fixtures` mode answering the
+  inverse question -- is every uploaded fixture actually SERVED, exactly once
+  (#162 split fails on record count alone), with matching series/instance
+  counts -- reusing the one Orthanc client and the same counts-only output
+  policy; `scripts/smoke-test.sh` runs it over what it loads, and the CI smoke
+  job makes it unskippable (`REQUIRE_DICOM_COVERAGE=1` + pinned pydicom).
+  Existing coverage this leans on rather than rewraps:
+  `scripts/tests/test_dicom_patient_consistency.py`, the grading-api cases-file
+  tests, and the loader UID bats tests.
 - **`scripts/create-session.py` exits 143 on SIGTERM and 129 on SIGHUP (issue #142).** A cancelled run (CI job
   cancellation, closed terminal) now looks different from a failed one: 128 + signal number, the shell convention.
   Ctrl-C keeps exit 1. Unchanged: the token is still revoked before exiting, and the operator still sees the single

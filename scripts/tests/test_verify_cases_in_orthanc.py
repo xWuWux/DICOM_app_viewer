@@ -81,3 +81,51 @@ def test_unusable_cases_file_exits_2_without_printing_its_content(tmp_path, monk
     err = capsys.readouterr().err
     assert "build-cases-file.py format" in err
     assert SENTINEL_UID not in err
+
+# ---- --fixtures mode (issue #238 point A): the inverse question ------------
+# cases mode: "is every graded answer present". fixture mode: "is every file
+# a throwaway stack UPLOADED actually served back, grouping intact". Same
+# output policy tested here: counts + committed file names, never a UID.
+
+FIXTURE_CT = Path(__file__).resolve().parents[2] / "sample-data" / "CT_small.dcm"
+
+
+def _inv(uid, series=1, instances=1, records=1):
+    return {uid: {"series": series, "instances": instances, "records": records}}
+
+
+def test_fixture_expectations_over_a_committed_fixture():
+    exp = mod.fixture_expectations([str(FIXTURE_CT)])
+    assert len(exp) == 1
+    entry = next(iter(exp.values()))
+    assert entry["files"] == ["CT_small.dcm"]
+    assert entry["instances"] == 1 and entry["series"] == 1
+
+
+def test_check_fixtures_matched_ok_missing_names_the_file(capsys):
+    exp = mod.fixture_expectations([str(FIXTURE_CT)])
+    uid = next(iter(exp))
+    assert mod.check_fixtures(exp, _inv(uid)) == 0
+    assert mod.check_fixtures(exp, {}) == 1
+    out = capsys.readouterr().out
+    assert "CT_small.dcm" in out
+    assert uid not in out  # the no-UID policy holds for shared code paths too
+
+
+def test_check_fixtures_split_study_is_never_merged_away(capsys):
+    # 1+0 records sum to a count that "matches" -- a #162 split must fail on
+    # the record count alone, which is why fetch_study_inventory keeps them.
+    exp = {"u": {"files": ["a.dcm"], "instances": 1, "series": 1}}
+    assert mod.check_fixtures(exp, _inv("u", records=2)) == 1
+    assert "duplicate" in capsys.readouterr().out
+
+
+def test_check_fixtures_grouping_mismatch(capsys):
+    exp = {"u": {"files": ["a.dcm"], "instances": 2, "series": 1}}
+    assert mod.check_fixtures(exp, _inv("u", instances=1)) == 1
+    assert "grouping mismatch" in capsys.readouterr().out
+
+
+def test_main_requires_exactly_one_mode(capsys):
+    assert mod.main([]) == 2
+    assert mod.main(["cases.json", "--fixtures", "x.dcm"]) == 2

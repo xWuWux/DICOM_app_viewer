@@ -19,7 +19,18 @@ cases file holds the answer key; see app/cases_file.py's docstring). A study
 UID appearing more than once in Orthanc is the split signature from issue
 #162 and is reported as a warning count.
 
-Stdlib only, like the other non-test scripts in this directory.
+Stdlib only, like the other non-test scripts in this directory -- EXCEPT the
+--fixtures mode (issue #238 point A), which lazily imports pydicom (the
+scripts/tests/requirements-dev.txt pin) to read the committed sample-data set.
+
+  python3 scripts/verify-cases-in-orthanc.py --fixtures sample-data/CT_small.dcm
+
+Fixture mode asks the inverse question of cases mode: not "is every graded
+answer present" but "is every file a throwaway stack UPLOADED actually SERVED
+back, with grouping intact" (study present exactly once, its series and
+instance counts matching the files). It is what smoke-test.sh runs so fixture
+coverage can never rot silently. Same output policy: counts and committed
+FILE NAMES only, never UIDs.
 """
 
 import argparse
@@ -31,14 +42,22 @@ import urllib.error
 import urllib.request
 
 
+def _get_json(base, auth, path, timeout):
+    req = urllib.request.Request(base.rstrip("/") + path, headers={"Authorization": auth})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.load(resp)
+
+
+def _basic_auth(user, password):
+    return "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()
+
+
 def fetch_study_uids(base, user, password, timeout=30):
     """StudyInstanceUID of every study record Orthanc serves (duplicates kept)."""
-    auth = "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()
+    auth = _basic_auth(user, password)
 
     def get(path):
-        req = urllib.request.Request(base.rstrip("/") + path, headers={"Authorization": auth})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.load(resp)
+        return _get_json(base, auth, path, timeout)
 
     uids = []
     for study_id in get("/studies"):
@@ -71,6 +90,95 @@ def check(cases, orthanc_uids, out=None):
     return len(missing)
 
 
+def fetch_study_inventory(base, user, password, timeout=30):
+    """uid -> {"series": n, "instances": n} for every study Orthanc serves.
+
+    Instance counts come from each series resource (the study-level series
+    listing does not promise CountInstances across Orthanc versions)."""
+    auth = _basic_auth(user, password)
+    inventory = {}
+    for study_id in _get_json(base, auth, "/studies", timeout):
+        uid = _shared_tag(_get_json(base, auth, f"/studies/{study_id}/shared-tags", timeout), "StudyInstanceUID")
+        series = _get_json(base, auth, f"/studies/{study_id}/series", timeout)
+        instances = 0
+        for s in series:
+            sid = s.get("ID") if isinstance(s, dict) else s
+            detail = _get_json(base, auth, f"/series/{sid}", timeout)
+            instances += int(detail.get("CountInstances", 0))
+        # A second Orthanc record with the SAME StudyInstanceUID is the #162
+        # split: never merge it into the first (summed counts could make a
+        # broken study look complete), count the records instead.
+        entry = inventory.setdefault(uid, {"series": 0, "instances": 0, "records": 0})
+        entry["records"] += 1
+        entry["series"] += len(series)
+        entry["instances"] += instances
+    return inventory
+
+
+def _shared_tag(tags, keyword):
+    value = tags.get(keyword, {}).get("Value", "")
+    if isinstance(value, list):
+        value = str(value[0]) if value else ""
+    return str(value)
+
+
+def fixture_expectations(paths):
+    """uid -> {"files": [names], "instances": n, "series": n} over .dcm files.
+
+    Lazily imports pydicom; lazy import + same module as cases mode is
+    deliberate: one Orthanc client, one output policy, no second fetcher to
+    drift (issue #238 review point 2)."""
+    import pydicom
+
+    expected = {}
+    for p in paths:
+        ds = pydicom.dcmread(p, stop_before_pixels=True)
+        uid = str(ds.get("StudyInstanceUID", "")).strip()
+        entry = expected.setdefault(uid, {"files": [], "instances": 0, "series": set()})
+        entry["files"].append(os.path.basename(str(p)))
+        entry["instances"] += 1
+        entry["series"].add(str(ds.get("SeriesInstanceUID", "")))
+    for entry in expected.values():
+        entry["series"] = len(entry["series"])
+    return expected
+
+
+def check_fixtures(expected, inventory, out=None):
+    """-> problem count. Prints COUNTS plus committed file names only."""
+    out = out or sys.stdout
+    problems = 0
+    matched = 0
+    for uid, exp in sorted(expected.items()):
+        got = inventory.get(uid)
+        if got is None:
+            print(f"  not served: {', '.join(exp['files'])}", file=out)
+            problems += 1
+            continue
+        if got.get("records", 1) > 1:
+            # the #162 split: summed counts could MATCH -- the record count
+            # alone must fail the gate.
+            names = ", ".join(exp["files"])
+            print(f"  WARNING duplicate study records (issue #162 split): {names}", file=out)
+            problems += 1
+            continue
+        if got["series"] != exp["series"] or got["instances"] != exp["instances"]:
+            print(
+                f"  grouping mismatch: {', '.join(exp['files'])} "
+                f"(expected series={exp['series']} instances={exp['instances']}, "
+                f"served series={got['series']} instances={got['instances']})",
+                file=out,
+            )
+            problems += 1
+            continue
+        matched += 1
+    records = sum(e.get("records", 1) for e in inventory.values())
+    print(
+        f"fixture studies: {len(expected)}; served study records: {records}; matched: {matched}",
+        file=out,
+    )
+    return problems
+
+
 def main(argv=None) -> int:
     repo_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
     if not os.environ.get("ORTHANC_PASSWORD") and not os.environ.get("ORTHANC_PASS"):
@@ -83,8 +191,38 @@ def main(argv=None) -> int:
                         break
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cases_file", help="JSON built by scripts/build-cases-file.py (read locally, never printed)")
+    ap.add_argument("cases_file", nargs="?", help="JSON built by scripts/build-cases-file.py (read locally, never printed)")
+    ap.add_argument(
+        "--fixtures",
+        nargs="+",
+        metavar="DCM",
+        help="committed .dcm paths that must be SERVED studies with matching grouping (issue #238 point A)",
+    )
     a = ap.parse_args(argv)
+    if bool(a.cases_file) == bool(a.fixtures):
+        print("ERROR: exactly one of cases_file OR --fixtures (not both, not neither)", file=sys.stderr)
+        return 2
+    if a.fixtures:
+        missing_files = [f for f in a.fixtures if not os.path.isfile(f)]
+        if missing_files:
+            joined = ", ".join(missing_files)
+            print(f"ERROR: fixture files not found: {joined}", file=sys.stderr)
+            return 2
+
+    base = os.environ.get("ORTHANC_URL", "http://localhost:8042")
+    user = os.environ.get("ORTHANC_USER", "orthanc")
+    password = os.environ.get("ORTHANC_PASS") or os.environ.get("ORTHANC_PASSWORD")
+    if not password:
+        print("ERROR: no Orthanc password (ORTHANC_PASSWORD env or .env) -- see .env.example", file=sys.stderr)
+        return 2
+    if a.fixtures:
+        try:
+            expected = fixture_expectations(a.fixtures)
+            inventory = fetch_study_inventory(base, user, password)
+        except Exception:  # bare one-line reason: no tracebacks with request URLs in them
+            print(f"ERROR: cannot read study list from {base} (is Orthanc up, are the credentials right?)", file=sys.stderr)
+            return 2
+        return 1 if check_fixtures(expected, inventory) else 0
 
     try:
         with open(a.cases_file, encoding="utf-8") as fh:
@@ -94,16 +232,9 @@ def main(argv=None) -> int:
         # names the fact, never a value: the file holds the answer key
         print("ERROR: cases file is missing or not the build-cases-file.py format", file=sys.stderr)
         return 2
-
-    base = os.environ.get("ORTHANC_URL", "http://localhost:8042")
-    user = os.environ.get("ORTHANC_USER", "orthanc")
-    password = os.environ.get("ORTHANC_PASS") or os.environ.get("ORTHANC_PASSWORD")
-    if not password:
-        print("ERROR: no Orthanc password (ORTHANC_PASSWORD env or .env) -- see .env.example", file=sys.stderr)
-        return 2
     try:
         uids = fetch_study_uids(base, user, password)
-    except Exception:  # a bare, one-line reason: no tracebacks with request URLs in them
+    except Exception:
         print(f"ERROR: cannot read study list from {base} (is Orthanc up, are the credentials right?)", file=sys.stderr)
         return 2
     return 1 if check(cases, uids) else 0
