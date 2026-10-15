@@ -23,6 +23,11 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **A client-supplied `X-Request-Id` is validated, never trusted (issue #119).** grading-api accepts it only if it
+  matches `^[A-Za-z0-9._-]{1,64}$` (whole value); anything else (too long, spaces, unicode, control characters,
+  CR/LF) is replaced by a server `uuid4` hex and a `request_id_rejected` line is logged with the fact only, never the
+  value. Closes the log-forging, unbounded-growth and 500-header reflection vectors found in the CR of #110. Valid
+  ids are honoured exactly as before (#72/#95 correlation unchanged).
 - **`scripts/create-session.py` exits 143 on SIGTERM and 129 on SIGHUP (issue #142).** A cancelled run (CI job
   cancellation, closed terminal) now looks different from a failed one: 128 + signal number, the shell convention.
   Ctrl-C keeps exit 1. Unchanged: the token is still revoked before exiting, and the operator still sees the single

@@ -87,6 +87,24 @@ app.add_exception_handler(RequestValidationError, validation_error_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 
+# issue #119: what a client may supply as X-Request-Id. Anything else is never accepted --
+# not truncated, not escaped -- and is replaced by a server uuid4 hex: log lines and the
+# response header can then only ever carry 1-64 characters from this set, so no CR/LF or
+# control-character log forging, no megabyte ids multiplied into every log line, and no
+# arbitrary payload reflected in a 500's headers. fullmatch, not match: `$` alone would
+# let a trailing newline through.
+_CLIENT_REQUEST_ID_RE = re.compile(r"[A-Za-z0-9._-]{1,64}")
+
+
+def _accepted_request_id(supplied: str | None) -> tuple[str, bool]:
+    """(request_id to use, whether a supplied value was rejected)."""
+    if supplied is None or supplied == "":
+        return uuid.uuid4().hex, False
+    if _CLIENT_REQUEST_ID_RE.fullmatch(supplied):
+        return supplied, False
+    return uuid.uuid4().hex, True
+
+
 class RequestIdMiddleware(BaseHTTPMiddleware):
     """Generates (or honors an incoming) X-Request-Id, makes it available
     to every log line emitted while handling this request via
@@ -96,7 +114,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
     path, status, duration) as a basic structured access log."""
 
     async def dispatch(self, request: Request, call_next):
-        request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+        request_id, rejected = _accepted_request_id(request.headers.get("x-request-id"))
         # issue #95: mirror onto request.state too. Request.state is
         # backed by scope["state"], shared with the Request the OUTER
         # ServerErrorMiddleware later rebuilds for the unhandled-exception
@@ -105,6 +123,10 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         # still has the id through.
         request.state.request_id = request_id
         token = request_id_var.set(request_id)
+        if rejected:
+            # The fact only, never the value (issue #119): logging it would re-open the
+            # very forging/growth vector this check closes. Carries the server id.
+            logger.warning("request_id_rejected")
         start = time.monotonic()
         try:
             response = await call_next(request)
