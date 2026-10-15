@@ -9,6 +9,17 @@
 # (a temporary mode-0600 curl config, removed on exit).
 #
 #   ./scripts/load-local-studies.sh Dokumentacja/DICOM_Images [--jobs N]
+#                             [--skip-list FILE] [--skip-phi-gate]
+#                             [--allow-phi-tag TAG=REASON ...]
+#
+# PHI gate (issue #238 B1): every load is asserted against
+# scripts/phi-gate.py FIRST -- files still carrying direct patient
+# identifiers are refused before any byte reaches Orthanc (tag names and
+# counts only are printed, never values). --allow-phi-tag tolerates ONE
+# reject-tier tag with a required written reason; --skip-phi-gate bypasses
+# the whole gate. Both are operator attestations, echoed to the log.
+# Anonymisation itself is UPSTREAM of ingestion -- this script never fixes a
+# file, only refuses it.
 #
 # --skip-list FILE: paths (relative to DIR, one per line) NOT to upload, e.g. the
 # originals that scripts/dicom-patient-consistency.py --fix-out replaced by
@@ -25,11 +36,15 @@ fi
 DIR="${1:-}"
 JOBS=4
 SKIP_LIST=""
+SKIP_PHI_GATE=0
+ALLOW_PHI=()
 shift || true
 while [ $# -gt 0 ]; do
   case "$1" in
     --jobs) JOBS="${2:?--jobs needs a number}"; shift 2 ;;
     --skip-list) SKIP_LIST="${2:?--skip-list needs a file}"; shift 2 ;;
+    --skip-phi-gate) SKIP_PHI_GATE=1; shift ;;
+    --allow-phi-tag) ALLOW_PHI+=("${2:?--allow-phi-tag needs TAG=REASON}"); shift 2 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -37,6 +52,25 @@ done
 DIR="${DIR%/}"
 [ -n "$DIR" ] && [ -d "$DIR" ] || { echo "usage: $0 <directory with .dcm files> [--jobs N]" >&2; exit 2; }
 case "$JOBS" in ''|*[!0-9]*|0) echo "--jobs must be a positive integer" >&2; exit 2;; esac
+
+# Issue #238 B1: assertion-only anonymisation boundary. Anonymisation runs
+# UPSTREAM of ingestion (owner decision 2026-10-15); nothing in this repo
+# de-identifies, and this gate never "fixes" a file -- it REFUSES loads whose
+# files still carry direct patient identifiers, before any byte reaches
+# Orthanc. FAIL-CLOSED: no python3+pydicom means no load (this path loads
+# real cohorts; loading them unasserted is exactly the failure B1 prevents).
+# Values are never printed -- only tag names, counts and one example path.
+if [ "$SKIP_PHI_GATE" = "1" ]; then
+  echo "PHI GATE SKIPPED BY FLAG -- the upload proceeds UNASSERTED; the anonymity claim is yours, not the pipeline's." >&2
+elif ! command -v python3 >/dev/null 2>&1 || ! python3 -c "import pydicom" >/dev/null 2>&1; then
+  echo "PHI gate needs python3 with pydicom (the operator venv that already runs build-cases-file.py). Refusing to load blind (fail-closed). --skip-phi-gate only if you personally own the anonymity claim." >&2
+  exit 2
+else
+  GATE_ARGS=()
+  for spec in ${ALLOW_PHI[@]+"${ALLOW_PHI[@]}"}; do GATE_ARGS+=(--allow-tag "$spec"); done
+  [ -z "$SKIP_LIST" ] || GATE_ARGS+=(--exclude-file "$SKIP_LIST")
+  python3 "$REPO_ROOT/scripts/phi-gate.py" "$DIR" ${GATE_ARGS[@]+"${GATE_ARGS[@]}"} || { echo "load REFUSED by phi-gate (tags above; values never shown) -- fix the source upstream" >&2; exit 1; }
+fi
 
 export ORTHANC_URL="${ORTHANC_URL:-http://localhost:8042}"
 ORTHANC_USER="${ORTHANC_USER:-orthanc}"

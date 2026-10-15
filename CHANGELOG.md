@@ -23,6 +23,23 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Load-time PHI assertion gate (issue #238 point B1).** Anonymisation is
+  formally UPSTREAM of ingestion (owner decision 2026-10-15): this repository
+  never de-identifies, it only asserts the boundary held.
+  `scripts/phi-gate.py` scans a cohort BEFORE upload and refuses files still
+  carrying direct patient identifiers (birth dates/times, other-patient-ID
+  sequences, other names, address, telephone, free-text patient/study
+  comments); institutional/staff/device tags are replacement-tolerant and only
+  noted, matching DICOM PS3.15's Basic Application Level Collection and
+  calibrated against this repo's own fixtures. `load-local-studies.sh` invokes
+  it fail-closed (no python3+pydicom -> no load), and both tolerations are
+  operator attestations with audit trails: `--allow-phi-tag TAG=REASON`
+  (reason required, echoed) and `--skip-phi-gate` (loud refusal-free skip).
+  Output is tag names, counts and one example path -- never a value: a printed
+  identifier would defeat the gate it came from. Public sample loading
+  (`load-sample-studies.sh`) skips the gate deliberately and says why: the
+  committed fixtures are already published and CT_small natively carries fake
+  alternate IDs the gate would (correctly) refuse.
 - **A Weasis workspace started without a session link now says so instead of showing a black screen (issue #153).**
   `custom_startup.sh` still refuses to start without `GRADING_TOKEN` (fail-closed, #102/#104), but now logs one stable,
   searchable line (`custom_startup: REFUSED -- ...`) and, when a display is available, shows a zenity dialog: "Ta

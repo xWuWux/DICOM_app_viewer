@@ -51,6 +51,19 @@ repo is public, and the cases carry the exam's answer key, clinical reference re
 real study UIDs. Everything below stays on this host (issue #87); `Dokumentacja/DICOM_Images`,
 `Dokumentacja/Opisy_badan` and `./local/*` are git-ignored.
 
+**Anonymisation is upstream of ingestion** (owner decision 2026-10-15, issue #238
+B1). No tooling in this repository de-identifies anything, and none will: the
+received cohort must arrive already de-identified. The pipeline only ASSERTS
+that boundary held -- `scripts/load-local-studies.sh` runs `scripts/phi-gate.py`
+before uploading a single byte, and REFUSES files still carrying direct patient
+identifiers (birth dates, other-patient-ID sequences, addresses, free-text
+comments; institutional/staff tags are noted, not refused, because replacement
+is a legitimate profile choice). The gate prints tag names and counts, never
+values. Tolerating a refused tag is an operator attestation: `--allow-phi-tag
+TAG=REASON` requires a written reason and echoes it; `--skip-phi-gate` bypasses
+everything with a loud log line. Both are audit trails, not fixes -- the fix
+belongs to whatever produced the files.
+
 1. **Check consistency first** (counts only, nothing printed from the files):
    `python3 scripts/dicom-patient-consistency.py Dokumentacja/DICOM_Images`.
    Orthanc groups by PatientID, so a study whose images disagree on the patient is split
@@ -59,7 +72,9 @@ real study UIDs. Everything below stays on this host (issue #87); `Dokumentacja/
    originals are never touched) and refuses if the odd images could be somebody else's.
 2. **Load into Orthanc**: `./scripts/load-local-studies.sh Dokumentacja/DICOM_Images --skip-list local/fixed/skip.txt`
    then `./scripts/load-local-studies.sh local/fixed`. Parallel, retrying, idempotent,
-   prints counts only (a shared Docker host answered ~1% of parallel uploads with resets; re-run until `0 failed`).
+   prints counts only (a shared Docker host answered ~1% of parallel uploads with resets; re-run until `0 failed`).   The PHI gate above runs first: a refusal here means the source cohort still
+   carries identity tags -- fix it upstream, do not re-run with `--skip-phi-gate`.
+
 3. **Build the cases file**: `python3 scripts/build-cases-file.py --xlsx Dokumentacja/Opisy_badan/<file>.xlsx --dicom-dir Dokumentacja/DICOM_Images --out local/cases.json`
    (columns `Anonim | Opis | Lung-Rads`; `--stages` maps studies to learning/assessment/test,
    default: all studies in learning, the first in assessment and test). Studies are matched to
