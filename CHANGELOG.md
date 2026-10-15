@@ -33,6 +33,10 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   current study in the test stage. Schema: nullable `progress.view_case_id`, added after the usual pre-migration
   backup. Both panels show a "Pokaż badanie" list under the stage bar. Also: `weasis_case_uri.bats` was never run by
   `scripts/test-shell-scripts.sh` (so not in CI); it is now.
+- **`scripts/create-session.py` exits 143 on SIGTERM and 129 on SIGHUP (issue #142).** A cancelled run (CI job
+  cancellation, closed terminal) now looks different from a failed one: 128 + signal number, the shell convention.
+  Ctrl-C keeps exit 1. Unchanged: the token is still revoked before exiting, and the operator still sees the single
+  line `interrupted` (no token).
 - **README test catalog: test counts removed, policy stated (issue #144).** The hand-written
   "(N tests)" figures had drifted (21 declared vs 37 collected for `test_state_machine.py`, 20 vs
   116 BATS tests). The catalog now describes what each suite guards, says why there are no counts,
