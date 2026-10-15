@@ -10,9 +10,12 @@ client-side assertions -- secrets never end up in a log record.
 import json
 import logging
 import os
+import re
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app import main as main_module
 from app.logging_config import _JsonFormatter
 from app.main import app
 
@@ -256,3 +259,74 @@ def test_no_log_record_ever_contains_the_coordinator_key_or_a_real_token(client,
         rendered = repr(record.__dict__)
         assert coordinator_key not in rendered
         assert token not in rendered
+
+
+# ---- issue #119: a client-supplied X-Request-Id is validated, never trusted ----
+
+_SERVER_ID_RE = re.compile(r"[0-9a-f]{32}")
+FORGED_LINE = '{"level": "INFO", "message": "request", "status_code": 200, "path": "/admin"}'
+
+
+def _rejected_cases():
+    return {
+        "too long (1 KB)": "a" * 1024,
+        "65 chars (one over)": "a" * 65,
+        "space": "two words",
+        "unicode": "zażółć".encode(),
+        "json lookalike": FORGED_LINE.replace(" ", ""),
+        "slash": "a/b",
+    }
+
+
+@pytest.mark.parametrize("label", list(_rejected_cases()))
+def test_a_non_conforming_request_id_is_replaced_and_never_logged(client, caplog, label):
+    supplied = _rejected_cases()[label]
+    text = supplied.decode() if isinstance(supplied, bytes) else supplied
+    with caplog.at_level(logging.INFO):
+        resp = client.get("/healthz", headers={"X-Request-Id": supplied})
+    rid = resp.headers["x-request-id"]
+    assert rid != text and _SERVER_ID_RE.fullmatch(rid), label
+    for record in caplog.records:
+        assert text not in record.getMessage()
+        assert text not in json.dumps({k: str(v) for k, v in vars(record).items()})
+    assert [r.request_id for r in caplog.records if r.getMessage() == "request"] == [rid]
+    rejected = [r for r in caplog.records if r.getMessage() == "request_id_rejected"]
+    assert len(rejected) == 1 and rejected[0].request_id == rid
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["x\r\n" + FORGED_LINE, "x\n", "\nx", "x\x00y", "x\ty", "x\x1b[31m", "trailing-newline\n"],
+)
+def test_control_characters_and_newlines_are_rejected(value):
+    """HTTP clients (httpx, h11) refuse to SEND CR/LF in a header, so this pins the
+    validator itself: a raw-socket client or a proxy that unfolds headers could still
+    deliver one. `trailing-newline\\n` is why the check is fullmatch, not match + $."""
+    rid, rejected = main_module._accepted_request_id(value)
+    assert rejected is True
+    assert _SERVER_ID_RE.fullmatch(rid)
+
+
+@pytest.mark.parametrize("value", ["a", "a" * 64, "test-fixed-id-123", "A.b_C-9", "0123456789abcdef"])
+def test_conforming_request_ids_are_still_honored(client, value):
+    resp = client.get("/healthz", headers={"X-Request-Id": value})
+    assert resp.headers["x-request-id"] == value
+
+
+def test_an_empty_or_absent_request_id_gets_a_server_id_without_a_rejection_line(client, caplog):
+    with caplog.at_level(logging.INFO):
+        for headers in ({}, {"X-Request-Id": ""}):
+            rid = client.get("/healthz", headers=headers).headers["x-request-id"]
+            assert _SERVER_ID_RE.fullmatch(rid)
+    assert not [r for r in caplog.records if r.getMessage() == "request_id_rejected"]
+
+
+def test_one_access_log_line_per_request_even_with_a_forged_id(client, caplog):
+    """Log-forging acceptance criterion: exactly one formatted line per request, and the
+    formatted JSON never contains the forged payload."""
+    with caplog.at_level(logging.INFO):
+        client.get("/healthz", headers={"X-Request-Id": "x" * 70 + FORGED_LINE.replace(" ", "")})
+    access = [r for r in caplog.records if r.getMessage() == "request"]
+    assert len(access) == 1
+    line = _JsonFormatter().format(access[0])
+    assert "\n" not in line and "/admin" not in line
