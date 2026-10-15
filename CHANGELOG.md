@@ -33,6 +33,21 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   current study in the test stage. Schema: nullable `progress.view_case_id`, added after the usual pre-migration
   backup. Both panels show a "Pokaż badanie" list under the stage bar. Also: `weasis_case_uri.bats` was never run by
   `scripts/test-shell-scripts.sh` (so not in CI); it is now.
+- **A Weasis workspace started without a session link now says so instead of showing a black screen (issue #153).**
+  `custom_startup.sh` still refuses to start without `GRADING_TOKEN` (fail-closed, #102/#104), but now logs one stable,
+  searchable line (`custom_startup: REFUSED -- ...`) and, when a display is available, shows a zenity dialog: "Ta
+  sesja wymaga linku przydzielonego przez prowadzącego." An empty or tampered token is refused the same way; the token
+  never reaches the dialog or the log. Nothing (Weasis, panel, watermark) starts without a token.
+- **Security Scan stage extended: secrets + every image (issue #238 point D; covers the Fix section of #71,
+  its DoD-audit extras remain open there).** `scripts/security-scan.sh`
+  gains gitleaks over the FULL committed history (CI clones with `fetch-depth: 0`, so a PR's own commits are
+  covered too; no working-tree scan on purpose -- locally that tree holds gitignored real secrets), with the
+  built-in rule set of the pinned v8.30.1 binary kept on via [extend] useDefault, and trivy now also
+  builds and scans the three streamed-session images (kasm-workspace, kasm-workspace-weasis, guacamole-weasis)
+  at the same CRITICAL/HIGH `--ignore-unfixed` gate. The three pre-existing history findings are allowed only
+  as individually reasoned fingerprints in `.gitleaksignore` -- one of them an OUTDATED (expired) session token
+  quoted as evidence inside a history document, kept unedited by the owner's decision of 2026-10-15. Dry-runs
+  before wiring: all three session-image bases clean at the gate level (2026-10-15).
 - **`scripts/create-session.py` exits 143 on SIGTERM and 129 on SIGHUP (issue #142).** A cancelled run (CI job
   cancellation, closed terminal) now looks different from a failed one: 128 + signal number, the shell convention.
   Ctrl-C keeps exit 1. Unchanged: the token is still revoked before exiting, and the operator still sees the single
