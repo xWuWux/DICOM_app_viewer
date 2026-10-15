@@ -77,6 +77,18 @@ class ApiError(RuntimeError):
         self.ambiguous = ambiguous
 
 
+class TerminationSignal(KeyboardInterrupt):
+    """A KeyboardInterrupt that remembers which signal caused it (issue #142).
+
+    Subclassing KeyboardInterrupt keeps every existing `except KeyboardInterrupt`
+    path -- above all the compensation in main() -- working unchanged; main()
+    only reads `signum` at the very end to pick the conventional exit code."""
+
+    def __init__(self, signum: int):
+        super().__init__()
+        self.signum = signum
+
+
 def _interrupt(signum, frame):
     """SIGTERM/SIGHUP -> KeyboardInterrupt, so the compensation in main()
     actually runs (review nit on issue #104, CR w4:p1). The default action for
@@ -87,8 +99,12 @@ def _interrupt(signum, frame):
     SIGKILL and os._exit() stay uncoverable; the token's own TTL
     (GRADING_TOKEN_TTL_SECONDS, capped at 7 days by app/config.py) is the
     backstop, which is why README.md names the TTL rather than this handler as
-    the last line of defense."""
-    raise KeyboardInterrupt()
+    the last line of defense.
+
+    Issue #142: the raised exception carries the signal number, so main() can
+    exit 128 + signum (143 SIGTERM, 129 SIGHUP) instead of 1 -- a cancelled
+    run and a failed one must look different to CI and to the operator."""
+    raise TerminationSignal(signum)
 
 
 def install_termination_handlers() -> None:
@@ -492,7 +508,19 @@ def main():
         if isinstance(exc, ApiError):
             sys.exit(str(exc))
         if isinstance(exc, KeyboardInterrupt):
-            sys.exit("interrupted")
+            # Same one-line message for every interruption; the exit code tells
+            # them apart (issue #142): 128 + signal number for SIGTERM/SIGHUP
+            # (143/129, the shell convention for death by signal), 1 for Ctrl-C,
+            # as most CLIs do. Compensation has already run above.
+            # Deliberately sys.exit(128 + signum), not re-raising the signal with
+            # its default action: $? is the same 143/129, but the run is reported
+            # as a normal exit (no "Terminated" from job control), and the code is
+            # testable in-process as SystemExit.code (issue #142, criterion 4).
+            signum = getattr(exc, "signum", None)
+            if signum is None:
+                sys.exit("interrupted")
+            print("interrupted", file=sys.stderr)
+            sys.exit(128 + signum)
         raise
 
 

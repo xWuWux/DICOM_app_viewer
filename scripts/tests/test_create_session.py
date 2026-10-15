@@ -117,21 +117,25 @@ class _Kasm:
                 raise _http_error(url)
             if self.kasm_mode == "connection_error":
                 raise urllib.error.URLError("connection refused")
+            if self.kasm_mode == "sigint_during_request":
+                # Ctrl-C: Python's default SIGINT handler raises a plain KeyboardInterrupt.
+                raise KeyboardInterrupt()
             if self.kasm_mode == "sigterm_during_request":
                 # The handler's own effect, raised at the interrupted point.
                 create_session._interrupt(signal.SIGTERM, None)
-            if self.kasm_mode == "raise_signal":
+            if self.kasm_mode in ("raise_signal", "raise_sighup"):
                 # The real thing: an actual signal delivered to this process,
                 # translated by whatever handler is installed at that moment.
                 # Delivered ONLY when our handler is actually in place --
                 # otherwise a removed install call would SIGTERM the pytest
                 # process itself, and a killed runner is a worse signal than a
                 # failed assertion.
-                if signal.getsignal(signal.SIGTERM) is not create_session._interrupt:
+                sig = signal.SIGHUP if self.kasm_mode == "raise_sighup" else signal.SIGTERM
+                if signal.getsignal(sig) is not create_session._interrupt:
                     self.handler_state = "not installed"
                     return _FakeResponse({"kasm_id": "k1", "user_id": "u1", "kasm_url": "/k/x"})
                 self.handler_state = "installed"
-                signal.raise_signal(signal.SIGTERM)
+                signal.raise_signal(sig)
                 raise urllib.error.URLError("interrupted")
             if self.kasm_mode == "read_timeout":
                 # The CR probe's exact case: the request went out, urlopen
@@ -404,7 +408,7 @@ def test_sigterm_triggers_the_same_compensation_as_ctrl_c(env, monkeypatch):
     kasm = _Kasm(kasm_mode="sigterm_during_request")
     exit_code = _run(monkeypatch, kasm)
     assert exit_code is not None
-    assert exit_code.code == "interrupted"
+    assert exit_code.code == 143  # issue #142: 128 + SIGTERM, not 1
     assert kasm.called("/api/session/revoke") == [{"token": FAKE_TOKEN}]
 
 
@@ -585,3 +589,50 @@ def test_unusable_ca_bundle_is_a_clean_error_not_a_traceback(env, monkeypatch, t
     assert exit_code is not None and exit_code.code == 2
     assert "--ca-bundle" in capsys.readouterr().err
     assert "Traceback" not in capsys.readouterr().err
+
+
+# ---- issue #142: conventional exit codes for cancellation --------------------
+# One test per case, each delivering the signal for real (raise_signal) through the
+# installed handler, asserting the exact SystemExit.code, that compensation still
+# revoked the token first, and that the operator line is unchanged and token-free.
+
+
+def _assert_interrupted_exit(exit_code, expected_code, kasm, capsys):
+    assert isinstance(exit_code, SystemExit), f"compensation leaked {exit_code!r}"
+    assert exit_code.code == expected_code
+    assert kasm.called("/api/session/revoke") == [{"token": FAKE_TOKEN}]
+    err = capsys.readouterr().err
+    assert FAKE_TOKEN not in err
+    return err
+
+
+def test_sigterm_exits_143(env, monkeypatch, capsys):
+    kasm = _Kasm(kasm_mode="raise_signal")
+    err = _assert_interrupted_exit(_run(monkeypatch, kasm), 143, kasm, capsys)
+    assert kasm.handler_state == "installed"
+    assert err.strip().splitlines()[-1] == "interrupted"
+
+
+def test_sighup_exits_129(env, monkeypatch, capsys):
+    if not hasattr(signal, "SIGHUP"):
+        pytest.skip("SIGHUP does not exist on this platform")
+    kasm = _Kasm(kasm_mode="raise_sighup")
+    err = _assert_interrupted_exit(_run(monkeypatch, kasm), 129, kasm, capsys)
+    assert kasm.handler_state == "installed"
+    assert err.strip().splitlines()[-1] == "interrupted"
+
+
+def test_ctrl_c_still_exits_1_with_the_same_message(env, monkeypatch, capsys):
+    """Ctrl-C keeps the old behaviour: sys.exit("interrupted"), i.e. exit status 1
+    with the message on stderr (Python prints a string SystemExit code)."""
+    kasm = _Kasm(kasm_mode="sigint_during_request")
+    exit_code = _run(monkeypatch, kasm)
+    _assert_interrupted_exit(exit_code, "interrupted", kasm, capsys)
+
+
+def test_signal_exception_is_still_a_keyboard_interrupt():
+    """Every existing `except KeyboardInterrupt` path (compensation included) must keep
+    catching the signal-carrying variant."""
+    exc = create_session.TerminationSignal(signal.SIGTERM)
+    assert isinstance(exc, KeyboardInterrupt)
+    assert exc.signum == signal.SIGTERM
