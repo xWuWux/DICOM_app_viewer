@@ -1,0 +1,24 @@
+# Per-finding exceptions for the gitleaks history scan -- issue #238 point D.
+# One commit:file:rule:line fingerprint per ALREADY-MERGED finding, each with
+# its reason. This file is append-only by review: a NEW leak must never be
+# silenced by editing an existing entry or adding an unreviewed one.
+# (The two #182 test sentinels are NOT here -- they are structural literals in
+# the .gitleaks.toml allowlist.)
+
+# smoke-test.sh probes the 401 path with a deliberately invalid token literal
+# ('not-a-real...'): a negative-path probe, not a credential.
+2e20b947885b2405cca7882e35a330b80861d248:scripts/smoke-test.sh:curl-auth-header:106
+
+# logging_config.py names GRADING_COORDINATOR_KEY as a denylist entry -- the
+# match is the variable NAME inside the code that prevents logging it, never a
+# value.
+e0fc5b3e7be15351b12459112bb060c36e3c30f0:docker/grading-api/app/logging_config.py:generic-api-key:12
+
+# OUTDATED (expired): a real grading-api session token quoted as EVIDENCE of the
+# #74 log leak inside a history document, minted 2026-10-05 in a local
+# verification run; TTL caps at 7 days so it died by 2026-10-12, and it is not
+# present in any live database (checked 2026-10-15). The human decided 2026-10-15
+# to keep the document unedited -- rewriting it would hide the very leak record
+# it holds. The leak PATH itself is fixed (#93); a recurrence in new commits is
+# exactly what this scan catches.
+0fb836121638ee603be266b7e1024832dda7c9b4:docs/history/qwen_weryfikacja.md:generic-api-key:15
