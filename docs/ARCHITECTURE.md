@@ -127,19 +127,16 @@ Postgres/stratified-sampling layer, a Proxmox cluster (this is one host).
 Each of those is a real, tracked gap — see README.md and CLAUDE.md, not
 this diagram, for the authoritative list so the two don't drift apart.
 
-Separately, a **Weasis-based session flow is being built alongside this
-one** (milestone "Weasis viewer migration", GitHub issues #3-#8) — a second
-Kasm workspace image (`docker/kasm-workspace-weasis/`) now auto-launches
-Weasis against the assigned study, displays the grading panel in its own
-window, and runs the native watermark overlay (see the layer breakdown
-below — none of that was true the last time this note was written). What's
-still missing is automation: `scripts/create-session.py` and the main
-`docker-compose.yml` only know about the Chrome workspace, so today a
-coordinator would have to register/launch the Weasis workspace by hand in
-Kasm's own admin UI rather than getting a minted link the same way. Both
-diagrams above still describe the Chrome+Orthanc flow because that's the
-only one wired into the automated per-student link path; they'll be
-redrawn once `create-session.py` can mint links for either workspace.
+The two diagrams above show the **Chrome** workspace (`ipcmc/dicom-viewer:mvp`). The
+**Weasis** workspace (`docker/kasm-workspace-weasis/`, milestone "Weasis viewer migration",
+issues #3-#8) is built and is the one the demos and live tests use (docs/DEMO.md): it
+auto-launches Weasis on the assigned study, shows the grading panel in its own window, runs
+the native watermark overlay, and follows the case pointer when the doctor moves on (#185).
+`scripts/create-session.py` mints links for either workspace: it launches whatever Kasm image
+`KASM_IMAGE_ID` names, so the session flow is the same sequence with Weasis in place of the
+Chrome kiosk (the layer breakdown below shows how the two differ on screen). A third path,
+Apache Guacamole, runs the same Weasis image as a PoC (README.md's Guacamole section,
+`scripts/provision-guacamole-session.py`); it is not drawn here.
 
 ## Display layer stack — what the user actually sees
 
@@ -169,19 +166,21 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    subgraph Weasis["Weasis flow — independent X11 windows, no compositor"]
+    subgraph Weasis["Weasis flow — independent X11 windows, picom compositor (issue #150)"]
         direction TB
         W1["Kasm session container<br/>(ipcmc/dicom-viewer-weasis, destroyed on logout)"]
         W2["KasmVNC<br/>X server + VNC-over-WebSocket"]
         W3["xfwm4 + xfce4-session<br/>(only these two XFCE pieces remain by design --<br/>panel/desktop/file-manager/terminals stripped, PR #78)"]
         W4["Weasis<br/>(Java Swing, its own native window,<br/>positioned/resized by arrange_windows.sh via wmctrl)"]
         W5["IP_CMC Grading Panel<br/>(GTK window embedding a WebKit2GTK WebView,<br/>grading_panel_window.py, loads grading-panel.html)"]
-        W6["Watermark overlay<br/>(GTK POPUP, override-redirect + keep-above + sticky,<br/>full-screen, X SHAPE extension, overlay.py)<br/>redrawn AND reshaped every 1s"]
+        W6["Watermark overlay<br/>(GTK POPUP, override-redirect + keep-above + sticky,<br/>full-screen ARGB window under picom, overlay.py;<br/>X SHAPE mask only as the no-compositor fallback)<br/>redrawn every 1s"]
+        W8["picom (xrender, no effects)<br/>makes the overlay transparent;<br/>supervised by custom_startup.sh"]
         W7["watchdog.sh — relaunches the overlay<br/>within ~1s if it's ever killed"]
         W1 --> W2 --> W3
         W3 --> W4
         W3 --> W5
         W3 --> W6
+        W3 --> W8
         W7 -. supervises .-> W6
     end
 ```
@@ -195,34 +194,23 @@ repaint, invisible as a discrete event.
 
 The Weasis flow has none of that: Weasis, the grading panel, and the
 watermark overlay are three **separate X11 clients**, stacked and
-arbitrated by `xfwm4` with **no compositor running** (see `overlay.py`'s
-own header comment — that's a deliberate choice, since CSS-style alpha
-blending has no real equivalent without one). Overlay transparency and
-click-through are instead implemented with the X **Shape** extension:
-only the actual glyph pixels are part of the watermark window at all, and
-that shape is fully recomputed from scratch every second (new timestamp,
-new rendered glyphs), on a window sized to the whole screen and always on
-top of everything else.
+arbitrated by `xfwm4`.
 
-**This is the mechanism behind the screen flash reported when the Weasis
-workspace is enabled, and not the Chrome one**: recombining the shape of a
-full-screen, always-on-top window forces the X server to treat whatever
-the *previous* second's shape covered — and the *new* second's shape no
-longer covers — as newly exposed, and Weasis (a Java Swing application,
-running with no compositor to paper over partial repaints) has to redraw
-that exposed region itself. A visible flash is that redraw handshake
-between two independent, uncomposited X11 clients, playing out once a
-second. The Chrome flow has no analogous moment, structurally: there's
-only one compositor, and it never needs to ask a *different process* to
-redraw anything.
-
-**Not yet fixed** — this is a diagnosis, not a patch. The lowest-risk fix
-that hasn't been tried yet: compute the watermark's Shape region once
-(sized generously enough to cover any digit's glyph variation) instead of
-recombining it every second, and only repaint pixel content inside that
-fixed shape on each tick — this removes the once-a-second exposure churn
-entirely without changing the forensic per-second timestamp requirement
-(CLAUDE.md) at all.
+**Screen flash (issue #150) — diagnosed, then fixed.** The overlay used to rely on
+the X **Shape** extension alone (no compositor ran): only the glyph pixels were part
+of the watermark window, and that shape was recomputed every second on a full-screen,
+always-on-top window. Each change made the X server treat the area the old shape had
+covered as newly exposed, and Weasis (Java Swing, nothing to paper over partial
+repaints) redrew it: a visible flash once a second, absent in the Chrome flow, which
+has a single compositor. The fix (PR #155) runs **picom** in the Weasis image, with
+every effect off so the radiology image is never altered (`picom.conf`), and makes
+the overlay a genuinely transparent ARGB window; nothing is reshaped any more. If
+picom is not running, `overlay.py` falls back to the Shape mask, so a dead
+compositor never turns the viewer black; the tile density is the same in both modes
+(`WATERMARK_TILES_PER_SCREEN`, default 3 per screen, which also keeps the fallback
+shape small). Measured flashes per 3 minutes in live sessions: 7 with
+the per-second shape, 0 with picom (CHANGELOG.md). `scripts/test-overlay-compositor.sh`
+and `scripts/test-overlay-shape.sh` pin both modes in CI.
 
 **Visual regression testing does not catch this, structurally, for three
 independent reasons** (`docker/viewer/tests/test_visual_regression.py`,
