@@ -23,6 +23,10 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Guard test for the degraded-mode suite (issue #115).** `scripts/test-degraded-modes.sh --preflight` runs only the
+  safety guard (exit 0 clear, 2 when any `ipcmc-*` container exists) and stops before creating `.env` or touching
+  Docker; `scripts/test-degraded-modes.bats` pins it with a stubbed `docker` and runs in `test-shell-scripts.sh`.
+  Ported from `docs/115-degraded-modes` (commit ab26269), which #219 and #229 were merged without.
 - **Degraded-mode scenario 7 now recreates the stack instead of restarting it (issue #238 point G, review of #257).**
   `docker compose restart` keeps each container's filesystem, so it could not show that progress lives on the
   `grading-db` volume. Scenario 7 runs `up -d --force-recreate`, checks the grading-api container id changed, that the
