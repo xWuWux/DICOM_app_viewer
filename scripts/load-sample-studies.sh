@@ -5,6 +5,11 @@
 # Orthanc container via its REST API. All of this is public teaching/test
 # data, already anonymized - NOT real patient data. Real ingestion still needs
 # the anonymization pipeline described in CLAUDE.md.
+#
+# The B1 PHI gate (scripts/phi-gate.py) intentionally does NOT run here:
+# these are committed PUBLIC fixtures whose values are already published
+# (CT_small even carries fake alternate IDs that the gate would refuse).
+# The gate guards not-yet-public cohorts -- the load-local-studies.sh path.
 set -euo pipefail
 
 # Pick up ORTHANC_PASSWORD from .env if it's not already in the environment,

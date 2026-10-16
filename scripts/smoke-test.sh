@@ -264,6 +264,22 @@ else
   status=1
 fi
 
+# Issue #238 point A: what this script UPLOADED must be SERVED back with
+# grouping intact (study present exactly once, series/instance counts match
+# the fixture). Explicit list = exactly what smoke loads via :8042 (CT_small;
+# MR_small.dcm is only the :8043 403-probe payload and must NOT appear).
+# Needs pydicom (scripts/tests pin). CI is a hard requirement there (the job
+# sets REQUIRE_DICOM_COVERAGE=1 and installs it); locally a visible skip.
+if python3 -c "import pydicom" 2>/dev/null; then
+  ORTHANC_URL="http://localhost:8042" ORTHANC_PASSWORD="$ORTHANC_PASSWORD" \
+    python3 scripts/verify-cases-in-orthanc.py --fixtures sample-data/CT_small.dcm || status=1
+elif [ "${REQUIRE_DICOM_COVERAGE:-0}" = "1" ]; then
+  echo "--- fixture coverage check: FAIL, pydicom not importable but REQUIRE_DICOM_COVERAGE=1 ---"
+  status=1
+else
+  echo "--- fixture coverage check SKIPPED: pydicom not importable (CI installs it; locally: scripts/tests/.venv-test/bin on PATH) ---"
+fi
+
 if [ "$status" -eq 0 ]; then
   echo "All smoke checks passed."
 else

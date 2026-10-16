@@ -6,7 +6,8 @@
 # "degraded-test").
 #
 # Rows covered here: grading-api down, SQLite locked past busy_timeout,
-# Orthanc down (through the :8043 proxy), nginx rate limit hit. The Kasm
+# Orthanc down (through the :8043 proxy), nginx rate limit hit, and (issue
+# #238 point G) restart journeys: grading-api mid-exam, Orthanc, whole stack. The Kasm
 # startup row's fail-open assertion (#102: API failure is never reported
 # as complete) lives in docker/kasm-workspace-weasis/custom_startup.bats
 # (needs no compose); Kasm/Guacamole availability and the CE cap need
@@ -220,6 +221,94 @@ check_eq 200 "$API_ALIVE" "grading unaffected by Orthanc outage"
 "${COMPOSE[@]}" start orthanc >/dev/null 2>&1
 RECOVER=$(wait_orthanc_up)
 check_eq 200 "$RECOVER" "Orthanc recovered"
+
+# --- helpers for the restart journeys (issue #238 point G) ---------------
+# json_field <json> <python expression over d>: one value out of a JSON body,
+# "" when the body is not JSON (a 5xx page) -- never a traceback in the log.
+json_field() {
+  python3 -c 'import json,sys
+try:
+    d = json.loads(sys.argv[1])
+    print(eval(sys.argv[2], {"d": d}))
+except Exception:
+    print("")' "$1" "$2"
+}
+mint_token() {  # mint_token <student_id> -> token ("" on failure)
+  json_field "$(curl -s -X POST http://localhost:8080/api/session -H 'Content-Type: application/json' \
+    -H "X-Coordinator-Key: ${GRADING_COORDINATOR_KEY}" \
+    -d "{\"student_id\": \"$1\", \"session_id\": \"g1\"}")" 'd["token"]'
+}
+get_case() {  # get_case <token> -> response body
+  curl -s --max-time 15 http://localhost:8080/api/case -H "X-Grading-Token: $1"
+}
+code_of_case() {  # code_of_case <token> -> HTTP status of GET /api/case
+  curl -s --max-time 15 -o /dev/null -w '%{http_code}' http://localhost:8080/api/case -H "X-Grading-Token: $1"
+}
+submit_learning() {  # submit_learning <token> <case_id> -> HTTP status
+  curl -s --max-time 15 -o /dev/null -w '%{http_code}' -X POST http://localhost:8080/api/submit \
+    -H 'Content-Type: application/json' \
+    -d "{\"token\": \"$1\", \"case_id\": $2, \"stage\": \"learning\", \"text\": \"g\"}"
+}
+
+# --- 5. grading-api restarts mid-exam (issue #238 point G) ----------------
+# The month-long course model (owner, 2026-10-14) relies on progress living
+# server-side: a grading-api restart in the middle of an exam must lose
+# nothing. A doctor answers the learning case, the container restarts, and
+# then the SAME token still works, /api/case is still at the next case, and
+# re-sending the already-answered case is refused (no duplicate, no rollback).
+echo "--- 5. grading-api restart mid-exam ---"
+G_STUDENT="DEGRADED_RESTART_$$"
+G_TOKEN=$(mint_token "$G_STUDENT")
+G_CASE1=$(json_field "$(get_case "$G_TOKEN")" 'd["case_id"]')
+G_SUBMIT=$(submit_learning "$G_TOKEN" "${G_CASE1:-0}")
+check_eq 200 "$G_SUBMIT" "learning answer recorded before the restart"
+G_BEFORE=$(get_case "$G_TOKEN")
+G_CASE2=$(json_field "$G_BEFORE" 'd["case_id"]')
+G_STAGE2=$(json_field "$G_BEFORE" 'd["stage"]')
+"${COMPOSE[@]}" restart grading-api >/dev/null 2>&1
+RECOVER=$(wait_api_up)
+check_eq 200 "$RECOVER" "grading-api back after restart"
+check_eq 200 "$(code_of_case "$G_TOKEN")" "same token still valid after restart"
+G_AFTER=$(get_case "$G_TOKEN")
+if [ -n "$G_CASE2" ] && [ "$(json_field "$G_AFTER" 'd["case_id"]')" = "$G_CASE2" ] \
+   && [ "$(json_field "$G_AFTER" 'd["stage"]')" = "$G_STAGE2" ]; then
+  pass "progress survived the restart (same stage, same case)" "stage=$G_STAGE2"
+else
+  fail "progress survived the restart (same stage, same case)" "before=$G_STAGE2/$G_CASE2 after=$(head -c 120 <<<"$G_AFTER")"
+fi
+check_eq 409 "$(submit_learning "$G_TOKEN" "${G_CASE1:-0}")" "the already-answered case is refused after restart (no duplicate)"
+
+# --- 6. Orthanc restart keeps the studies (issue #238 point G) -----------
+# Studies live on the orthanc-storage volume, not in the container: a
+# restart must serve the same instances, and the auth proxy must recover.
+echo "--- 6. Orthanc restart keeps the studies ---"
+curl -s -o /dev/null -u "orthanc:${ORTHANC_PASSWORD}" -X POST http://localhost:8042/instances \
+  --data-binary @sample-data/CT_small.dcm -H "Expect:"
+O_BEFORE=$(json_field "$(curl -s -u "orthanc:${ORTHANC_PASSWORD}" http://localhost:8042/statistics)" 'd["CountInstances"]')
+"${COMPOSE[@]}" restart orthanc >/dev/null 2>&1
+RECOVER=$(wait_orthanc_up)
+check_eq 200 "$RECOVER" "Orthanc back after restart"
+O_AFTER=$(json_field "$(curl -s -u "orthanc:${ORTHANC_PASSWORD}" http://localhost:8042/statistics)" 'd["CountInstances"]')
+if [ -n "$O_BEFORE" ] && [ "$O_BEFORE" -ge 1 ] && [ "$O_AFTER" = "$O_BEFORE" ]; then
+  pass "same instance count after restart" "$O_AFTER instance(s)"
+else
+  fail "same instance count after restart" "before=$O_BEFORE after=$O_AFTER"
+fi
+check_eq 200 "$(wait_for 200 30 http://localhost:8043/system)" "auth proxy serves Orthanc again"
+
+# --- 7. whole stack restarts (issue #238 point G) -------------------------
+# Host reboot / `docker compose restart` class: every service restarts at
+# once. The doctor from scenario 5 must be exactly where they were.
+echo "--- 7. whole stack restart ---"
+"${COMPOSE[@]}" restart >/dev/null 2>&1
+check_eq 200 "$(wait_api_up)" "grading-api back after whole-stack restart"
+check_eq 200 "$(wait_orthanc_up)" "Orthanc back after whole-stack restart"
+G_FINAL=$(get_case "$G_TOKEN")
+if [ "$(json_field "$G_FINAL" 'd["case_id"]')" = "$G_CASE2" ] && [ "$(json_field "$G_FINAL" 'd["stage"]')" = "$G_STAGE2" ]; then
+  pass "token and progress survived the whole-stack restart" "stage=$G_STAGE2"
+else
+  fail "token and progress survived the whole-stack restart" "after=$(head -c 120 <<<"$G_FINAL")"
+fi
 
 if [ "$status" -eq 0 ]; then
   echo "All degraded-mode checks passed (see docs/DEGRADED_MODES.md for the contract under test)."
