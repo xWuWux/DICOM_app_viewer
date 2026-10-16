@@ -76,6 +76,26 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   throwaway instance of the compose-pinned 26.9.1: positive match, not-loaded
   fixture fails, unreadable/UID-less fixtures fail closed naming the real
   cause, and cases mode matches again.
+- **The grading state machine got property-based tests (issue #238 point F).**
+  `docker/grading-api/tests/test_state_machine_properties.py` runs two
+  Hypothesis stateful machines (RESET off = shipped default; RESET on) that
+  drive legal/illegal action sequences against a fresh per-example SQLite
+  file and a fully controlled clock, asserting the invariants the
+  enumerative suite cannot: stage never regresses (position may rewind
+  ONLY through a sanctioned reset), /case keys stay a SUBSET of the
+  documented exposed set (so ground truth -- correct/ground_truth_category/
+  ground_truth_modifier_s -- can never leak into a case payload), the
+  exam timer exists exactly on the test stage, the view pointer survives
+  browsing and clears on every accepted submit and on reset, /orthanc-authz
+  allows only the current study during the test stage (every previously
+  seen uid 403) while browsable stages open current and pointed studies,
+  stored time_spent_seconds equals the server clock delta regardless of
+  any client-sent value (#29 end-to-end), replayed case_ids 409 with
+  progress frozen, and a finished session answers exactly
+  {"complete": true} with every submit 409 VALIDATION_STAGE_MISMATCH.
+  CI runs a derandomized, deadline-free profile (CI env var); local runs
+  explore randomly. hypothesis==6.170.0 pinned test-only.
+
 - **A client-supplied `X-Request-Id` is validated, never trusted (issue #119).** grading-api accepts it only if it
   matches `^[A-Za-z0-9._-]{1,64}$` (whole value); anything else (too long, spaces, unicode, control characters,
   CR/LF) is replaced by a server `uuid4` hex and a `request_id_rejected` line is logged with the fact only, never the
