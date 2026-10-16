@@ -472,7 +472,7 @@
         .map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`)
         .join("");
       html += `
-        <label>Kategoria Lung-RADS:</label>
+        <label for="category-input">Kategoria Lung-RADS:</label>
         <select id="category-input">${options}</select>
         <fieldset>
           <legend>Zmiana istotna klinicznie spoza płuc (modyfikator S)</legend>

@@ -32,6 +32,11 @@ POLISH = re.compile("[\u0105\u0107\u0119\u0142\u0144\u00f3\u015b\u017a\u017c\u01
 DASH = re.compile("[\u2013\u2014]")
 
 BINARY_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".pdf", ".docx", ".xlsx", ".zip", ".gz", ".ico", ".woff", ".woff2")
+# Vendored third-party assets are byte-pinned by sha256 (their vendor/README
+# carries provenance; #67 rules). Restyling them to satisfy this checker
+# would break the pin, so they are excluded -- provenance outranks style.
+VENDORED_PATHS = ("/vendor/", ".min.js")  # BOTH must match: only minified
+# assets under a vendor/ directory -- the vendor README is ours and stays checked
 PROSE_SUFFIXES = (".md", ".tex", ".txt")
 
 # Polish is product content or a historical record here (owner decision, 2026-10-09).
@@ -54,7 +59,7 @@ def tracked_files(root: Path):
     out = subprocess.run(["git", "-C", str(root), "ls-files", "-z"], capture_output=True, check=True).stdout
     for raw in out.split(b"\0"):
         name = raw.decode("utf-8", "replace")
-        if name and not name.endswith(BINARY_SUFFIXES):
+        if name and not name.endswith(BINARY_SUFFIXES) and not (all(v in name for v in VENDORED_PATHS)):
             yield name
 
 
