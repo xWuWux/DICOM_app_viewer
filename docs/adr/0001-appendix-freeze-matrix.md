@@ -94,12 +94,49 @@ are retracted in ADR 0001.
 Cleanup final state: session destroyed, both probe keys deleted through the API, `ipcmc_team`
 untouched, 0 `kasms` rows, 3 anonymous users and 41 `session_tokens` rows left behind.
 
+## Destroy and status under a scoped key (attempted 10:36-10:41, negative result)
+
+Attempted on the same node to answer two questions the freeze design still owed: what
+`get_kasm_status` answers for a session that was really destroyed, and whether `destroy_kasm`
+accepts a PAUSED session. Neither was answered, because neither call ever happened.
+
+Key: created for this run by `/api/admin/create_api_configs`, granted permission 100 (`User`),
+deleted again by `/api/admin/delete_api_configs` (200). Two sessions, both created through the
+admin `request_kasm`; one paused first, one left running. Ground truth read from Kasm's own DB and
+from `docker ps -a`, never from the API's own word.
+
+| call | Kasm's answer | ground truth at the same moment |
+|---|---|---|
+| `POST /api/public/get_kasm_status` (api_key + user_id) | 403 `API Key (name) is not authorized to impersonate a user.` | container present, `kasms.operational_status` = running |
+| `POST /api/public/destroy_kasm` (same key, same session) | 403, the same message | container present |
+| both again with permission 50 granted on top of 100 | 403, the same message | container present (one paused, one running) |
+
+Four consequences:
+
+- Permission 100 is not enough for the destroy/verify path and 50 + 100 is not either; the id of
+  the "impersonate a user" permission stays unidentified in this install.
+- A 403 is an authorization answer, not an absence answer. `end-kasm-session.py` counted it as
+  "gone or invisible to this key" and reported a verified destroy that never happened; fixed on
+  PR #251, where the measured text is quoted.
+- The two open questions stay open, and anything built on them ("destroying a frozen session
+  frees its disk") is unverified until a key that may impersonate a user exists.
+- Anonymous-user and `session_tokens` growth is unchanged by this run: sessions created here were
+  destroyed, `0` `kasms` rows left, and the measurement key is gone.
+
+Method note, because it is a repeatable mistake and worth writing down: the first version of this
+probe selected `*` from `kasms` and logged the row, which carried `docker_environment` -- VNC
+passwords and a live session JWT -- into a local log. Naming the columns IS part of redaction; a
+redacted log built on `select *` is not redaction. The committed probe names every column it reads
+and never selects `*`, and a future extension should keep it that way.
+
 ## What this step log did not capture
 
 - A loaded Weasis study (fidelity test B, and the memory of a real exam session): not run.
 - Pause survival across a Docker daemon restart or a host reboot: not run (`sudo -n` refused, needs
   the owner's go-ahead).
 - What the connect PAGE does with a paused session (browser-level behaviour, API-only here).
+- What `destroy_kasm`/`get_kasm_status` say about a destroyed or paused session to a key that may
+  impersonate its user: blocked in this install, the scoped key is refused (section above).
 - Multi-day soak (3/7 days) behind a policy TTL: not run.
 - Test A (cap counting) was not repeated; its evidence stays the 2026-10-15 run.
 
