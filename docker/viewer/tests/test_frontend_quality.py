@@ -16,8 +16,12 @@ what it SOUNDS like to a browser and to an assistive technology:
     advisory guidance; gating on them would mix a policy choice into a
     conformance gate). Explicit include-scope over the student-facing
     surface: grading-panel.html whole (the panel IS the page),
-    watermark.html #grading-panel only (the Explorer2 iframe beside it is
-    third-party markup we do not own; pixel-scope precedent: the
+    watermark.html #grading-panel + #watermark-rotator -- the forensic
+    overlay is a SIBLING of the panel there, so auditing the panel alone
+    left that page's watermark unmeasured while the very same overlay IS
+    audited on grading-panel.html; both pages now audit watermarks
+    identically (human decision via p2 review). The Explorer2 iframe
+    beside it stays out: third-party markup we do not own; pixel-scope precedent: the
     panel_locator fixture in test_visual_regression.py). The scanner is
     VENDORED (docker/viewer/tests/vendor/, sha256 + npm provenance in its
     README, #67 rules) -- never CDN-fetched at test time.
@@ -129,7 +133,7 @@ def _axe_run(page, scope):
     # document node as the context instead. Learned the empirical way.
     return page.evaluate(
         """(scope) => window.axe.run(
-            scope ? {include: [scope]} : document,
+            scope ? {include: scope} : document,
             {runOnly: {type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]}}
         )""",
         scope,
@@ -211,7 +215,12 @@ def _merge_write_baseline(request, page_path, findings):
     payload = {
         "_policy": "human-owned baseline (issue #238 E): the gate fails on NEW keys "
                    "only; regenerate ONLY via --update-a11y-baseline in a deliberate "
-                   "run and review the diff with the radiologist",
+                   "run and review the diff with the radiologist. NB keys are PER "
+                   "CELL (.wm-cell:nth-child(N) targets): moving the panel layout "
+                   "shifts cell indices, which surfaces as a RED run with mass "
+                   "new+disappeared watermark entries -- the accepted cost of "
+                   "per-cell keying (human decision), not a regression; resolve it "
+                   "with one deliberate regeneration.",
         "entries": sorted(store.values(), key=lambda e: e["key"]),
     }
     BASELINE_FILE.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -231,7 +240,8 @@ def test_no_console_errors_while_panel_renders(page, base_url, page_path):
 
 @pytest.mark.parametrize(
     "page_path,axe_scope",
-    [("watermark.html", "#grading-panel"), ("grading-panel.html", None)],
+    [("watermark.html", ["#grading-panel", "#watermark-rotator"]),
+     ("grading-panel.html", None)],
 )
 def test_axe_accessibility_baseline_gate(page, base_url, page_path, axe_scope, request):
     """Fails on violations NOT in a11y_baseline.json; disappeared baseline
@@ -245,7 +255,8 @@ def test_axe_accessibility_baseline_gate(page, base_url, page_path, axe_scope, r
     assert ours() == [], _desc(ours())  # the a11y walk itself must stay silent too
 
     update = bool(request.config.getoption("--update-a11y-baseline"))
-    table = _table_text(findings, f"axe WCAG findings -- {page_path} (scope: {axe_scope or 'whole page'})")
+    scope_label = ", ".join(axe_scope) if axe_scope else "whole page"
+    table = _table_text(findings, f"axe WCAG findings -- {page_path} (scope: {scope_label})")
     print(table)
     if update:
         # pytest -q captures stdout; keep the radiologist table as a file

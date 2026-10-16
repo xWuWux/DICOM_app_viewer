@@ -36,17 +36,26 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   panel's own origin and no uncaught page exception while the panel reaches
   its first rendered state -- gates unconditionally (the Explorer2 iframe on
   :8043 is origin-filtered out; third-party noise is not ours to gate);
-  (2) axe-core WCAG-conformance rules only (runOny the wcag tags -- NOT
+  (2) axe-core WCAG-conformance rules only (runOnly the wcag tags -- NOT
   axe's advisory best-practice set), explicit include-scope over the
-  student-facing surface: whole page for grading-panel.html, `#grading-panel`
-  only for watermark.html. BASELINE-BOUNDED per the human's decision
+  student-facing surface: whole page for grading-panel.html,
+  `#grading-panel` + `#watermark-rotator` for watermark.html.
+  BASELINE-BOUNDED per the human's decision
   (2026-10-15): measured findings are committed as a11y_baseline.json, the
   gate fails only on NEW ones, disappeared entries print, and the baseline
   groups deliberately-dim elements (forensic watermark, inactive stage
   chips) apart from genuine contrast-bug candidates for the radiologist
   review. axe-core is VENDORED -- sha256 + npm-tarball provenance in
   `docker/viewer/tests/vendor/README` (#67); the text-style checker now
-  excludes `vendor/` paths: provenance outranks style.- **API 1.4.0: study browsing in the learning and assessment stages (owner request, 2026-10-14).** New
+  excludes `vendor/` paths: provenance outranks style.
+  Both pages audit the forensic watermark identically (watermark.html's
+  overlay is a sibling of its panel, so the include scope there is
+  `#grading-panel` + `#watermark-rotator`). Baseline keys are PER CELL
+  (`.wm-cell:nth-child(N)`): a panel layout change shifts cell indices and
+  will surface as a RED run with mass new+disappeared watermark entries --
+  the accepted cost of per-cell keying (human decision), fixed by one
+  deliberate `--update-a11y-baseline` run, not a regression.
+- **API 1.4.0: study browsing in the learning and assessment stages (owner request, 2026-10-14).** New
   `GET /studies` (the studies the doctor may open: learning cases in learning, learning + assessment cases in
   assessment; titles and positions only, no ground truth or UIDs) and `POST /view` (view pointer; the current case
   clears it; 403 `VIEW_NOT_ALLOWED` outside that set and always on the test stage). `GET /case` adds `browsable` and,
