@@ -1,5 +1,5 @@
 {
-  "_policy": "human-owned baseline (issue #238 E): the gate fails on NEW keys only; regenerate ONLY via --update-a11y-baseline in a deliberate run and review the diff with the radiologist",
+  "_policy": "human-owned baseline (issue #238 E): the gate fails on NEW keys only; regenerate ONLY via --update-a11y-baseline in a deliberate run and review the diff with the radiologist. NB keys are PER CELL (.wm-cell:nth-child(N) targets): moving the panel layout shifts cell indices, which surfaces as a RED run with mass new+disappeared watermark entries -- the accepted cost of per-cell keying (human decision), not a regression; resolve it with one deliberate regeneration.",
   "entries": [
     {
       "page": "grading-panel.html",
@@ -1320,6 +1320,226 @@
       "count": 1,
       "group": "deliberate-candidate",
       "key": "grading-panel.html|test-form|color-contrast|.wm-cell:nth-child(44)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "assessment-feedback",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(12)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|assessment-feedback|color-contrast|.wm-cell:nth-child(12)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "assessment-feedback",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(15)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|assessment-feedback|color-contrast|.wm-cell:nth-child(15)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "assessment-feedback",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(9)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|assessment-feedback|color-contrast|.wm-cell:nth-child(9)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "assessment-form",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(12)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|assessment-form|color-contrast|.wm-cell:nth-child(12)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "assessment-form",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(15)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|assessment-form|color-contrast|.wm-cell:nth-child(15)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "assessment-form",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(9)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|assessment-form|color-contrast|.wm-cell:nth-child(9)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "learning-feedback",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(12)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|learning-feedback|color-contrast|.wm-cell:nth-child(12)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "learning-feedback",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(15)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|learning-feedback|color-contrast|.wm-cell:nth-child(15)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "learning-form",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(12)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|learning-form|color-contrast|.wm-cell:nth-child(12)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "learning-form",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(15)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|learning-form|color-contrast|.wm-cell:nth-child(15)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "results",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(12)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|results|color-contrast|.wm-cell:nth-child(12)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "results",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(15)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|results|color-contrast|.wm-cell:nth-child(15)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "results",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(9)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|results|color-contrast|.wm-cell:nth-child(9)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "review",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": "span:nth-child(12)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|review|color-contrast|span:nth-child(12)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "review",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": "span:nth-child(15)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|review|color-contrast|span:nth-child(15)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "review",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": "span:nth-child(9)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|review|color-contrast|span:nth-child(9)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "test-feedback",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(12)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|test-feedback|color-contrast|.wm-cell:nth-child(12)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "test-feedback",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(15)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|test-feedback|color-contrast|.wm-cell:nth-child(15)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "test-feedback",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(9)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|test-feedback|color-contrast|.wm-cell:nth-child(9)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "test-form",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(12)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|test-form|color-contrast|.wm-cell:nth-child(12)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "test-form",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(15)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|test-form|color-contrast|.wm-cell:nth-child(15)"
+    },
+    {
+      "page": "watermark.html",
+      "state": "test-form",
+      "rule": "color-contrast",
+      "impact": "serious",
+      "target": ".wm-cell:nth-child(9)",
+      "count": 1,
+      "group": "deliberate-candidate",
+      "key": "watermark.html|test-form|color-contrast|.wm-cell:nth-child(9)"
     }
   ]
 }
