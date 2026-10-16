@@ -23,6 +23,12 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Restart and recovery journeys in the degraded-mode suite (issue #238 point G).**
+  `scripts/test-degraded-modes.sh` adds three scenarios: grading-api restarts in the middle of an exam (same token
+  valid, progress unchanged, the answered case refused with 409), Orthanc restarts (same instance count, proxy back),
+  and the whole stack restarts (token and progress unchanged). Rows added to `docs/DEGRADED_MODES.md`. Also: the
+  flaky 409 auto-resync visual test now waits through `_wait_for`, which reports what the panel shows on a timeout
+  (cause of the one failure in the #254 runs still unknown).
 - **Load-time PHI assertion gate (issue #238 point B1).** Anonymisation is
   formally UPSTREAM of ingestion (owner decision 2026-10-15): this repository
   never de-identifies, it only asserts the boundary held.
