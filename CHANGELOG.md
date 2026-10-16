@@ -23,6 +23,10 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Degraded-mode scenario 7 now recreates the stack instead of restarting it (issue #238 point G, review of #257).**
+  `docker compose restart` keeps each container's filesystem, so it could not show that progress lives on the
+  `grading-db` volume. Scenario 7 runs `up -d --force-recreate`, checks the grading-api container id changed, that the
+  doctor's token and progress and Orthanc's instance count survived, and that grading-api's `/data` is a volume mount.
 - **Restart and recovery journeys in the degraded-mode suite (issue #238 point G).**
   `scripts/test-degraded-modes.sh` adds three scenarios: grading-api restarts in the middle of an exam (same token
   valid, progress unchanged, the answered case refused with 409), Orthanc restarts (same instance count, proxy back),

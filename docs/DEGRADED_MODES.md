@@ -103,7 +103,7 @@ is testable without a Kasm/Guacamole install:
 | unhealthy-but-running container (#206 class) | not tested by design - the test would only prove compose has no autoheal; documented above, recovery is the runbook's (#88) |
 | grading-api restart mid-exam (#238 G) | a doctor's learning answer recorded, `compose restart grading-api`: the same token still works, `/api/case` is at the same stage and case, re-sending the answered case gets 409 (no duplicate, no rollback) |
 | Orthanc restart (#238 G) | instance count identical before and after `compose restart orthanc`; the `:8043` proxy serves `/system` again |
-| whole-stack restart (#238 G) | `compose restart` of every service: grading-api and Orthanc healthy again, the scenario-5 doctor's token and progress unchanged |
+| whole stack recreated (#238 G) | `compose up --force-recreate` of every service (a restart would keep the container layer, so it could not prove volume persistence): the grading-api container id changes, the scenario-5 doctor's token and progress and Orthanc's instance count are unchanged, and grading-api's `/data` is a volume mount |
 | refused start on unwritable grading-db (#209) | pinned by `docker/grading-api/tests/test_config.py` (SystemExit code 2), not by this compose suite |
 
 Untested by design: Kasm/Guacamole availability and the CE cap need
