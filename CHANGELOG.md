@@ -23,6 +23,33 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Committed DICOM fixtures are now a tested boundary (issue #238 point A).**
+  `scripts/tests/test_dicom_fixtures.py` guards `sample-data/*.dcm` offline:
+  pipeline-valid identity/grouping UIDs (the study-UID rule is imported live
+  from grading-api's `cases_file.STUDY_UID_RE` and the Weasis URI builder, not
+  restated), pixel buffers consistent with declared geometry and transfer
+  syntax, and a clean run of the patient-consistency majority guards over the
+  whole committed set -- with mutated-copy negative controls (missing
+  StudyInstanceUID refused, never collapsed; one study two patients caught;
+  lying geometry caught) so the guards cannot rot vacuously.
+  `scripts/verify-cases-in-orthanc.py` gains a `--fixtures` mode answering the
+  inverse question -- is every uploaded fixture actually SERVED, exactly once
+  (#162 split fails on record count alone), with matching series/instance
+  counts -- reusing the one Orthanc client and the same counts-only output
+  policy; `scripts/smoke-test.sh` runs it over what it loads, and the CI smoke
+  job makes it unskippable (`REQUIRE_DICOM_COVERAGE=1` + pinned pydicom).
+  Existing coverage this leans on rather than rewraps:
+  `scripts/tests/test_dicom_patient_consistency.py`, the grading-api cases-file
+  tests, and the loader UID bats tests.
+  Building the fixture gate exposed that cases mode had NEVER worked against a
+  real Orthanc (fixes #249, broken since #160): `/studies/{id}/shared-tags` is
+  keyed by HEX tags ("0020,000d"), so the keyword lookup read "" for every
+  study and matched 0 -- while the unit mocks used a shape the endpoint never
+  returns. Both fetchers now read `GET /studies/{id}` -> `MainDicomTags`, and a
+  regression test forbids ever requesting shared-tags again. Verified against a
+  throwaway instance of the compose-pinned 26.9.1: positive match, not-loaded
+  fixture fails, unreadable/UID-less fixtures fail closed naming the real
+  cause, and cases mode matches again.
 - **A client-supplied `X-Request-Id` is validated, never trusted (issue #119).** grading-api accepts it only if it
   matches `^[A-Za-z0-9._-]{1,64}$` (whole value); anything else (too long, spaces, unicode, control characters,
   CR/LF) is replaced by a server `uuid4` hex and a `request_id_rejected` line is logged with the fact only, never the
