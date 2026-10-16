@@ -326,13 +326,14 @@ if [ -n "$O_BEFORE" ] && [ "$O_FINAL" = "$O_BEFORE" ]; then
 else
   fail "studies survived the whole-stack recreate" "before=$O_BEFORE after=$O_FINAL"
 fi
-# Mounts pin: /data of grading-api must be a VOLUME mount (not a bind, not
-# tmpfs, not absent) -- the configuration the recreate result depends on.
-G_DATA_MOUNT=$("$DOCKER_BIN" inspect -f '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}}{{end}}{{end}}' ipcmc-grading-api 2>/dev/null)
-if [ "$G_DATA_MOUNT" = "volume" ]; then
-  pass "grading-api /data is a volume mount" "Type=volume"
+# Mounts pin: /data of grading-api must be THE grading-db volume of this
+# project. Type alone is not enough: a tmpfs-backed named volume also reports
+# Type=volume (review of the follow-up), so the source name is pinned too.
+G_DATA_MOUNT=$("$DOCKER_BIN" inspect -f '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}} {{.Name}}{{end}}{{end}}' ipcmc-grading-api 2>/dev/null)
+if [ "$G_DATA_MOUNT" = "volume ${COMPOSE_PROJECT}_grading-db" ]; then
+  pass "grading-api /data is the grading-db volume" "$G_DATA_MOUNT"
 else
-  fail "grading-api /data is a volume mount" "Type=${G_DATA_MOUNT:-none}"
+  fail "grading-api /data is the grading-db volume" "got: ${G_DATA_MOUNT:-no /data mount}"
 fi
 
 if [ "$status" -eq 0 ]; then
