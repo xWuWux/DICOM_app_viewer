@@ -83,7 +83,8 @@ Facts the spike established (each with its source):
 ## Decision (proposal, pending live tests and owner policy)
 
 Use NATIVE Kasm lifecycle as the freeze primitive, orchestrated by the coordinator (a freeze
-subcommand next to `scripts/end-kasm-session.py`), with two tiers chosen by the live results:
+subcommand next to `scripts/create-session.py`, which is what mints and hands out the link
+today), with two tiers chosen by the live results:
 
 - tier 1, `Pause`: true 1:1 desktop return, PARTIAL GO overall (matrix below). Frozen sessions did
   not count toward the software's running-session counter in one run (A; see the licence note in
@@ -262,8 +263,12 @@ documents for the opposite direction).
 - Driver and stopped-disk status: the matrix was re-run on 2026-10-16 with a rebuilt probe (login ->
   request_kasm -> pause/resume/stop/destroy, container id read from the `kasms` table instead of the
   API, `docker stats` sampled at each state, dates read from the DB). The redacted step log of that
-  run is committed as `0001-appendix-freeze-matrix.md`; the driver script itself is still outside
-  the repository and should be committed with unit tests before anyone re-measures.
+  run is committed as `0001-appendix-freeze-matrix.md`, and the driver is now in the repository as
+  `scripts/spike/kasm-freeze-probe.py` (unit tests in `scripts/tests/test_kasm_freeze_probe.py`).
+  It is a spike tool, deliberately outside any CI job: it assumes a disposable install, talks to
+  `docker exec kasm_db`, and needs admin credentials. The pure parts it needed to get right are the
+  ones under test - the redaction, the two-shape `get_kasm_status` reader, and the `docker stats`
+  parser - because those three are where its numbers were produced or nearly leaked.
   Stopped-session disk finally has one number: `docker ps -s` on the stopped container reported a
   91.8 MB writable layer (3.44 GB virtual), one observation of an empty-desktop image.
 - Reproducibility (stated plainly, because these numbers get quoted outside this file): the
