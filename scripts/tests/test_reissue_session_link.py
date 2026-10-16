@@ -54,9 +54,17 @@ def opener_mode(mode):
             # one key, top-level, no kasm_url anywhere in it.
             return Resp({"operational_status": "paused"})
         if mode == "measured_running":
-            # And the measured running shape: kasm_url is top-level, not nested.
-            return Resp({"kasm_url": f"/#/connect/kasm/42/7/{JWT}",
-                         "operational_status": "running"})
+            # The exact shape from the #159 matrix: top-level kasm_url, state only
+            # inside the nested kasm object, plus the current_time field Kasm sends.
+            return Resp({"current_time": 1760000000,
+                         "kasm_url": f"/#/connect/kasm/42/7/{JWT}",
+                         "kasm": {"operational_status": "running"}})
+        if mode == "http_403":
+            # Measured answer for a key that may not impersonate the session's user.
+            # The body carries a JWT here on purpose, exactly as an error body can on
+            # this API, to prove the cause is named without echoing what came back.
+            raise urllib.error.HTTPError(req.full_url, 403, "forbidden", {},
+                                         io.BytesIO(json.dumps({"error_message": JWT}).encode()))
         if mode == "err_with_jwt":
             fp = io.BytesIO(json.dumps({"kasm_url": JWT, "detail": "gone"}).encode())
             raise urllib.error.HTTPError(req.full_url, 500, "err", {}, fp)
@@ -110,9 +118,11 @@ def test_answer_without_kasm_url_fails_cleanly(kasm_env, capsys):
 
 
 def test_measured_running_shape_prints_without_warning(kasm_env, capsys):
-    """The shape every public get_kasm_status response in the #159 matrix actually
-    had: kasm_url and operational_status both at the top level. State read from the
-    nested object only would have made this print a spurious unknown-state warning."""
+    """The exact shape every running/resumed public get_kasm_status in the #159 matrix
+    had: top_keys ['current_time','kasm','kasm_url'] -- link at the top level, state
+    only inside the nested kasm object. A shape lock rather than a fix check: this
+    answer was already handled before the paused fix, and pinning it stops a future
+    reader from taking the paused shape for the general one."""
     code = mod.main(["--kasm-id", "42", "--user-id", "7"], opener=opener_mode("measured_running"))
     captured = capsys.readouterr()
     assert code == 0
@@ -125,19 +135,35 @@ def test_paused_session_is_told_to_resume_not_remint(kasm_env, capsys):
     gone' would send an operator to destroy a session frozen on purpose."""
     code = mod.main(["--kasm-id", "42", "--user-id", "7"], opener=opener_mode("paused"))
     captured = capsys.readouterr()
-    assert code == 1
+    assert code == 3  # 3 = paused and resumable, 1 = nothing to re-link
     assert captured.out == ""
-    assert "paused" in captured.err
+    assert "PAUSED" in captured.err
     assert "Resume it first" in captured.err
     assert "may be gone" not in captured.err
     assert "42" in captured.err  # names the session it is talking about
     assert JWT not in captured.out + captured.err
 
 
+def test_http_403_names_the_impersonate_permission_without_echoing_the_body(kasm_env, capsys):
+    """Measured: this endpoint answers 403 "not authorized to impersonate a user" to a
+    key without that permission (granting 50 and 100 together was still not enough).
+    Shown only "HTTP 403", an operator hunts for a dead session instead of fixing the
+    key -- and the body still may never be echoed, since an error body can carry a
+    fresh kasm_url like any other answer on this API."""
+    code = mod.main(["--kasm-id", "42", "--user-id", "7"], opener=opener_mode("http_403"))
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "HTTP 403" in captured.err
+    assert "impersonate" in captured.err
+    assert JWT not in captured.out + captured.err
+
+
 def test_status_is_called_once_never_polled(kasm_env, capsys):
-    """Each get_kasm_status call mints a new session_token row and a fresh JWT (the
-    #159 matrix saw three different links from three calls on one session). Re-issue
-    therefore asks exactly once; a retry/poll loop here would mint a link per try."""
+    """Inertia guard rather than a fix check: this script already asked exactly once
+    before the paused fix, and this test exists so it never grows a retry loop. Each
+    get_kasm_status call mints a new session_token row and a fresh JWT (the #159 matrix
+    saw three different links from three calls on one session), so a poll here would
+    mint one live link per attempt."""
     calls = []
 
     def counting_opener(req, timeout=None, context=None):

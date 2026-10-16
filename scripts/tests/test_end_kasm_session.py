@@ -36,7 +36,8 @@ class Opener:
     """Fake urllib.request.urlopen for the Kasm calls: answers by path, records requests."""
 
     def __init__(self, destroy_code=200, status_mode="gone"):
-        # status_mode: gone (HTTP error), running, deleted, starting, paused
+        # status_mode: gone (HTTP 404), running, deleted, starting, paused, stopped,
+        # no_status (200 without any state), http_403, http_500
         self.requests = []
         self.destroy_code = destroy_code
         self.status_mode = status_mode
@@ -56,6 +57,15 @@ class Opener:
                 # The measured paused shape: one key, top-level, no nested kasm
                 # object and no kasm_url (issue #159 freeze matrix).
                 return Resp({"operational_status": "paused"})
+            if self.status_mode == "stopped":
+                return Resp({"kasm": {"operational_status": "stopped"}})
+            if self.status_mode == "no_status":
+                # A 200 that carries no state at either level.
+                return Resp({"current_time": 1760000000})
+            if self.status_mode in ("http_403", "http_500"):
+                code = int(self.status_mode.split("_")[1])
+                fp = io.BytesIO(json.dumps({"error_message": JWT_SENTINEL}).encode())
+                raise urllib.error.HTTPError(url, code, "err", {}, fp)
             state = {"running": "running", "deleted": "deleted", "starting": "starting"}[self.status_mode]
             return Resp({"kasm": {"operational_status": state}})
         raise AssertionError(f"unexpected url {url}")
@@ -126,6 +136,33 @@ def test_paused_session_is_never_reported_as_gone(kasm_env, capsys):
     assert "paused" in captured.err
     assert "absent" not in captured.err
     assert JWT_SENTINEL not in captured.out + captured.err
+
+
+@pytest.mark.parametrize("mode,expect_word", [
+    ("http_403", "impersonate"),
+    ("http_500", "NOT CONFIRMED"),
+    ("no_status", "NOT CONFIRMED"),
+    ("stopped", "not destroyed"),
+])
+def test_nothing_but_real_absence_counts_as_gone(kasm_env, capsys, mode, expect_word):
+    """Measured in the lab on 2026-10-16: with a key that may not impersonate the
+    session's user, destroy and status BOTH answer 403 "not authorized to impersonate a
+    user" while the container is verifiably alive (docker ps -a present, kasms row
+    running). Counting any error as "gone or invisible" therefore reported a successful
+    end for a destroy that never happened. Only 404 and an explicit deleted state may
+    say gone; everything else has to leave the operator with exit 1 and a look."""
+    opener = Opener(status_mode=mode)
+    code = mod.main(["--kasm-id", "42", "--user-id", "7"], opener=opener)
+    captured = capsys.readouterr()
+    assert code == 1, f"{mode} was accepted as a verified end"
+    assert expect_word in captured.err
+    assert JWT_SENTINEL not in captured.out + captured.err
+
+
+def test_404_still_counts_as_gone(kasm_env, capsys):
+    """The other side of that line, so the fix does not just fail everything."""
+    opener = Opener(status_mode="gone")
+    assert mod.main(["--kasm-id", "42", "--user-id", "7"], opener=opener) == 0
 
 
 def test_revoke_runs_through_the_shared_library(kasm_env, monkeypatch, capsys):

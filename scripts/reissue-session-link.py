@@ -40,7 +40,11 @@ Environment:
   TLS_CA_BUNDLE   optional CA for a self-signed Kasm (or --insecure, lab only)
 
 Exit status: 0 = fresh link printed to stdout; 1 = no link (reason on stderr,
-no secrets); 2 = usage or configuration error.
+no secrets); 2 = usage or configuration error; 3 = the session is PAUSED, so no
+link exists yet and the caller has to resume it first. 1 and 3 are kept apart on
+purpose: "gone" and "frozen" need different automated responses, and making a
+caller read stderr prose to tell them apart is how incident handling gets built
+wrong.
 
 Note: the printed link embeds a JWT -- treat /tmp/link.txt as a credential:
 0600 file or direct paste, never commit, never CI-log.
@@ -86,6 +90,15 @@ def get_status(opener, server, key, secret, kasm_id, user_id, ctx):
         with opener(req, timeout=15, context=ctx) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            # Measured on Kasm 1.19.0 CE: a key that may not impersonate the session's
+            # user gets `403 {"error_message": "API Key (name) is not authorized to
+            # impersonate a user."}` from this endpoint (permissions 50 and 100 together
+            # were still not enough). Naming that cause is the difference between an
+            # operator fixing the key and an operator hunting for a dead session.
+            raise ReissueError(f"get_kasm_status refused with HTTP {e.code}; for this endpoint "
+                               "401/403 usually means the API key may not impersonate the "
+                               "session's user_id (body not echoed)") from None
         raise ReissueError(f"get_kasm_status refused with HTTP {e.code} (body not echoed)") from None
     except urllib.error.URLError as e:
         raise ReissueError(f"get_kasm_status connection error ({getattr(e, 'reason', e)})") from None
@@ -96,19 +109,23 @@ def get_status(opener, server, key, secret, kasm_id, user_id, ctx):
 
 
 def fresh_link(status, server):
-    """-> (link or None, operational_status). Both answer shapes are read:
-    kasm_url is top-level on the measured running response and also appears
-    nested on some deployments, and operational_status likewise arrives
-    top-level for a paused session and nested otherwise. Reading only the
-    nested shape (what this function used to do) turned a paused session into
-    "answered without a kasm_url / the session may be gone", which is the wrong
-    diagnosis for a session that is frozen on purpose -- the action there is
-    resume, not re-mint or destroy. A session that is not running yet still has
-    a usable link -- Kasm shows its own starting screen -- so state is a note,
-    not an error."""
+    """-> (link or None, operational_status). Both measured answer shapes are read.
+    Running/resumed answers have top_keys ['current_time','kasm','kasm_url']: the link
+    is top-level and the state lives only inside the nested kasm object. A paused
+    answer has exactly one key, a top-level operational_status, and no kasm object and
+    no link at all (#159 freeze matrix, Kasm 1.19.0 CE).
+
+    So: link top-level first with the nested one as a fallback; state nested first,
+    because the measured running answer has no top-level state at all and an outer
+    field must never shadow the container's own state. Reading state from the nested
+    object only (what this function used to do) turned a paused session into
+    "answered without a kasm_url / the session may be gone", the wrong diagnosis for a
+    session frozen on purpose -- there the action is resume, not re-mint or destroy. A
+    session that is not running yet still has a usable link -- Kasm shows its own
+    starting screen -- so state is a note, not an error."""
     kasm = status.get("kasm") or {}
     url = status.get("kasm_url") or kasm.get("kasm_url")
-    state = status.get("operational_status") or kasm.get("operational_status") or "unknown"
+    state = kasm.get("operational_status") or status.get("operational_status") or "unknown"
     if not url:
         return None, state
     return server.rstrip("/") + url, state
@@ -146,20 +163,22 @@ def main(argv=None, opener=None):
         if note == "paused":
             # Measured: a paused session answers without any kasm_url. Saying
             # "may be gone" here would push an operator to destroy a session that
-            # is holding a student's place deliberately.
-            print(f"FAILED: session {args.kasm_id} is paused, and Kasm issues no link for a "
+            # is holding a student's place deliberately. Exit 3, not 1: a paused
+            # session is resumable, a gone one is not.
+            print(f"PAUSED: session {args.kasm_id} is paused, and Kasm issues no link for a "
                   "paused session -- there is nothing to re-issue until it runs again. Resume "
-                  "it first (Kasm admin UI does this; the API call needs a key holding that "
-                  "permission, a User-only key answers 403), then re-run this script.",
-                  file=sys.stderr)
-            return 1
+                  "it first (the Kasm admin UI does this; the API call was not verified in the "
+                  "lab, and pause/resume under a key without the matching permission answers "
+                  "403), then re-run this script.", file=sys.stderr)
+            return 3
         print(f"FAILED: get_kasm_status answered without a kasm_url "
               f"(operational_status={note!r}); the session may be gone -- end it and re-mint "
               "instead, see docs/runbooks/kasm-session-lifecycle.md", file=sys.stderr)
         return 1
     if note not in ("running", "starting"):
-        print(f"WARNING: session operational_status={note!r}; the link is printed "
-              "anyway and may not open.", file=sys.stderr)
+        print(f"WARNING: session operational_status={note!r} AND a link were returned together. "
+              "That combination was never observed in the #159 matrix (a paused session returned "
+              "no link at all), so the link is printed but may well not open.", file=sys.stderr)
     print(link)
     return 0
 

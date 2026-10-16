@@ -85,7 +85,12 @@ def kasm_api(opener, server, path, payload, ctx):
         with opener(req, timeout=30, context=ctx) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        raise EndError(f"{path}: refused with HTTP {e.code}") from None
+        err = EndError(f"{path}: refused with HTTP {e.code}")
+        # check_gone decides 404 vs 403/401 vs 5xx on the code itself, so it has to
+        # survive the re-raise. Nothing else about the response is kept: a body can
+        # carry a fresh kasm_url.
+        err.http_code = e.code
+        raise err from None
     except urllib.error.URLError as e:
         raise EndError(f"{path}: connection error ({getattr(e, 'reason', e)})") from None
     except (TimeoutError, ConnectionError, ssl.SSLError) as e:
@@ -106,32 +111,58 @@ def destroy_kasm(opener, server, key, secret, kasm_id, user_id, ctx):
 
 
 def check_gone(opener, server, key, secret, kasm_id, user_id, ctx):
-    """-> (gone: bool, detail: str). A destroyed kasm answers get_kasm_status with
-    an error; so does a scoped key that may not impersonate its user_id -- the two
-    are indistinguishable here, and the detail says "gone or invisible" instead of
-    pretending to know which one was seen."""
+    """-> (gone: bool, detail: str). True ONLY when something positively says the
+    session is not there: an HTTP 404 or an explicit deleted state.
+
+    Measured on Kasm 1.19.0 CE (lab, 2026-10-16, key created for the measurement and
+    granted permission 100 "User"): with a key that may not impersonate the session's
+    user, BOTH destroy_kasm and get_kasm_status answer
+    `403 {"error_message": "API Key (name) is not authorized to impersonate a user."}`
+    while the container is verifiably alive (docker ps -a present, kasms row running).
+    An authorization answer is therefore not an absence answer. The previous behaviour
+    folded that 403 into "gone or invisible to this key" and counted it as verified,
+    so with a scoped key the verify step did not verify anything and still reported a
+    successful end. Anything that cannot confirm (401/403, 5xx, transport errors, a 200
+    that carries no state) is now reported as NOT confirmed: the script exits 1 and the
+    operator looks at the admin UI instead of trusting a green line.
+
+    Whether Kasm answers 404 for a destroyed session was NOT measured: reaching that
+    answer needs a key holding the impersonate permission, which this lab does not have
+    (permissions 50 and 100 together still answered 403). 404 is kept as gone because
+    it is the conventional reading; everything unconfirmed errs toward exit 1.
+    """
     try:
         status = kasm_api(opener, server, "/api/public/get_kasm_status",
                           {"api_key": key, "api_key_secret": secret,
                            "kasm_id": kasm_id, "user_id": user_id}, ctx)
     except EndError as e:
-        return True, f"gone or invisible to this key: {e}"
+        code = getattr(e, "http_code", None)
+        if code == 404:
+            return True, f"gone (404): {e}"
+        if code in (401, 403):
+            return False, (f"NOT CONFIRMED, this key cannot see the session ({e}). Kasm answers "
+                           "403 when the key may not impersonate the session's user_id; the "
+                           "session may well be alive. Check the admin UI or re-run with a key "
+                           "that holds that permission.")
+        return False, f"NOT CONFIRMED, status check failed ({e}); the session may be alive, re-run"
     kasm = status.get("kasm") or {}
-    # Both answer shapes: the measured running response carries the nested kasm
-    # object, while a paused session answers with exactly one key, a top-level
-    # operational_status (issue #159 freeze matrix, Kasm 1.19.0 CE). Without this
-    # fallback a PAUSED session read as operational_status=absent and this
-    # function reported it destroyed -- while its container and its frozen state
-    # were still on disk. Freezing makes that shape ordinary rather than exotic,
-    # so the fallback is the correctness fix, not decoration.
-    state = status.get("operational_status") or kasm.get("operational_status")
-    if state in (None, "", "deleted"):
-        return True, f"operational_status={state or 'absent'}"
+    # Nested first: the measured running/resumed answer has top_keys
+    # ['current_time','kasm','kasm_url'] and carries the state only inside kasm, while
+    # the measured paused answer has exactly one key, a top-level operational_status,
+    # and no kasm object at all (#159 freeze matrix). Nested-first also means an
+    # outer wrapper field can never shadow the container's own state.
+    state = kasm.get("operational_status") or status.get("operational_status")
+    if state == "deleted":
+        return True, "operational_status=deleted"
+    if state in (None, ""):
+        return False, ("NOT CONFIRMED: the answer carries no operational_status at either level; "
+                       "destroyed and an unknown response shape look the same here")
     if state == "running":
         return False, "still running"
-    if state == "paused":
-        return False, ("still present: operational_status=paused (paused sessions answer "
-                       "without a nested kasm object and are not destroyed)")
+    if state in ("paused", "stopped"):
+        # A paused session answers without a nested kasm object, and a stopped one
+        # still keeps its container on disk (91.8 MB measured while stopped).
+        return False, f"still present: operational_status={state}, not destroyed"
     # Anything else (e.g. "starting" right after destroy) is a teardown still in
     # flight; report not-gone and let the operator re-run -- destroying an
     # already gone kasm fails loudly rather than silently.
