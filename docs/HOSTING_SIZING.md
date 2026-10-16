@@ -1,7 +1,9 @@
 # Hosting & scaling proposal (DRAFT, 2026-10-06)
 
 Status: DRAFT by Claude, needs human review. Every number marked **[PLACEHOLDER]** is a planning
-parameter, NOT a measurement. No prices are quoted: none were verified. Replace placeholders with
+parameter, NOT a measurement. One exception: the Frozen/Stopped rows in section 4 quote single local
+observations from `docs/adr/0001-kasm-session-freeze-mechanism.md` (see their Basis cells); they are
+not capacity figures either. No prices are quoted: none were verified. Replace placeholders with
 results of the load test in section 6 before any purchase.
 
 ## 1. Requirements (from owner, 2026-10-06)
@@ -33,14 +35,35 @@ results of the load test in section 6 before any purchase.
 - **Session hosts**: Kasm agents or Guacamole session containers. Only these scale with user count.
 
 ## 4. Sizing model (replace placeholders by measurements)
-Per-session cost: `C` vCPU and `R` GB RAM, plus stream bandwidth `B` Mbit/s.
+Per-session cost: `C` vCPU and `R` GiB RAM, plus stream bandwidth `B` Mbit/s. Frozen (Kasm
+`pause`) sessions hold their working set 24/7 until resumed or destroyed. What has been measured
+locally (ADR 0001, "the lab"; a one-node CE install whose sessions are limited to 2 GiB / 1 core)
+is 92 MiB in `docker stats` for an EMPTY DESKTOP with no study loaded, paired running/paused on one
+container - cgroup usage, not strict RSS, and not a capacity figure. For planning use #122 instead:
+~1.9 GiB quasi-idle and up to 3 GiB (the Kasm per-session cap) with a real CT study in Weasis, so
+**plan `R_frozen` = 3 GiB per frozen student** until a frozen session with a loaded study is
+measured. Stopped (Kasm `stop`) sessions hold writable-layer disk only (91.8 MB measured once).
+In one run, frozen sessions did not count toward the software's running-session counter; whether
+they count against the CE licence (EULA 2.2, "5 concurrent sessions") has not been read and is not
+settled by that observation. The per-user 5-record limit does not apply to this flow: every student
+link is its own anonymous Kasm user (`scripts/create-session.py:423-446`).
 Totals for N=50: vCPU = 50*C, RAM = 50*R (no RAM overcommit: sessions are long-lived), bandwidth = 50*B.
 
-| Profile | C (vCPU) | R (GB) | 50 sessions: vCPU | 50 sessions: RAM | Basis |
+| Profile | C (vCPU) | R (GiB) | 50 sessions: vCPU | 50 sessions: RAM | Basis |
 |---|---|---|---|---|---|
 | Light 2D | 2 | 3 | 100 | 150 | **[PLACEHOLDER]** |
 | MPR | 4 | 6 | 200 | 300 | **[PLACEHOLDER]** |
 | 3D volume, CPU-rendered | 8 | 12 | 400 | 600 | **[PLACEHOLDER]** |
+| Frozen session (Kasm `pause`) | 0 while frozen, back to C on resume | **3 (plan, per #122)**; 0.09 observed, empty desktop in the lab | additive, see note | additive | plan figure from #122 (~1.9 GiB idle, up to the 3 GiB Kasm cap with a real CT); observed figure is one local `docker stats` reading of an EMPTY desktop (cgroup usage, not RSS) - a loaded study while frozen is UNMEASURED (ADR 0001 test E) |
+| Stopped session (Kasm `stop`) | 0 | 0 (RAM released) | 0 | disk: 91.8 MB each (measured once) | `docker ps -s` writable layer of a stopped empty-desktop container: 91.8 MB (3.44 GB virtual), 2026-10-16 (ADR 0001) |
+
+Frozen sessions are ADDITIVE to the 50 running ones, not an alternative to them: freezing freed the
+software's running-session counter in one run but does not free host RAM, so size host RAM as
+`50*R_running + F*R_frozen` (F = number of frozen sessions, plan `R_frozen` = 3 GiB) and count the
+frozen ones in the N+1/HA rule too. Read that arithmetic before promising the feature at scale: 50
+frozen students is up to 150 GiB of RAM held for sessions nobody is watching, on top of the running
+50 - which is a licence and capacity question (EULA 2.2 unread for frozen sessions), not something
+the API behaviour settles.
 
 Mixed load (owner: mostly 2D, 3D/MPR only in some stages): total = 50 x (f2d*Light + fMPR*MPR + f3d*3D) with f2d+fMPR+f3d = 1. The fractions are UNKNOWN until the radiologist defines the stages; size for the worst realistic stage mix, not the average, because all 50 can be in the heavy stage at once.
 
