@@ -23,6 +23,32 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Load-time PHI assertion gate (issue #238 point B1).** Anonymisation is
+  formally UPSTREAM of ingestion (owner decision 2026-10-15): this repository
+  never de-identifies, it only asserts the boundary held.
+  `scripts/phi-gate.py` scans a cohort BEFORE upload and refuses files still
+  carrying direct patient identifiers (birth dates/times, other-patient-ID
+  sequences, other names, address, telephone, free-text patient/study
+  comments); institutional/staff/device tags are replacement-tolerant and only
+  noted, matching DICOM PS3.15's Basic Application Level Collection and
+  calibrated against this repo's own fixtures. `load-local-studies.sh` invokes
+  it fail-closed (no python3+pydicom -> no load), and both tolerations are
+  operator attestations with audit trails: `--allow-phi-tag TAG=REASON`
+  (reason required, echoed) and `--skip-phi-gate` (loud refusal-free skip).
+  Output is tag names, counts and one example path -- never a value: a printed
+  identifier would defeat the gate it came from. NO fail-open: files that only
+  force-parsing can read, or that no read can parse, are REFUSED -- Orthanc
+  accepts files pydicom refuses (a preamble-less DICOM with a planted birth
+  date stored HTTP 200 in review), and guessed structure cannot attest
+  anonymity. Nested data is searched to any depth: a tracked tag buried in
+  UNtracked sequences still refuses (decision (4)). PatientName/PatientID are
+  deliberately unchecked -- pseudonyms are the pipeline's own keys; do not
+  "add" them later. Public sample loading (`load-sample-studies.sh`) skips the
+  gate deliberately and says why: the committed fixtures are already published
+  and CT_small natively carries fake alternate IDs the gate would (correctly)
+  refuse.
+  File names: the gate's findings may name one example file per tag (owner decision 2026-10-16, so the
+  operator can fix the source); the upload step still prints counts only, and no tag value is ever printed.
 - **Committed DICOM fixtures are now a tested boundary (issue #238 point A).**
   `scripts/tests/test_dicom_fixtures.py` guards `sample-data/*.dcm` offline:
   pipeline-valid identity/grouping UIDs (the study-UID rule is imported live
