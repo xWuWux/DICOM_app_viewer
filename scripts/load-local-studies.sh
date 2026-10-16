@@ -4,8 +4,9 @@
 # the radiologist live outside the repository (Dokumentacja/DICOM_Images, git-
 # ignored) and must stay on this host -- nothing here talks to anything but the
 # Orthanc URL below. Unlike load-sample-studies.sh (public samples, ~10 files)
-# this handles thousands of files: it prints COUNTS only, never file names or
-# DICOM values, and keeps the Orthanc password out of every process's argv
+# this handles thousands of files: the upload step prints COUNTS only, never file
+# names or DICOM values (the PHI gate below may name example files in its findings,
+# owner decision 2026-10-16; it never prints values), and keeps the Orthanc password out of every process's argv
 # (a temporary mode-0600 curl config, removed on exit).
 #
 #   ./scripts/load-local-studies.sh Dokumentacja/DICOM_Images [--jobs N]

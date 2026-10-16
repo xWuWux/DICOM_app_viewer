@@ -47,6 +47,8 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   gate deliberately and says why: the committed fixtures are already published
   and CT_small natively carries fake alternate IDs the gate would (correctly)
   refuse.
+  File names: the gate's findings may name one example file per tag (owner decision 2026-10-16, so the
+  operator can fix the source); the upload step still prints counts only, and no tag value is ever printed.
 - **Committed DICOM fixtures are now a tested boundary (issue #238 point A).**
   `scripts/tests/test_dicom_fixtures.py` guards `sample-data/*.dcm` offline:
   pipeline-valid identity/grouping UIDs (the study-UID rule is imported live
