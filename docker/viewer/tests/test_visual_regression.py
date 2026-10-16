@@ -339,4 +339,8 @@ class TestSubmitErrorRecovery:
         # No #back-btn click anywhere above -- if onSubmit() regressed to
         # the old generic-error path (which only reaches a fresh case form
         # again via a manual #back-btn click), this would time out.
-        page.wait_for_selector("#submit-btn", timeout=15000)
+        # _wait_for, not a raw selector wait (flaky once in the #254 runs, cause unknown):
+        # after the 409 the panel re-fetches /api/case; if THAT fetch fails it shows an
+        # error screen with #retry-btn, not the form. The helper names what the panel
+        # shows on a timeout, so the next failure says which one it was.
+        _wait_for(page, "#submit-btn", "the case form after the 409 auto-resync")
