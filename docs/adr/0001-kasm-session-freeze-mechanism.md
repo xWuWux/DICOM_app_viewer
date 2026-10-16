@@ -192,6 +192,15 @@ documents for the opposite direction).
     assume programmatic key rotation or revocation on CE.
   - F also sharpens the KeyError risk noted before: `kasm_url` exists only on the public path, so
     `scripts/create-session.py:493` depends on that one endpoint keeping the field, with no guard.
+  - Owner direction, recorded 2026-10-16: the student must always have ONE link that works, even on
+    a return after three days. Because the minted link dies at ~80 h, that invariant cannot be met
+    by freezing alone - it requires re-issuing on return, which makes #185 a dependency of this
+    feature rather than an alternative to it, whichever tier is chosen. The shape that satisfies it
+    is an app-owned entry point (for example `/session/<opaque token>`) that mints or refreshes the
+    Kasm link every time it is opened, instead of handing the raw `kasm_url` to the student: the
+    student's one link then never changes, even though every Kasm URL behind it expires. The TTL
+    number itself is still open (recommendation stands at 7 days with a warning), but it is no
+    longer capped by the link lifetime.
 - Driver and stopped-disk status: the matrix was re-run on 2026-10-16 with a rebuilt probe (login ->
   request_kasm -> pause/resume/stop/destroy, container id read from the `kasms` table instead of the
   API, `docker stats` sampled at each state, dates read from the DB). The redacted step log of that
