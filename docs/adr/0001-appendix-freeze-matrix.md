@@ -20,8 +20,10 @@ EMPTY desktop and no study loaded.
 - run: 2026-10-16
 
 Single node, native dockerd under systemd on WSL2 (not Docker Desktop), ~15 GiB RAM total and
-~12 GiB available; session limits 1 core / 2 GiB. Lab left clean: 0 `kasms` rows, 0 session
-containers.
+~12 GiB available; this lab limits one session to 1 core / 2 GiB. State after every run: 0 `kasms`
+rows and 0 session containers, 1 API key (the pre-existing `ipcmc_team`, never touched). What
+`destroy_kasm` does NOT clean: 3 anonymous users and 41 `session_tokens` rows were left behind by
+three public-path sessions, and nothing observed garbage-collects them.
 
 ## Step log (2026-10-16, one session, one container throughout)
 
@@ -62,19 +64,35 @@ containers.
 Config from `group_settings`: `keepalive_expiration=3600`, `keepalive_interval=300`,
 `keepalive_expiration_action=delete`.
 
-## F, captured later the same day (public endpoint)
+## F, captured later the same day (production path, two runs at 10:34 and 10:49-10:57)
 
-Run at 10:34-10:35 with a key minted by `/api/admin/create_api_configs` and granted permission 100
-(`User`). `POST /api/public/request_kasm` returned `kasm_id`, `user_id`, `username`,
-`session_token` and `kasm_url`; the same URL (SHA-256 prefix `a799b934fc01`) was accepted by
-`get_kasm_status` before the pause and again after the resume, with `operational_status`
-`running` -> paused (HTTP 200, only `operational_status`, no `kasm` object) -> `running`, and
-`Could not find requested Kasm.` after destroy. The link's JWT expired ~80 h after creation. The
-`F: status while paused` row in the step log above is the ADMIN-path reading and is kept only as a
-record of how the earlier conclusion went wrong. Full reading in the F entry of ADR 0001.
+A key minted by `/api/admin/create_api_configs` and granted permission 100 (`User`) through
+`add_permissions_group`. `POST /api/public/request_kasm` returned `kasm_id`, `user_id`, `username`,
+`session_token` and `kasm_url`. Identities are aliased; `sha` values are SHA-256 prefixes.
 
-Cleanup: session destroyed, key `freeze-probe` disabled (`delete_api_configs` answers 500 on this
-build, so `enabled=false` was written in the database), `ipcmc_team` untouched, 0 `kasms` rows.
+```
+creation URL sha=53b858527705; URL JWT == session_token: True
+status call authenticated by that URL's JWT ALONE (no api_key, no admin token):
+  [running] 200  top_keys=['current_time','kasm','kasm_url']        kasm_url sha=5974678b40fc
+  [paused]  200  top_keys=['operational_status']  value='paused'    kasm_url absent
+  [resumed] 200  top_keys=['current_time','kasm','kasm_url']        kasm_url sha=c5c674608c10
+negative controls on the same endpoint: garbage JWT -> 401 Access Denied; no token -> 400 Invalid
+Request; api_key instead of a JWT -> 403.
+```
+
+Three consequences recorded here because the raw readings say them and prose did not: the student's
+link is a real credential (the negative controls are what make that statement worth anything); a
+PAUSED session exposes no link at all, only `operational_status: "paused"` at the top level, so a
+return has to resume before any link exists; and each status call mints a different link, so a
+status-polling loop mints one token row per poll.
+
+Also corrected during these runs: `delete_api_configs` and `update_api_configs` are NOT broken on CE.
+They failed for me because the field is spelled `api_Id` (delete) and `target_api` (update); with
+those names both returned 200. Earlier notes here and in ADR 0001 claiming "key lifecycle unusable"
+are retracted in ADR 0001.
+
+Cleanup final state: session destroyed, both probe keys deleted through the API, `ipcmc_team`
+untouched, 0 `kasms` rows, 3 anonymous users and 41 `session_tokens` rows left behind.
 
 ## What this step log did not capture
 
