@@ -47,6 +47,11 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   gate deliberately and says why: the committed fixtures are already published
   and CT_small natively carries fake alternate IDs the gate would (correctly)
   refuse.
+- **A client-supplied `X-Request-Id` is validated, never trusted (issue #119).** grading-api accepts it only if it
+  matches `^[A-Za-z0-9._-]{1,64}$` (whole value); anything else (too long, spaces, unicode, control characters,
+  CR/LF) is replaced by a server `uuid4` hex and a `request_id_rejected` line is logged with the fact only, never the
+  value. Closes the log-forging, unbounded-growth and 500-header reflection vectors found in the CR of #110. Valid
+  ids are honoured exactly as before (#72/#95 correlation unchanged).
 - **API 1.4.0: study browsing in the learning and assessment stages (owner request, 2026-10-14).** New
   `GET /studies` (the studies the doctor may open: learning cases in learning, learning + assessment cases in
   assessment; titles and positions only, no ground truth or UIDs) and `POST /view` (view pointer; the current case
