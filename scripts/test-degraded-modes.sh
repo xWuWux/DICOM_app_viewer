@@ -7,7 +7,8 @@
 #
 # Rows covered here: grading-api down, SQLite locked past busy_timeout,
 # Orthanc down (through the :8043 proxy), nginx rate limit hit, and (issue
-# #238 point G) restart journeys: grading-api mid-exam, Orthanc, whole stack. The Kasm
+# #238 point G) restart journeys: grading-api mid-exam, Orthanc, whole stack
+# recreated (force-recreate, so only volume-backed data can survive). The Kasm
 # startup row's fail-open assertion (#102: API failure is never reported
 # as complete) lives in docker/kasm-workspace-weasis/custom_startup.bats
 # (needs no compose); Kasm/Guacamole availability and the CE cap need
@@ -305,18 +306,43 @@ else
 fi
 check_eq 200 "$(wait_for 200 30 http://localhost:8043/system)" "auth proxy serves Orthanc again"
 
-# --- 7. whole stack restarts (issue #238 point G) -------------------------
-# Host reboot / `docker compose restart` class: every service restarts at
-# once. The doctor from scenario 5 must be exactly where they were.
-echo "--- 7. whole stack restart ---"
-"${COMPOSE[@]}" restart >/dev/null 2>&1
-check_eq 200 "$(wait_api_up)" "grading-api back after whole-stack restart"
-check_eq 200 "$(wait_orthanc_up)" "Orthanc back after whole-stack restart"
+# --- 7. whole stack RECREATED (issue #238 point G) ------------------------
+# Host reboot / image update class. Deliberately `up --force-recreate`, not
+# `restart`: a restart keeps each container's own filesystem, so it passes
+# even if the database were written into the container layer instead of the
+# grading-db volume (review of #257). Recreating throws every container away;
+# only what lives on a volume can survive, which is the claim under test.
+echo "--- 7. whole stack recreated ---"
+G_API_ID_BEFORE=$("$DOCKER_BIN" inspect -f '{{.Id}}' ipcmc-grading-api 2>/dev/null)
+"${COMPOSE[@]}" up -d --force-recreate --wait --wait-timeout 300 >/dev/null 2>&1
+G_API_ID_AFTER=$("$DOCKER_BIN" inspect -f '{{.Id}}' ipcmc-grading-api 2>/dev/null)
+if [ -n "$G_API_ID_AFTER" ] && [ "$G_API_ID_AFTER" != "$G_API_ID_BEFORE" ]; then
+  pass "grading-api container really recreated" "new container id"
+else
+  fail "grading-api container really recreated" "same or missing container id"
+fi
+check_eq 200 "$(wait_api_up)" "grading-api back after whole-stack recreate"
+check_eq 200 "$(wait_orthanc_up)" "Orthanc back after whole-stack recreate"
 G_FINAL=$(get_case "$G_TOKEN")
 if [ "$(json_field "$G_FINAL" 'd["case_id"]')" = "$G_CASE2" ] && [ "$(json_field "$G_FINAL" 'd["stage"]')" = "$G_STAGE2" ]; then
-  pass "token and progress survived the whole-stack restart" "stage=$G_STAGE2"
+  pass "token and progress survived the whole-stack recreate" "stage=$G_STAGE2"
 else
-  fail "token and progress survived the whole-stack restart" "after=$(head -c 120 <<<"$G_FINAL")"
+  fail "token and progress survived the whole-stack recreate" "after=$(head -c 120 <<<"$G_FINAL")"
+fi
+O_FINAL=$(json_field "$(curl -s -u "orthanc:${ORTHANC_PASSWORD}" http://localhost:8042/statistics)" 'd["CountInstances"]')
+if [ -n "$O_BEFORE" ] && [ "$O_FINAL" = "$O_BEFORE" ]; then
+  pass "studies survived the whole-stack recreate" "$O_FINAL instance(s)"
+else
+  fail "studies survived the whole-stack recreate" "before=$O_BEFORE after=$O_FINAL"
+fi
+# Mounts pin: /data of grading-api must be THE grading-db volume of this
+# project. Type alone is not enough: a tmpfs-backed named volume also reports
+# Type=volume (review of the follow-up), so the source name is pinned too.
+G_DATA_MOUNT=$("$DOCKER_BIN" inspect -f '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}} {{.Name}}{{end}}{{end}}' ipcmc-grading-api 2>/dev/null)
+if [ "$G_DATA_MOUNT" = "volume ${COMPOSE_PROJECT}_grading-db" ]; then
+  pass "grading-api /data is the grading-db volume" "$G_DATA_MOUNT"
+else
+  fail "grading-api /data is the grading-db volume" "got: ${G_DATA_MOUNT:-no /data mount}"
 fi
 
 if [ "$status" -eq 0 ]; then
