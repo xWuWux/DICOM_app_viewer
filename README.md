@@ -79,7 +79,11 @@ belongs to whatever produced the files.
    (columns `Anonim | Opis | Lung-Rads`; `--stages` maps studies to learning/assessment/test,
    default: all studies in learning, the first in assessment and test). Studies are matched to
    spreadsheet rows by their majority PatientName/PatientID; UIDs are read from the headers.
-4. **Point grading-api at it**: `GRADING_CASES_FILE=/local/cases.json` in `.env`, then start
+4. **Check what Orthanc actually serves** (optional, before handing out links):
+   `ORTHANC_PASSWORD=... python3 scripts/verify-cases-in-orthanc.py local/cases.json` --
+   counts and stage/order codes only, never a UID; duplicate study records are
+   reported as the issue #162 split signature.
+5. **Point grading-api at it**: `GRADING_CASES_FILE=/local/cases.json` in `.env`, then start
    the stack with an EMPTY `grading-db` volume (`docker compose down -v`): the file is only read while the
    cases table is empty (otherwise a `cases_file_ignored` warning is logged; change an
    answered case with `scripts/new-case-version.py`). A malformed file stops startup with a message
@@ -1225,6 +1229,8 @@ scripts/test-shell-scripts.sh         stage 4, Kasm + Guacamole launcher script 
 scripts/test-provision-guacamole-session.sh
                                        stage 4, provision-guacamole-session.py unit tests via pytest (CI)
 scripts/tests/                        test_provision_guacamole_session.py + its own requirements-dev.txt
+scripts/verify-cases-in-orthanc.py    cases-file answer-key check (operators) and --fixtures mode
+                                      (issue #238 point A) run by smoke-test.sh in stage 5
 scripts/smoke-test.sh                 stage 5, full-stack integration check (CI)
 scripts/test-guacamole-e2e.sh         full browser-driven E2E test for the Guacamole flow -- assumes the
                                        stack is already up; scripts/test-guacamole-integration.sh below
