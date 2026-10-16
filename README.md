@@ -51,6 +51,19 @@ repo is public, and the cases carry the exam's answer key, clinical reference re
 real study UIDs. Everything below stays on this host (issue #87); `Dokumentacja/DICOM_Images`,
 `Dokumentacja/Opisy_badan` and `./local/*` are git-ignored.
 
+**Anonymisation is upstream of ingestion** (owner decision 2026-10-15, issue #238
+B1). No tooling in this repository de-identifies anything, and none will: the
+received cohort must arrive already de-identified. The pipeline only ASSERTS
+that boundary held -- `scripts/load-local-studies.sh` runs `scripts/phi-gate.py`
+before uploading a single byte, and REFUSES files still carrying direct patient
+identifiers (birth dates, other-patient-ID sequences, addresses, free-text
+comments; institutional/staff tags are noted, not refused, because replacement
+is a legitimate profile choice). The gate prints tag names and counts, never
+values. Tolerating a refused tag is an operator attestation: `--allow-phi-tag
+TAG=REASON` requires a written reason and echoes it; `--skip-phi-gate` bypasses
+everything with a loud log line. Both are audit trails, not fixes -- the fix
+belongs to whatever produced the files.
+
 1. **Check consistency first** (counts only, nothing printed from the files):
    `python3 scripts/dicom-patient-consistency.py Dokumentacja/DICOM_Images`.
    Orthanc groups by PatientID, so a study whose images disagree on the patient is split
@@ -59,12 +72,18 @@ real study UIDs. Everything below stays on this host (issue #87); `Dokumentacja/
    originals are never touched) and refuses if the odd images could be somebody else's.
 2. **Load into Orthanc**: `./scripts/load-local-studies.sh Dokumentacja/DICOM_Images --skip-list local/fixed/skip.txt`
    then `./scripts/load-local-studies.sh local/fixed`. Parallel, retrying, idempotent,
-   prints counts only (a shared Docker host answered ~1% of parallel uploads with resets; re-run until `0 failed`).
+   prints counts only (a shared Docker host answered ~1% of parallel uploads with resets; re-run until `0 failed`).   The PHI gate above runs first: a refusal here means the source cohort still
+   carries identity tags -- fix it upstream, do not re-run with `--skip-phi-gate`.
+
 3. **Build the cases file**: `python3 scripts/build-cases-file.py --xlsx Dokumentacja/Opisy_badan/<file>.xlsx --dicom-dir Dokumentacja/DICOM_Images --out local/cases.json`
    (columns `Anonim | Opis | Lung-Rads`; `--stages` maps studies to learning/assessment/test,
    default: all studies in learning, the first in assessment and test). Studies are matched to
    spreadsheet rows by their majority PatientName/PatientID; UIDs are read from the headers.
-4. **Point grading-api at it**: `GRADING_CASES_FILE=/local/cases.json` in `.env`, then start
+4. **Check what Orthanc actually serves** (optional, before handing out links):
+   `ORTHANC_PASSWORD=... python3 scripts/verify-cases-in-orthanc.py local/cases.json` --
+   counts and stage/order codes only, never a UID; duplicate study records are
+   reported as the issue #162 split signature.
+5. **Point grading-api at it**: `GRADING_CASES_FILE=/local/cases.json` in `.env`, then start
    the stack with an EMPTY `grading-db` volume (`docker compose down -v`): the file is only read while the
    cases table is empty (otherwise a `cases_file_ignored` warning is logged; change an
    answered case with `scripts/new-case-version.py`). A malformed file stops startup with a message
@@ -319,7 +338,8 @@ ad hoc `HTTPException(code, "free-text string")`.
 - **Structured logging** (`docker/grading-api/app/logging_config.py`) —
   one JSON object per line, to stdout (no log-shipping agent needed).
   `RequestIdMiddleware` (`main.py`) generates or honors an incoming
-  `X-Request-Id`, echoes it in the response, and stamps it onto every log
+  `X-Request-Id` (only if it matches `^[A-Za-z0-9._-]{1,64}$`, otherwise
+  replaced by a server id, issue #119), echoes it in the response, and stamps it onto every log
   line emitted while handling that request (via a `contextvars`-based
   filter, not just baked into the formatted string — inspectable directly
   on the `LogRecord`, which is what makes it testable with pytest's
@@ -1136,6 +1156,12 @@ current number run the suite, or `pytest --collect-only -q` / `bats --count`.
   student actually *sees* (`docker/viewer/tests/test_visual_regression.py`:
   every meaningfully distinct panel state, both flows), not
   just whether the API responses are correct. Uses
+  The same harness also runs the frontend quality gates (issue #238 point
+  E): no console/page errors from the panel's own origin, and axe-core
+  (vendored, sha-pinned) reporting zero WCAG AA violations over the
+  student-facing scope -- whole page for grading-panel.html,
+  `#grading-panel` only for watermark.html (the Explorer2 iframe beside it
+  is third-party markup).
   [`pytest-playwright-visual-snapshot`](https://pypi.org/project/pytest-playwright-visual-snapshot/)
   (`pixelmatch` under the hood, the same engine Playwright's own JS visual
   comparisons use) — the open-source equivalent of what a commercial
@@ -1191,7 +1217,8 @@ docker/guacamole/postgres-init/       Guacamole's own official Apache-licensed J
 docker/guacamole/tests/               full browser-driven E2E tests (scripts/test-guacamole-e2e.sh)
 docker/guacamole-weasis/              basic-functionality-only Weasis+TigerVNC image for the Guacamole flow
                                        -- not security-hardened, see README's own Guacamole section
-docker/viewer/tests/                  visual regression tests (scripts/test-visual-regression.sh) --
+docker/viewer/tests/                  visual regression + console/axe a11y gates
+                                      (scripts/test-visual-regression.sh)
                                        __snapshots__/ (committed baselines), __snapshot_failures__/ (gitignored)
 sample-data/                          public-domain sample DICOM files
 scripts/fetch-public-samples.sh       pulls larger public teaching studies (BRAINIX) into sample-data/
@@ -1209,6 +1236,8 @@ scripts/test-shell-scripts.sh         stage 4, Kasm + Guacamole launcher script 
 scripts/test-provision-guacamole-session.sh
                                        stage 4, provision-guacamole-session.py unit tests via pytest (CI)
 scripts/tests/                        test_provision_guacamole_session.py + its own requirements-dev.txt
+scripts/verify-cases-in-orthanc.py    cases-file answer-key check (operators) and --fixtures mode
+                                      (issue #238 point A) run by smoke-test.sh in stage 5
 scripts/smoke-test.sh                 stage 5, full-stack integration check (CI)
 scripts/test-guacamole-e2e.sh         full browser-driven E2E test for the Guacamole flow -- assumes the
                                        stack is already up; scripts/test-guacamole-integration.sh below

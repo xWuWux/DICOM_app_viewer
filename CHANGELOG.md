@@ -23,6 +23,91 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Load-time PHI assertion gate (issue #238 point B1).** Anonymisation is
+  formally UPSTREAM of ingestion (owner decision 2026-10-15): this repository
+  never de-identifies, it only asserts the boundary held.
+  `scripts/phi-gate.py` scans a cohort BEFORE upload and refuses files still
+  carrying direct patient identifiers (birth dates/times, other-patient-ID
+  sequences, other names, address, telephone, free-text patient/study
+  comments); institutional/staff/device tags are replacement-tolerant and only
+  noted, matching DICOM PS3.15's Basic Application Level Collection and
+  calibrated against this repo's own fixtures. `load-local-studies.sh` invokes
+  it fail-closed (no python3+pydicom -> no load), and both tolerations are
+  operator attestations with audit trails: `--allow-phi-tag TAG=REASON`
+  (reason required, echoed) and `--skip-phi-gate` (loud refusal-free skip).
+  Output is tag names, counts and one example path -- never a value: a printed
+  identifier would defeat the gate it came from. NO fail-open: files that only
+  force-parsing can read, or that no read can parse, are REFUSED -- Orthanc
+  accepts files pydicom refuses (a preamble-less DICOM with a planted birth
+  date stored HTTP 200 in review), and guessed structure cannot attest
+  anonymity. Nested data is searched to any depth: a tracked tag buried in
+  UNtracked sequences still refuses (decision (4)). PatientName/PatientID are
+  deliberately unchecked -- pseudonyms are the pipeline's own keys; do not
+  "add" them later. Public sample loading (`load-sample-studies.sh`) skips the
+  gate deliberately and says why: the committed fixtures are already published
+  and CT_small natively carries fake alternate IDs the gate would (correctly)
+  refuse.
+  File names: the gate's findings may name one example file per tag (owner decision 2026-10-16, so the
+  operator can fix the source); the upload step still prints counts only, and no tag value is ever printed.
+- **Committed DICOM fixtures are now a tested boundary (issue #238 point A).**
+  `scripts/tests/test_dicom_fixtures.py` guards `sample-data/*.dcm` offline:
+  pipeline-valid identity/grouping UIDs (the study-UID rule is imported live
+  from grading-api's `cases_file.STUDY_UID_RE` and the Weasis URI builder, not
+  restated), pixel buffers consistent with declared geometry and transfer
+  syntax, and a clean run of the patient-consistency majority guards over the
+  whole committed set -- with mutated-copy negative controls (missing
+  StudyInstanceUID refused, never collapsed; one study two patients caught;
+  lying geometry caught) so the guards cannot rot vacuously.
+  `scripts/verify-cases-in-orthanc.py` gains a `--fixtures` mode answering the
+  inverse question -- is every uploaded fixture actually SERVED, exactly once
+  (#162 split fails on record count alone), with matching series/instance
+  counts -- reusing the one Orthanc client and the same counts-only output
+  policy; `scripts/smoke-test.sh` runs it over what it loads, and the CI smoke
+  job makes it unskippable (`REQUIRE_DICOM_COVERAGE=1` + pinned pydicom).
+  Existing coverage this leans on rather than rewraps:
+  `scripts/tests/test_dicom_patient_consistency.py`, the grading-api cases-file
+  tests, and the loader UID bats tests.
+  Building the fixture gate exposed that cases mode had NEVER worked against a
+  real Orthanc (fixes #249, broken since #160): `/studies/{id}/shared-tags` is
+  keyed by HEX tags ("0020,000d"), so the keyword lookup read "" for every
+  study and matched 0 -- while the unit mocks used a shape the endpoint never
+  returns. Both fetchers now read `GET /studies/{id}` -> `MainDicomTags`, and a
+  regression test forbids ever requesting shared-tags again. Verified against a
+  throwaway instance of the compose-pinned 26.9.1: positive match, not-loaded
+  fixture fails, unreadable/UID-less fixtures fail closed naming the real
+  cause, and cases mode matches again.
+- **A client-supplied `X-Request-Id` is validated, never trusted (issue #119).** grading-api accepts it only if it
+  matches `^[A-Za-z0-9._-]{1,64}$` (whole value); anything else (too long, spaces, unicode, control characters,
+  CR/LF) is replaced by a server `uuid4` hex and a `request_id_rejected` line is logged with the fact only, never the
+  value. Closes the log-forging, unbounded-growth and 500-header reflection vectors found in the CR of #110. Valid
+  ids are honoured exactly as before (#72/#95 correlation unchanged).
+
+- **Frontend quality gates on both panel pages (issue #238 point E).**
+  `docker/viewer/tests/test_frontend_quality.py` joins the visual-regression
+  harness (same stack, same Playwright image, run by
+  `scripts/test-visual-regression.sh`): (1) no `console.error` from the
+  panel's own origin and no uncaught page exception while the panel reaches
+  its first rendered state -- gates unconditionally (the Explorer2 iframe on
+  :8043 is origin-filtered out; third-party noise is not ours to gate);
+  (2) axe-core WCAG-conformance rules only (runOnly the wcag tags -- NOT
+  axe's advisory best-practice set), explicit include-scope over the
+  student-facing surface: whole page for grading-panel.html,
+  `#grading-panel` + `#watermark-rotator` for watermark.html.
+  BASELINE-BOUNDED per the human's decision
+  (2026-10-15): measured findings are committed as a11y_baseline.json, the
+  gate fails only on NEW ones, disappeared entries print, and the baseline
+  groups deliberately-dim elements (forensic watermark, inactive stage
+  chips) apart from genuine contrast-bug candidates for the radiologist
+  review. axe-core is VENDORED -- sha256 + npm-tarball provenance in
+  `docker/viewer/tests/vendor/README` (#67); the text-style checker now
+  excludes `vendor/` paths: provenance outranks style.
+  Both pages audit the forensic watermark identically (watermark.html's
+  overlay is a sibling of its panel, so the include scope there is
+  `#grading-panel` + `#watermark-rotator`). Baseline keys are PER CELL
+  (`.wm-cell:nth-child(N)`): a panel layout change shifts cell indices and
+  will surface as a RED run with mass new+disappeared watermark entries --
+  the accepted cost of per-cell keying (human decision), fixed by one
+  deliberate `--update-a11y-baseline` run, not a regression.
 - **API 1.4.0: study browsing in the learning and assessment stages (owner request, 2026-10-14).** New
   `GET /studies` (the studies the doctor may open: learning cases in learning, learning + assessment cases in
   assessment; titles and positions only, no ground truth or UIDs) and `POST /view` (view pointer; the current case
