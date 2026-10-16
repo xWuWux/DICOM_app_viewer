@@ -39,7 +39,7 @@ import sqlite3
 import tempfile
 
 from fastapi.testclient import TestClient
-from hypothesis import HealthCheck, settings
+from hypothesis import settings
 from hypothesis import strategies as st
 from hypothesis.stateful import Bundle, RuleBasedStateMachine, initialize, invariant, rule
 
@@ -62,7 +62,6 @@ else:
         deadline=None,
         max_examples=50,
         stateful_step_count=20,
-        suppress_health_check=[HealthCheck.too_slow],
     )
     settings.load_profile("dev")
 
