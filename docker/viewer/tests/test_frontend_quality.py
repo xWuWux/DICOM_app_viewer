@@ -88,7 +88,11 @@ def _is_deliberate(node):
     review."""
     target = _target_str(node)
     html = node.get("html") or ""
-    if "watermark" in target or "watermark" in html[:200]:
+    # NB "wm-cell" (the overlay span's class) must be checked in the node
+    # HTML, not only the target: measured in run 1, the review state makes
+    # axe resolve the SAME cells as bare span:nth-child(N) (13 of 132
+    # entries), so a target-only match mislabelled them ui-bug-candidate.
+    if "watermark" in target or "wm-cell" in html[:200] or "watermark" in html[:200]:
         return True
     return "stage-chip" in html and "current" not in html and "current" not in target
 
@@ -125,8 +129,7 @@ def _axe_run(page, scope):
     # document node as the context instead. Learned the empirical way.
     return page.evaluate(
         """(scope) => window.axe.run(
-            scope ? {include: [scope], exclude: ["#watermark-rotator"]}
-                  : {exclude: ["#watermark-rotator"]},
+            scope ? {include: [scope]} : document,
             {runOnly: {type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]}}
         )""",
         scope,
