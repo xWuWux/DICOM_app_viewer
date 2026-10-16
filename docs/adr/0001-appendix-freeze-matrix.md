@@ -62,14 +62,26 @@ containers.
 Config from `group_settings`: `keepalive_expiration=3600`, `keepalive_interval=300`,
 `keepalive_expiration_action=delete`.
 
-## What this run did NOT capture
+## F, captured later the same day (public endpoint)
+
+Run at 10:34-10:35 with a key minted by `/api/admin/create_api_configs` and granted permission 100
+(`User`). `POST /api/public/request_kasm` returned `kasm_id`, `user_id`, `username`,
+`session_token` and `kasm_url`; the same URL (SHA-256 prefix `a799b934fc01`) was accepted by
+`get_kasm_status` before the pause and again after the resume, with `operational_status`
+`running` -> paused (HTTP 200, only `operational_status`, no `kasm` object) -> `running`, and
+`Could not find requested Kasm.` after destroy. The link's JWT expired ~80 h after creation. The
+`F: status while paused` row in the step log above is the ADMIN-path reading and is kept only as a
+record of how the earlier conclusion went wrong. Full reading in the F entry of ADR 0001.
+
+Cleanup: session destroyed, key `freeze-probe` disabled (`delete_api_configs` answers 500 on this
+build, so `enabled=false` was written in the database), `ipcmc_team` untouched, 0 `kasms` rows.
+
+## What this step log did not capture
 
 - A loaded Weasis study (fidelity test B, and the memory of a real exam session): not run.
 - Pause survival across a Docker daemon restart or a host reboot: not run (`sudo -n` refused, needs
   the owner's go-ahead).
-- The student link (F): admin `request_kasm` returns only `kasm_id` and `status`; the link comes from
-  the PUBLIC `request_kasm`, which needs an `api_key`/`api_key_secret` pair - link stability across
-  pause/resume stays unmeasured.
+- What the connect PAGE does with a paused session (browser-level behaviour, API-only here).
 - Multi-day soak (3/7 days) behind a policy TTL: not run.
 - Test A (cap counting) was not repeated; its evidence stays the 2026-10-15 run.
 

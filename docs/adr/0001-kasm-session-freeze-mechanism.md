@@ -10,11 +10,13 @@ freeze policy step (TTL, identity, timer) still gate any implementation.
 Where the measurements come from ("the lab" below): a single-node Kasm 1.19.0 CE install on a
 developer workstation (native dockerd 29.8.1 under systemd on WSL2, Ubuntu 26.04, host kernel
 `microsoft-standard-WSL2`; NOT Docker Desktop). It is the same machine as the `docker pause` /
-`docker checkpoint` experiments in item 5, and every matrix run was API-driven against it on
-2026-10-15. Consequence: results that live in Kasm's database, API and licence counting transfer
-to any single-server CE deployment; results that depend on host hardware, a reboot, multiple
-agents or production resource limits do not. Several sub-results are single-run observations with
-no committed log (see Reproducibility below).
+`docker checkpoint` experiments in item 5, and every matrix run was API-driven against it: the
+first on 2026-10-15, the re-run on 2026-10-16. Consequence: results that live in Kasm's database,
+API and licence counting transfer to any single-server CE deployment; results that depend on host
+hardware, a reboot, multiple agents or production resource limits do not. The 2026-10-15 run left
+no committed log at all; the 2026-10-16 re-run's redacted step log is committed as
+`0001-appendix-freeze-matrix.md`. Several sub-results are still single-run observations of one
+session (see Reproducibility below).
 
 It was installed from the pinned 1.19.0 release with `sudo bash kasm_release/install.sh -e -p
 localhost -L 8443`; that deviates from `docs/LOCAL_SETUP_GUIDE.md:123` (default port 443, no `-e
@@ -160,43 +162,56 @@ documents for the opposite direction).
     0.00%), 158.8 MiB 6 s after `resume_kasm`. Same `container_id` before and after the pause, so
     this is the comparison the first run never made: pause holds the working set (it does not swap
     it out) and costs no CPU, and memory grows again after resume. Still no loaded study.
-  - F. link lifecycle: NOT VERIFIED. The check reported `url same after pause/resume: True`, but the
-    comparison was `None == None`: `get_kasm_status` returned no `kasm_url` in any of these
-    responses
-    and no link was opened after a resume. What the run did show is that a paused session reports no
-    `container_id` and an empty status to the manager, so a link validity check must either resume
-    first or read the database. The 2026-10-16 re-run went further: `request_kasm` on the ADMIN path
-    returns only `kasm_id` and `status` - it has no `kasm_url` field at all - while
-    `scripts/create-session.py:493` builds the student link from `created['kasm_url']`, i.e. from the
-    PUBLIC `request_kasm`, which authenticates with an `api_key`/`api_key_secret` pair. API-key
-    management was not reachable through the admin paths tried here (`get_api_keys`,
-    `create_user_api_key`, `create_api_key` all 404), so closing F needs a key pair minted in the
-    admin UI and the comparison re-run against the public endpoint, then the link actually
-    opened. The
-    corollary matters more than the freeze question: if the public `request_kasm` ever answers
-    without
-    `kasm_url`, `create-session.py:493` raises KeyError - that field is load-bearing and unverified.
+  - F. link lifecycle: MEASURED 2026-10-16 on the correct path. `POST /api/public/request_kasm`
+    with an `api_key`/`api_key_secret` pair returns `kasm_id`, `user_id`, `username`,
+    `session_token` and `kasm_url` = `/#/connect/kasm/<kasm_id>/<user_id>/<JWT>`. The ADMIN
+    `request_kasm` that the earlier runs used returns only `kasm_id`/`status` and has no
+    `kasm_url` field at all, which is exactly why F had looked unmeasurable (`None == None`).
+    Keys are minted by `POST /api/admin/create_api_configs` (username and token in the JSON body,
+    not in headers) plus `POST /api/admin/add_permissions_group` with permission id 100 (`User`);
+    the 404/400 trail of the two previous days was the wrong URL prefix plus credentials in
+    headers. Freeze answer: the same URL (compared by SHA-256 prefix) was accepted before the
+    pause and after the resume, and `get_kasm_status` under that link went `running` -> paused ->
+    `running`, where the paused reading is HTTP 200 carrying only `operational_status` and no
+    `kasm` object; after `destroy_kasm` the same link answers `Could not find requested Kasm.`
+    So tier 1 does NOT invalidate the student link and #185 is not needed to re-issue one across
+    a freeze.
+  - F breaks one assumption and leaves one question. The assumption: the link's JWT expires about
+    80 hours after creation, so a TTL longer than ~3 days hands a dead link to a student whose
+    session did survive - re-issuing on return is required by the LINK, not by the freeze, and it
+    caps option A/B/C of the TTL decision, not just tier choice. The open question is UI-level:
+    this was an API reading, and what the connect page does with a `paused` session (auto-resume,
+    spinner, or error) is unverified and is the same UI question as test B.
+  - F side findings, both architecture-relevant. An API key holding only `User` cannot freeze a
+    session created without a real user: `pause_kasm` under that key answers 403 `API Key
+    (...) is not authorized to impersonate a user`, so freeze calls need an admin JWT, or a key
+    with an extra grant (which permission exactly is untested). And the key lifecycle is not
+    usable from the 1.19.0 CE API: `delete_api_configs` answered 500 for every payload shape
+    tried and `update_api_configs` always answered `Missing Target Api or api_id`, so the probe
+    key had to be disabled by writing `enabled=false` in the database. Nothing in the product may
+    assume programmatic key rotation or revocation on CE.
+  - F also sharpens the KeyError risk noted before: `kasm_url` exists only on the public path, so
+    `scripts/create-session.py:493` depends on that one endpoint keeping the field, with no guard.
 - Driver and stopped-disk status: the matrix was re-run on 2026-10-16 with a rebuilt probe (login ->
   request_kasm -> pause/resume/stop/destroy, container id read from the `kasms` table instead of the
-  API, `docker stats` sampled at each state, dates read from the DB). The probe still lives outside
-  the repository; commit it with unit tests plus a redacted log before these numbers get quoted.
+  API, `docker stats` sampled at each state, dates read from the DB). The redacted step log of that
+  run is committed as `0001-appendix-freeze-matrix.md`; the driver script itself is still outside
+  the repository and should be committed with unit tests before anyone re-measures.
   Stopped-session disk finally has one number: `docker ps -s` on the stopped container reported a
   91.8 MB writable layer (3.44 GB virtual), one observation of an empty-desktop image.
-- Reproducibility (stated plainly, because these numbers get quoted outside this file): the API
-  probe driver and its raw output lived under `/tmp` during the run, were never committed, and no
-  longer exist. As of 2026-10-16 the matrix is reproducible only by hand, from the text above (and
-  an older, partly wrong copy of it in the #159 comment). The evidence base is thin: E is two
-  unrelated single readings, D is an 80 s proxy, F was not measured at all. Before a capacity or
-  licence decision quotes these figures, rebuild the probe driver (suggested
-  `scripts/spike/kasm_freeze_probe.py`, credentials from the environment only, as
-  `scripts/end-kasm-session.py` already does), re-run A, D, E and F so that F compares two real
-  `kasm_url` values and E takes a paired running/paused reading of one session, and commit the
-  driver plus a redacted results file. A re-run needs admin credentials, which here meant
+- Reproducibility (stated plainly, because these numbers get quoted outside this file): the
+  2026-10-15 driver and its raw output lived under `/tmp`, were never committed, and no longer
+  exist; that day's figures survive only as the prose above. The 2026-10-16 re-run left a committed
+  redacted log (`0001-appendix-freeze-matrix.md`), so D, E and F are now traceable to a machine
+  record: D and E are paired readings of one container, F compares real `kasm_url` values. What is
+  still thin is depth, not traceability: one session each, empty desktop, an 80 s idleness proxy,
+  no loaded study, no multi-day soak, and A is not re-measured. Re-running needs admin credentials,
+  which here meant
   overwriting the password hash in the Kasm database through `docker exec kasm_db` - a
   disposable-lab shortcut that must not be repeated on any host with real users or real data.
 
 Not covered: fidelity test B with a loaded Weasis study (needs interactive session automation),
 pause survival across a Docker daemon restart or a full host reboot (needs `sudo systemctl restart
-docker` here; the `sudo -n` variant was refused), a link check that actually opens the resumed
-session (F), multi-day soak runs, and behavior of Kasm Enterprise-only features (not applicable;
-deployment is CE).
+docker` here; the `sudo -n` variant was refused), a browser-level check of what the connect page
+shows for a paused and for a resumed session (F covered the API only), multi-day soak runs, and
+behavior of Kasm Enterprise-only features (not applicable; deployment is CE).
