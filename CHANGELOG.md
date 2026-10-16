@@ -23,16 +23,16 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Guard test for the degraded-mode suite (issue #115).** `scripts/test-degraded-modes.sh --preflight` runs only the
+  safety guard (exit 0 clear, 2 when any `ipcmc-*` container exists) and stops before creating `.env` or touching
+  Docker; `scripts/test-degraded-modes.bats` pins it with a stubbed `docker` and runs in `test-shell-scripts.sh`.
+  Ported from `docs/115-degraded-modes` (commit ab26269), which #219 and #229 were merged without.
 - **Degraded-mode scenario 7 now recreates the stack instead of restarting it (issue #238 point G, review of #257).**
   `docker compose restart` keeps each container's filesystem, so it could not show that progress lives on the
   `grading-db` volume. Scenario 7 runs `up -d --force-recreate`, checks the grading-api container id changed, that the
   doctor's token and progress and Orthanc's instance count survived, and that grading-api's `/data` is the
   `grading-db` volume (type and name: a tmpfs-backed named volume would also report type `volume`).
-
-- **Guard test for the degraded-mode suite (issue #115).** `scripts/test-degraded-modes.sh --preflight` runs only the
-  safety guard (exit 0 clear, 2 when any `ipcmc-*` container exists) and stops before creating `.env` or touching
-  Docker; `scripts/test-degraded-modes.bats` pins it with a stubbed `docker` and runs in `test-shell-scripts.sh`.
-  Ported from `docs/115-degraded-modes` (commit ab26269), which #219 and #229 were merged without.- **Restart and recovery journeys in the degraded-mode suite (issue #238 point G).**
+- **Restart and recovery journeys in the degraded-mode suite (issue #238 point G).**
   `scripts/test-degraded-modes.sh` adds three scenarios: grading-api restarts in the middle of an exam (same token
   valid, progress unchanged, the answered case refused with 409), Orthanc restarts (same instance count, proxy back),
   and the whole stack restarts (token and progress unchanged). Rows added to `docs/DEGRADED_MODES.md`. Also: the
