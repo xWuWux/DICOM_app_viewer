@@ -36,7 +36,7 @@ class Opener:
     """Fake urllib.request.urlopen for the Kasm calls: answers by path, records requests."""
 
     def __init__(self, destroy_code=200, status_mode="gone"):
-        # status_mode: gone (HTTP error), running, deleted, starting
+        # status_mode: gone (HTTP error), running, deleted, starting, paused
         self.requests = []
         self.destroy_code = destroy_code
         self.status_mode = status_mode
@@ -52,6 +52,10 @@ class Opener:
         if "get_kasm_status" in url:
             if self.status_mode == "gone":
                 raise urllib.error.HTTPError(url, 404, "gone", {}, io.BytesIO(b"{}"))
+            if self.status_mode == "paused":
+                # The measured paused shape: one key, top-level, no nested kasm
+                # object and no kasm_url (issue #159 freeze matrix).
+                return Resp({"operational_status": "paused"})
             state = {"running": "running", "deleted": "deleted", "starting": "starting"}[self.status_mode]
             return Resp({"kasm": {"operational_status": state}})
         raise AssertionError(f"unexpected url {url}")
@@ -108,6 +112,20 @@ def test_starting_after_destroy_counts_as_not_gone(kasm_env, capsys):
     code = mod.main(["--kasm-id", "42", "--user-id", "7"], opener=opener)
     assert code == 1
     assert "starting" in capsys.readouterr().err
+
+
+def test_paused_session_is_never_reported_as_gone(kasm_env, capsys):
+    """The freeze mechanism makes paused the normal resting state, and a paused
+    session answers get_kasm_status with a top-level operational_status only. Read
+    through the nested shape alone it looked absent, which this script would have
+    reported as a successful destroy while the frozen session still sat on disk."""
+    opener = Opener(status_mode="paused")
+    code = mod.main(["--kasm-id", "42", "--user-id", "7"], opener=opener)
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "paused" in captured.err
+    assert "absent" not in captured.err
+    assert JWT_SENTINEL not in captured.out + captured.err
 
 
 def test_revoke_runs_through_the_shared_library(kasm_env, monkeypatch, capsys):

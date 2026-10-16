@@ -10,6 +10,17 @@ container itself is usually still running; the public get_kasm_status API
 returns a fresh kasm_url (a new session_token_id) for it, given the API key.
 This script is the coordinator-only wrapper around exactly that call.
 
+Two measured facts about that call (Kasm 1.19.0 CE, the issue #159 freeze
+matrix; the step log is the ADR 0001 appendix once PR #252 merges), both
+encoded below and pinned by tests:
+  - It answers in two different shapes. Running/starting: kasm_url at the TOP
+    LEVEL plus a nested kasm object. Paused: exactly one key, a top-level
+    operational_status, and no link at all. So "no link" is NOT the same
+    diagnosis as "session gone" -- for a frozen session it means resume first.
+  - Every call mints a new session_token row and a fresh JWT. That is why this
+    script calls status exactly once per open and never retries: a polling loop
+    would leave one minted link per attempt behind.
+
 Security rules this script exists to enforce (issue #159's acceptance
 criteria):
   - The fresh link goes to STDOUT and nowhere else. stdout is the operator's
@@ -85,16 +96,22 @@ def get_status(opener, server, key, secret, kasm_id, user_id, ctx):
 
 
 def fresh_link(status, server):
-    """-> (link or None, note). kasm_url is nested under 'kasm' on this
-    deployment; a top-level kasm_url is also accepted rather than guessed
-    away. A session that is not running yet still has a usable link -- Kasm
-    shows its own starting screen -- so state goes to the note, not an error."""
+    """-> (link or None, operational_status). Both answer shapes are read:
+    kasm_url is top-level on the measured running response and also appears
+    nested on some deployments, and operational_status likewise arrives
+    top-level for a paused session and nested otherwise. Reading only the
+    nested shape (what this function used to do) turned a paused session into
+    "answered without a kasm_url / the session may be gone", which is the wrong
+    diagnosis for a session that is frozen on purpose -- the action there is
+    resume, not re-mint or destroy. A session that is not running yet still has
+    a usable link -- Kasm shows its own starting screen -- so state is a note,
+    not an error."""
     kasm = status.get("kasm") or {}
-    url = kasm.get("kasm_url") or status.get("kasm_url")
+    url = status.get("kasm_url") or kasm.get("kasm_url")
+    state = status.get("operational_status") or kasm.get("operational_status") or "unknown"
     if not url:
-        return None, "get_kasm_status answered without a kasm_url"
-    note = kasm.get("operational_status") or "unknown"
-    return server.rstrip("/") + url, note
+        return None, state
+    return server.rstrip("/") + url, state
 
 
 def main(argv=None, opener=None):
@@ -126,8 +143,19 @@ def main(argv=None, opener=None):
 
     link, note = fresh_link(status, server)
     if link is None:
-        print(f"FAILED: {note} (the session may be gone; end and re-mint instead, "
-              "see docs/runbooks/kasm-session-lifecycle.md)", file=sys.stderr)
+        if note == "paused":
+            # Measured: a paused session answers without any kasm_url. Saying
+            # "may be gone" here would push an operator to destroy a session that
+            # is holding a student's place deliberately.
+            print(f"FAILED: session {args.kasm_id} is paused, and Kasm issues no link for a "
+                  "paused session -- there is nothing to re-issue until it runs again. Resume "
+                  "it first (Kasm admin UI does this; the API call needs a key holding that "
+                  "permission, a User-only key answers 403), then re-run this script.",
+                  file=sys.stderr)
+            return 1
+        print(f"FAILED: get_kasm_status answered without a kasm_url "
+              f"(operational_status={note!r}); the session may be gone -- end it and re-mint "
+              "instead, see docs/runbooks/kasm-session-lifecycle.md", file=sys.stderr)
         return 1
     if note not in ("running", "starting"):
         print(f"WARNING: session operational_status={note!r}; the link is printed "

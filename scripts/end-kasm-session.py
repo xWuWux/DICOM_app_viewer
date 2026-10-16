@@ -117,11 +117,21 @@ def check_gone(opener, server, key, secret, kasm_id, user_id, ctx):
     except EndError as e:
         return True, f"gone or invisible to this key: {e}"
     kasm = status.get("kasm") or {}
-    state = kasm.get("operational_status")
+    # Both answer shapes: the measured running response carries the nested kasm
+    # object, while a paused session answers with exactly one key, a top-level
+    # operational_status (issue #159 freeze matrix, Kasm 1.19.0 CE). Without this
+    # fallback a PAUSED session read as operational_status=absent and this
+    # function reported it destroyed -- while its container and its frozen state
+    # were still on disk. Freezing makes that shape ordinary rather than exotic,
+    # so the fallback is the correctness fix, not decoration.
+    state = status.get("operational_status") or kasm.get("operational_status")
     if state in (None, "", "deleted"):
         return True, f"operational_status={state or 'absent'}"
     if state == "running":
         return False, "still running"
+    if state == "paused":
+        return False, ("still present: operational_status=paused (paused sessions answer "
+                       "without a nested kasm object and are not destroyed)")
     # Anything else (e.g. "starting" right after destroy) is a teardown still in
     # flight; report not-gone and let the operator re-run -- destroying an
     # already gone kasm fails loudly rather than silently.

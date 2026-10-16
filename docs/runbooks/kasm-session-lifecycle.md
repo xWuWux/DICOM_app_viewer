@@ -54,6 +54,30 @@ If the student's page loops on the login screen (the old link is dead, see #159)
 of the Kasm origin, clear the site's data, then open the freshly re-issued link. A loop will keep
 emitting roughly 17 failed requests per second from every stuck tab while it stays open.
 
+## If the session is paused
+
+Freezing (issue #159, ADR 0001) leaves a session that exists but answers `get_kasm_status` in a
+different shape from a running one. Both shapes below were measured on Kasm 1.19.0 CE, one node,
+in the #159 freeze matrix:
+
+| state | response body | link |
+|---|---|---|
+| running / starting | `kasm_url` at the top level, plus a nested `kasm` object | yes, and each call mints a new one |
+| paused | exactly one key, a top-level `operational_status` | none at all |
+
+Consequences for the two scripts, both covered by their tests:
+
+- `reissue-session-link.py` refuses on a paused session and names it as paused. Resume it first
+  (the Kasm admin UI does this; the API equivalent needs a key holding that permission, a key
+  with only the User permission answers 403), then re-run the script.
+- `end-kasm-session.py` counts a paused session as still present after a destroy, not as gone: a
+  paused container still occupies disk, so reporting it destroyed would hide exactly the residue
+  the end step exists to clear.
+
+Every `get_kasm_status` call mints a new session token row and a fresh JWT: three status calls on
+one session produced three different links. Both scripts therefore ask exactly once and never
+poll.
+
 ## Verification
 
 The end script prints one line per step and exits 0 only when every executed step succeeded:
@@ -71,8 +95,10 @@ Cross-check in the Kasm admin UI (Sessions list must not contain the kasm_id).
 
 There is none for a destroy, by design: re-create the session with
 `scripts/create-session.py` (fresh token, fresh container; grading-api keeps the student's
-recorded progress). Re-issuing a link is idempotent - every call returns a fresh link and
-invalidates the previously issued one.
+recorded progress). Re-issuing a link is idempotent in the sense that it is safe to repeat: every
+call returns a fresh link. Whether the superseded link stops working at that moment was NOT
+measured (the freeze matrix confirmed that different calls return different links, not that the
+older one dies).
 
 ## Known limitations
 
@@ -84,7 +110,11 @@ invalidates the previously issued one.
   automatic path; it neither revokes the token nor fires before the idle window.
 - Key storage and rotation is tracked by the security review (#106, #86); the key leaked on
   2026-10-07 was rotated the same day.
+- Neither script can resume a paused session. Resume is manual (admin UI) or needs a key with the
+  resume permission, and the resume API call itself was not exercised end to end.
 
-Not verified: the live run against a real Kasm instance (developer machine has no Kasm
-credentials); the scripts' logic is covered by `scripts/tests/test_end_kasm_session.py` and
-`scripts/tests/test_reissue_session_link.py`.
+Not verified: running these two scripts against a live Kasm instance (developer machine has no
+Kasm credentials); their logic is covered by `scripts/tests/test_end_kasm_session.py` and
+`scripts/tests/test_reissue_session_link.py`. The Kasm-side behaviours quoted above (the two
+answer shapes, the per-call link, the 403 on pause with a User-only key) are separate and ARE
+measured on the lab install - see the ADR 0001 appendix once PR #252 merges.
