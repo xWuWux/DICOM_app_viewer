@@ -450,12 +450,31 @@ def main():
                             label="Kasm API")
         kasm_id = created.get("kasm_id")
         user_id = created.get("user_id")
+        kasm_url = created.get("kasm_url")
         if not kasm_id:
             raise ApiError(
                 "Unexpected response from request_kasm: "
                 # Same cap as api_call's own error text: a fat 200 body must not
                 # reach a terminal / CI log / shell history in full.
                 + json.dumps(created)[:_MAX_ERROR_BODY_CHARS]
+            )
+
+        # A 200 that carries a kasm_id but no kasm_url is not a success: the
+        # session was created and already holds this run's grading token, yet
+        # there is nothing to hand to the student. Reading it as created['kasm_url']
+        # below used to raise a KeyError right there -- a traceback AFTER the
+        # session existed, and because compensate() deliberately does not revoke
+        # once Kasm has answered (a live session holds that token; see issue
+        # #104), the residue was a running session and a valid token with no
+        # link printed and no identifier on screen (issue #255). So: fail here,
+        # before the readiness polling, with the two identifiers an operator
+        # needs to end or re-link the session.
+        if not kasm_url:
+            raise ApiError(
+                f"request_kasm created a session but returned no kasm_url: kasm_id={kasm_id} "
+                f"user_id={user_id} is live and holds this session's grading token "
+                "(NOT revoked, on purpose). End that session in Kasm, or re-issue a link for it, "
+                "before retrying -- retrying as-is creates another one."
             )
 
         # The link is already usable at this point (Kasm shows its own "starting"
@@ -490,7 +509,7 @@ def main():
                   else f"  ...{status.get('operational_status', 'starting')}", file=sys.stderr)
             time.sleep(2)
 
-        link = f"{server.rstrip('/')}{created['kasm_url']}"
+        link = f"{server.rstrip('/')}{kasm_url}"
 
         print(json.dumps({
             "student_id": args.student_id,
