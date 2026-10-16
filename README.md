@@ -319,7 +319,8 @@ ad hoc `HTTPException(code, "free-text string")`.
 - **Structured logging** (`docker/grading-api/app/logging_config.py`) —
   one JSON object per line, to stdout (no log-shipping agent needed).
   `RequestIdMiddleware` (`main.py`) generates or honors an incoming
-  `X-Request-Id`, echoes it in the response, and stamps it onto every log
+  `X-Request-Id` (only if it matches `^[A-Za-z0-9._-]{1,64}$`, otherwise
+  replaced by a server id, issue #119), echoes it in the response, and stamps it onto every log
   line emitted while handling that request (via a `contextvars`-based
   filter, not just baked into the formatted string — inspectable directly
   on the `LogRecord`, which is what makes it testable with pytest's
