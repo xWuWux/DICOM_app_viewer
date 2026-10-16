@@ -2,7 +2,8 @@
 
 Status: proposed. Desk research, local experiments and the live matrix (Consequences below) are done
 as far as one local install can do them. Read the gates before quoting any number: B never ran,
-D is an 80 s proxy, C never covered a Docker daemon restart, E only saw an empty desktop, and F
+D and E were re-run on 2026-10-16 with a paired protocol (below); C never covered a Docker daemon
+restart, both runs saw an EMPTY desktop only, and F is still open for the production link path.
 did not measure what its own label claims. The owner decisions of issue #159 ((a)-(d)) plus the
 freeze policy step (TTL, identity, timer) still gate any implementation.
 
@@ -136,10 +137,15 @@ documents for the opposite direction).
     EXPECTED to be lost across a daemon restart or a reboot (hypothesis, untested), so tier 1 needs
     the same Start-on-lost-session recovery path as tier 2 either way.
   - D. N-day idleness (short proxy: one 80 s interval between two reads, plus a structural reading
-    of the timer config): while paused, `expiration_date` and `keepalive_date` did not advance and no
+    of the timer config): while paused, `expiration_date` and `keepalive_date` did not advance
+    and no
     new keepalive date appeared (inferred from equal timestamps, not from observing the keepalive
     process) - a paused session does not age out of the 3600 s idle timer, so timer #232 semantics
     hold for free. A 3/7-day soak is still to run once a policy TTL exists.
+  - D re-run, 2026-10-16, with real timestamps: running -> `expiration_date 09:02:26`,
+    `keepalive_date 08:02:26`; paused and 80 s later both fields byte-identical; on resume
+    `expiration_date` jumped to 09:03:52 while `keepalive_date` stayed (the 300 s keepalive
+    interval had not elapsed). The idle timer is suspended while paused and resume re-arms it.
   - E. cost: TWO SINGLE READINGS on two different sessions, empty desktop, no study loaded - 242.8
     MiB (`docker stats` of a session in `paused`, just after its start) and 185 / 185.9 MiB
     (`running`, a different session, seconds after resume). `docker stats` reports cgroup usage
@@ -149,12 +155,33 @@ documents for the opposite direction).
     freeze semantics plus one reading, not a measurement. A loaded CT/MPR study was NOT measured and
     a student with Weasis open will be materially larger: plan the full 2 GiB ceiling per frozen
     student until it is.
+  - E re-run, 2026-10-16, PAIRED on one container (`docker stats`, empty desktop): 67 MiB while
+    starting (CPU 82%), 92.8 MiB 2 s after `pause_kasm`, 92.2 MiB after a further 80 s paused (CPU
+    0.00%), 158.8 MiB 6 s after `resume_kasm`. Same `container_id` before and after the pause, so
+    this is the comparison the first run never made: pause holds the working set (it does not swap
+    it out) and costs no CPU, and memory grows again after resume. Still no loaded study.
   - F. link lifecycle: NOT VERIFIED. The check reported `url same after pause/resume: True`, but the
-    comparison was `None == None`: `get_kasm_status` returned no `kasm_url` in any of these responses
+    comparison was `None == None`: `get_kasm_status` returned no `kasm_url` in any of these
+    responses
     and no link was opened after a resume. What the run did show is that a paused session reports no
     `container_id` and an empty status to the manager, so a link validity check must either resume
-    first or read the database. Whether `kasm_url` is stable across pause/resume stays an open
-    question, not a result.
+    first or read the database. The 2026-10-16 re-run went further: `request_kasm` on the ADMIN path
+    returns only `kasm_id` and `status` - it has no `kasm_url` field at all - while
+    `scripts/create-session.py:493` builds the student link from `created['kasm_url']`, i.e. from the
+    PUBLIC `request_kasm`, which authenticates with an `api_key`/`api_key_secret` pair. API-key
+    management was not reachable through the admin paths tried here (`get_api_keys`,
+    `create_user_api_key`, `create_api_key` all 404), so closing F needs a key pair minted in the
+    admin UI and the comparison re-run against the public endpoint, then the link actually
+    opened. The
+    corollary matters more than the freeze question: if the public `request_kasm` ever answers
+    without
+    `kasm_url`, `create-session.py:493` raises KeyError - that field is load-bearing and unverified.
+- Driver and stopped-disk status: the matrix was re-run on 2026-10-16 with a rebuilt probe (login ->
+  request_kasm -> pause/resume/stop/destroy, container id read from the `kasms` table instead of the
+  API, `docker stats` sampled at each state, dates read from the DB). The probe still lives outside
+  the repository; commit it with unit tests plus a redacted log before these numbers get quoted.
+  Stopped-session disk finally has one number: `docker ps -s` on the stopped container reported a
+  91.8 MB writable layer (3.44 GB virtual), one observation of an empty-desktop image.
 - Reproducibility (stated plainly, because these numbers get quoted outside this file): the API
   probe driver and its raw output lived under `/tmp` during the run, were never committed, and no
   longer exist. As of 2026-10-16 the matrix is reproducible only by hand, from the text above (and

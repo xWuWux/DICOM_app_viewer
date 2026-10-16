@@ -52,7 +52,7 @@ Totals for N=50: vCPU = 50*C, RAM = 50*R (no RAM overcommit: sessions are long-l
 | MPR | 4 | 6 | 200 | 300 | **[PLACEHOLDER]** |
 | 3D volume, CPU-rendered | 8 | 12 | 400 | 600 | **[PLACEHOLDER]** |
 | Frozen session (Kasm `pause`) | 0 while frozen, back to C on resume | 2 (plan: image ceiling); 0.2 observed, empty desktop | additive, see note | additive | one local observation of an EMPTY desktop via `docker stats` (cgroup usage, not RSS); loaded study UNMEASURED (ADR 0001 test E) |
-| Stopped session (Kasm `stop`) | 0 | 0 (RAM released) | 0 | n/a - disk UNMEASURED | writable layer only; container exited, so no vCPU/RAM (ADR 0001, #159 freeze) |
+| Stopped session (Kasm `stop`) | 0 | 0 (RAM released) | 0 | disk: 91.8 MB each (measured once) | `docker ps -s` writable layer of a stopped empty-desktop container: 91.8 MB (3.44 GB virtual), 2026-10-16 (ADR 0001) |
 
 Frozen sessions are ADDITIVE to the 50 running ones, not an alternative to them: pause releases
 the CE licence cap but not host RAM, so size host RAM as `50*R_running + F*R_frozen` (F = number of frozen
