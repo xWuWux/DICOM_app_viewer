@@ -1,8 +1,34 @@
 # 0001. Freeze mechanism for Kasm sessions
 
-Status: proposed. Desk research, local experiments and the live matrix (last section, run on the
-lab Kasm 1.19.0 CE on 2026-10-15) are done. The owner decisions of issue #159 ((a)-(d)) plus the
+Status: proposed. Desk research, local experiments and the live matrix (Consequences below) are done
+as far as one local install can do them. Read the gates before quoting any number: B never ran,
+D is an 80 s proxy, C never covered a Docker daemon restart, E only saw an empty desktop, and F
+did not measure what its own label claims. The owner decisions of issue #159 ((a)-(d)) plus the
 freeze policy step (TTL, identity, timer) still gate any implementation.
+
+Where the measurements come from ("the lab" below): a single-node Kasm 1.19.0 CE install on a
+developer workstation (native dockerd 29.8.1 under systemd on WSL2, Ubuntu 26.04, host kernel
+`microsoft-standard-WSL2`; NOT Docker Desktop). It is the same machine as the `docker pause` /
+`docker checkpoint` experiments in item 5, and every matrix run was API-driven against it on
+2026-10-15. Consequence: results that live in Kasm's database, API and licence counting transfer
+to any single-server CE deployment; results that depend on host hardware, a reboot, multiple
+agents or production resource limits do not. Several sub-results are single-run observations with
+no committed log (see Reproducibility below).
+
+It was installed from the pinned 1.19.0 release with `sudo bash kasm_release/install.sh -e -p
+localhost -L 8443`; that deviates from `docs/LOCAL_SETUP_GUIDE.md:123` (default port 443, no `-e
+-p localhost`), because 443 was taken here. Accounts were the installer defaults
+`admin@kasm.local` and `user@kasm.local` plus one temporary `lab-user3@kasm.local`. The admin and
+user passwords were overwritten by writing hashes straight into the Kasm database (`docker exec
+kasm_db psql`); the file holding the generated password lived in `/tmp` and is gone, so any re-run
+starts with another password reset. Host: ~15 GiB RAM total, ~12 GiB available; one session capped
+at 1 core / 2 GiB. The run removed its session containers, the temporary user and the
+`group_settings` override; the Kasm platform itself is still installed on this workstation.
+
+What these runs establish is Kasm CE SEMANTICS (how the licence is counted, which states survive,
+what the API and the timers do), and that transfers to any single-server CE. This is NOT a capacity
+benchmark: no study was loaded into Weasis, no network or multi-agent load was applied, and no
+multi-day soak was run.
 
 ## Context
 
@@ -27,35 +53,40 @@ Facts the spike established (each with its source):
    counts all not-destroyed session records regardless of state - paused and stopped sessions keep
    occupying the user's 5 slots; only destroy frees them. The `max_kasms_per_user` group setting
    (inserted in `group_settings`, services restarted) did not change the observed limit in this
-   build.
+   build - and that is a single probe (one value, one attempt, the setting name read off the Kasm
+   1.17.0 group-settings docs page), so treat it as untested rather than disproved.
 4. The current stack already restores the exam-relevant state at container start:
-   `docker/kasm-workspace-weasis/custom_startup.sh` asks grading-api for the student's current
-   case and opens it via a `weasis://` URI built by `weasis_case_uri.py` (issue #185); recorded
-   answers live server-side; `arrange_windows.sh` lays out the windows. A cold start therefore
-   already lands on "the student's case, panel state intact, windows arranged". What a cold start
-   loses is only unsaved in-memory state: Weasis view/zoom/layout, unsaved annotations, open
-   auxiliary apps.
-5. Local host experiments (Docker 29.8.1, WSL2, 2026-10-15):
+   `docker/kasm-workspace-weasis/custom_startup.sh` asks grading-api for the student's current case
+   and opens it via a `weasis://` URI built by `weasis_case_uri.py` (issue #185); recorded answers
+   live server-side; `arrange_windows.sh` lays out the windows. A cold start therefore lands on
+   "the student's case, panel state intact, windows arranged" - read off the code and the scripts,
+   NOT verified on a live session (that is exactly test B). What a cold start loses is only unsaved
+   in-memory state: Weasis view/zoom/layout, unsaved annotations, open auxiliary apps.
+5. Docker primitives on the same workstation (2026-10-15):
    - `docker pause` / `docker unpause` work and are instant (test container: paused `true`, then
      `running` after unpause);
    - `docker checkpoint` is refused: "only supported on a Docker daemon with experimental features
-     enabled"; no `criu` binary on the host; treat CRIU as unavailable on the lab host.
+     enabled"; no `criu` binary on the host; treat CRIU as unavailable on that host.
 
 ## Decision (proposal, pending live tests and owner policy)
 
 Use NATIVE Kasm lifecycle as the freeze primitive, orchestrated by the coordinator (a freeze
 subcommand next to `scripts/end-kasm-session.py`), with two tiers chosen by the live results:
 
-- tier 1, `Pause`: true 1:1 desktop return. Gate results (lab, 2026-10-15): paused sessions do NOT
-  consume the global concurrent-license cap (test A: PASS) but DO consume the owner user's 5-slot
-  per-user record limit (test A: FAIL - frozen sessions accumulate and block new sessions for that
-  user until destroyed); paused sessions survive a Kasm services restart (test C: PASS at service
-  level; host reboot untested, see Consequences); RAM held is the session's real RSS (test E:
-  0.2 GiB idle, cgroup ceiling 2 GiB per session). Net verdict: usable for one-frozen-session-per-
-  student workloads only, with a destroy-based TTL; unusable as an unbounded archive.
+- tier 1, `Pause`: true 1:1 desktop return, PARTIAL GO overall (matrix below). Paused sessions do
+  NOT consume the global concurrent-license cap (A-global: pause and stop release it) but DO consume
+  the owner's 5-slot per-user record limit (A-per-user: frozen sessions accumulate and block new
+  sessions for that user until destroyed); paused sessions survive a Kasm services restart (C: PASS
+  at service level; Docker daemon restart and host reboot NOT RUN, see Consequences); the memory
+  charged is the session's own working set (E: ~0.2 GiB for an EMPTY desktop with no study loaded,
+  cgroup ceiling 2 GiB per session; a loaded study is unmeasured). Net verdict: usable for
+  one-frozen-session-per-student workloads only, with a destroy-based TTL; unusable as an unbounded
+  archive.
 - tier 2, `Stop` + Start-on-return: disk state only; the existing #185 startup path re-opens the
-  student's current case automatically, so the exam content returns; the UI text must say unsaved
-  desktop state is lost. Chosen as the fallback whenever tier 1 fails any gate.
+  student's current case, so the exam content is expected to return - the code path exists but was
+  NOT verified on a live session (test B not run), so treat the return as assumed until then. The UI
+  text must say unsaved desktop state is lost. Chosen as the fallback whenever tier 1 fails any
+  gate.
 
 `docker pause`/CRIU/`docker commit` run OUTSIDE Kasm's view are rejected as the mechanism: Kasm's
 database would keep calling the session live-or-dead wrongly, the keepalive timer
@@ -67,10 +98,10 @@ documents for the opposite direction).
 
 | Option | Why not primary |
 |---|---|
-| Native Pause (tier 1) | The only 1:1 option; gated by RAM cost, cap counting (undocumented), reboot survival (docker pause does not outlive a daemon restart by itself) |
-| Native Stop + Start (tier 2) | Fidelity level 2 only, but nearly free today thanks to #185; the honest fallback |
+| Native Pause (tier 1) | The only 1:1 option; gated by RAM cost WITH A LOADED STUDY (unmeasured), by per-user record counting (measured, A) and by reboot survival (untested) |
+| Native Stop + Start (tier 2) | Fidelity level 2 only, but nearly free today IF the #185 path holds on a live session (untested); the honest fallback |
 | `docker pause` bypassing Kasm | DB/UI drift, keepalive acts on wrong facts; rejected |
-| CRIU / `docker checkpoint` | Unavailable on the lab host; needs experimental daemon; CRIU limits around X11/audio/shm unproven on this image; would need owner policy for on-disk memory snapshots containing exam data |
+| CRIU / `docker checkpoint` | Unavailable on that host; needs experimental daemon; CRIU limits around X11/audio/shm unproven on this image; would need owner policy for on-disk memory snapshots containing exam data |
 | `docker commit` + recreate | Strictly weaker than native Stop, slower, doubles disk; rejected |
 | Persistent profile as the freeze | Files only; useful future addon for "same settings in a fresh session", orthogonal to state resume |
 
@@ -78,32 +109,67 @@ documents for the opposite direction).
 
 - The freeze policy step of #159 (TTL, same-student binding, timer #232 exclusion, CLAUDE.md
   exception) stays the hard blocker; no orchestration code before it is decided.
-- Add to `docs/HOSTING_SIZING.md` once measured: one frozen (paused) session = `R` GB RAM held
-  24/7; one stopped session = writable-layer disk only. Both rows currently unmeasured.
-- Live matrix results (lab Kasm 1.19.0 CE, image `ipcmc/dicom-viewer:mvp` at 2 GiB / 1 core,
-  2026-10-15; API-driven, results mirrored in the #159 comment):
+- `docs/HOSTING_SIZING.md` section 4 now carries frozen/stopped rows. What is still unmeasured:
+  the writable-layer disk footprint of a stopped session, the memory of a session with a loaded
+  study, and the per-profile `C`/`R` rows of the sizing table, which stay `[PLACEHOLDER]` until the
+  load test of HOSTING_SIZING section 6 runs.
+- Live matrix results (the single-node lab install defined at the top, image
+  `ipcmc/dicom-viewer:mvp` at 2 GiB / 1 core, 2026-10-15; API-driven). An earlier version of these
+  figures is in the #159 comment of 2026-10-15 13:17 UTC; THIS FILE SUPERSEDES IT - that comment
+  still says "lab", "Docker Desktop VM" and "RSS" and omits the empty-desktop caveat:
   - A. cap counting: PARTIAL GO. Native `pause_kasm`/`resume_kasm`/`stop_kasm` work on CE (not
-    license-gated). Paused and stopped sessions release the global running cap (a 6th request from
-    another user was accepted while 4 sessions of user 1 were paused), but each owner's own 5
-    record slots stay consumed by frozen sessions - "Kasm limit exceeded for user" fires with 5
-    stopped or 5 paused records and 0 running. GO holds only under the policy "one frozen session
-    per student, TTL destroy after N days, per-user headroom respected".
+    license-gated). Paused and stopped sessions release the global running cap: a further request
+    from a second user was accepted while the first user held 4 paused plus 1 stopped record, and a
+    third user hit "Per concurrent session license limit exceeded" once 5 records were RUNNING (the
+    two error texts come from the two different limits). Each owner's own 5 record slots stay
+    consumed by frozen sessions: "Kasm limit exceeded for user" fires with 5 stopped or 5 paused
+    records and 0 running. GO holds only under the policy "one frozen session per student, TTL
+    destroy after N days, per-user headroom respected".
   - B. Stop fidelity: not run (needs interactive Weasis session automation); the #185 cold-start
     path remains the assumed recovery; run it before any tier-2 UI copy is promised.
-  - C. Pause survival: PASS across `kasm_api`/`kasm_manager` restarts - `paused` state persisted in
-    `kasms.operational_status`, `resume_kasm` returned the session to running. Docker daemon or
-    host reboot was NOT testable in the lab (Docker Desktop VM); kernel pause state is expected to
-    be lost there, so tier 1 needs the same Start-on-loose-session recovery path as tier 2.
-  - D. N-day idleness (short-proxy, 90 s + structural): while paused, `expiration_date` and
-    `keepalive_date` do NOT advance and no keepalive is issued - a paused session does not age out
-    of the 3600 s idle timer (timer #232 semantics hold for free); a 3/7-day soak is still to run
-    once a policy TTL exists.
-  - E. cost: idle running session = 185-243 MiB resident; paused keeps the same RSS charged
-    (cgroup freeze, not swap-out); plan worst case 2 GiB per frozen student at the image ceiling.
-  - F. link lifecycle: `kasm_url` is unchanged across Pause/Resume and the same link keeps working;
-    a paused session's `get_kasm_status` cannot be read by the manager (empty status) so any link
-    validity check must first resume or consult the DB state.
+  - C. Pause survival: PASS across `kasm_api`/`kasm_manager` restarts (`docker restart`, no sudo) -
+    `paused` persisted in `kasms.operational_status` and `resume_kasm` returned the session to
+    running. NOT RUN at Docker-daemon level, and "not testable" would be wrong: a `sudo -n systemctl
+    restart kasm` attempt was refused ("interactive authentication is required") and the run carried
+    on with the service-level restart instead. A real daemon restart needs sudo and also stops every
+    other container on this workstation, so it needs the owner's go-ahead. Kernel pause state is
+    EXPECTED to be lost across a daemon restart or a reboot (hypothesis, untested), so tier 1 needs
+    the same Start-on-lost-session recovery path as tier 2 either way.
+  - D. N-day idleness (short proxy: one 80 s interval between two reads, plus a structural reading
+    of the timer config): while paused, `expiration_date` and `keepalive_date` did not advance and no
+    new keepalive date appeared (inferred from equal timestamps, not from observing the keepalive
+    process) - a paused session does not age out of the 3600 s idle timer, so timer #232 semantics
+    hold for free. A 3/7-day soak is still to run once a policy TTL exists.
+  - E. cost: TWO SINGLE READINGS on two different sessions, empty desktop, no study loaded - 242.8
+    MiB (`docker stats` of a session in `paused`, just after its start) and 185 / 185.9 MiB
+    (`running`, a different session, seconds after resume). `docker stats` reports cgroup usage
+    including page cache, not strict RSS, and no paired running-versus-paused reading of the SAME
+    session exists: the paused branch printed nothing, because a paused session reports no
+    `container_id`. "Paused keeps the same memory charged" is therefore an inference from cgroup
+    freeze semantics plus one reading, not a measurement. A loaded CT/MPR study was NOT measured and
+    a student with Weasis open will be materially larger: plan the full 2 GiB ceiling per frozen
+    student until it is.
+  - F. link lifecycle: NOT VERIFIED. The check reported `url same after pause/resume: True`, but the
+    comparison was `None == None`: `get_kasm_status` returned no `kasm_url` in any of these responses
+    and no link was opened after a resume. What the run did show is that a paused session reports no
+    `container_id` and an empty status to the manager, so a link validity check must either resume
+    first or read the database. Whether `kasm_url` is stable across pause/resume stays an open
+    question, not a result.
+- Reproducibility (stated plainly, because these numbers get quoted outside this file): the API
+  probe driver and its raw output lived under `/tmp` during the run, were never committed, and no
+  longer exist. As of 2026-10-16 the matrix is reproducible only by hand, from the text above (and
+  an older, partly wrong copy of it in the #159 comment). The evidence base is thin: E is two
+  unrelated single readings, D is an 80 s proxy, F was not measured at all. Before a capacity or
+  licence decision quotes these figures, rebuild the probe driver (suggested
+  `scripts/spike/kasm_freeze_probe.py`, credentials from the environment only, as
+  `scripts/end-kasm-session.py` already does), re-run A, D, E and F so that F compares two real
+  `kasm_url` values and E takes a paired running/paused reading of one session, and commit the
+  driver plus a redacted results file. A re-run needs admin credentials, which here meant
+  overwriting the password hash in the Kasm database through `docker exec kasm_db` - a
+  disposable-lab shortcut that must not be repeated on any host with real users or real data.
 
 Not covered: fidelity test B with a loaded Weasis study (needs interactive session automation),
-pause survival across a full host reboot (Docker Desktop VM in the lab), multi-day soak runs, and
-behavior of Kasm Enterprise-only features (not applicable; deployment is CE).
+pause survival across a Docker daemon restart or a full host reboot (needs `sudo systemctl restart
+docker` here; the `sudo -n` variant was refused), a link check that actually opens the resumed
+session (F), multi-day soak runs, and behavior of Kasm Enterprise-only features (not applicable;
+deployment is CE).

@@ -1,7 +1,9 @@
 # Hosting & scaling proposal (DRAFT, 2026-10-06)
 
 Status: DRAFT by Claude, needs human review. Every number marked **[PLACEHOLDER]** is a planning
-parameter, NOT a measurement. No prices are quoted: none were verified. Replace placeholders with
+parameter, NOT a measurement. One exception: the Frozen/Stopped rows in section 4 quote single local
+observations from `docs/adr/0001-kasm-session-freeze-mechanism.md` (see their Basis cells); they are
+not capacity figures either. No prices are quoted: none were verified. Replace placeholders with
 results of the load test in section 6 before any purchase.
 
 ## 1. Requirements (from owner, 2026-10-06)
@@ -33,14 +35,28 @@ results of the load test in section 6 before any purchase.
 - **Session hosts**: Kasm agents or Guacamole session containers. Only these scale with user count.
 
 ## 4. Sizing model (replace placeholders by measurements)
-Per-session cost: `C` vCPU and `R` GB RAM, plus stream bandwidth `B` Mbit/s. Frozen (Kasm paused) sessions hold their live RSS 24/7 until resumed or deleted; measured on the lab image (2 GiB / 1 core limit): 0.2 GB idle, plan up to the full 2 GB per frozen student; stopped sessions hold writable-layer disk only. Pause and stop do not count against the global CE running-session cap, but frozen records keep consuming the owner's per-user 5-session slots until destroyed (`docs/adr/0001-kasm-session-freeze-mechanism.md`, #159 freeze).
+Per-session cost: `C` vCPU and `R` GiB RAM, plus stream bandwidth `B` Mbit/s. Frozen (Kasm
+`pause`) sessions hold their working set 24/7 until resumed or destroyed. Two single readings
+taken on a developer workstation running a one-node Kasm CE install (ADR 0001, "the lab"; image
+capped at 2 GiB / 1 core) gave 0.2 GiB in `docker stats` for an EMPTY DESKTOP with no study
+loaded - not strict RSS and not a capacity figure; a session with a loaded CT is unmeasured, so
+plan the full 2 GiB ceiling per frozen student. Stopped (Kasm `stop`) sessions hold
+writable-layer disk only, still unmeasured. Pause and stop do not count against the global CE
+running-session cap, but frozen records keep consuming the owner's per-user 5-session slots
+until destroyed (see `docs/adr/0001-kasm-session-freeze-mechanism.md`, #159 freeze).
 Totals for N=50: vCPU = 50*C, RAM = 50*R (no RAM overcommit: sessions are long-lived), bandwidth = 50*B.
 
-| Profile | C (vCPU) | R (GB) | 50 sessions: vCPU | 50 sessions: RAM | Basis |
+| Profile | C (vCPU) | R (GiB) | 50 sessions: vCPU | 50 sessions: RAM | Basis |
 |---|---|---|---|---|---|
 | Light 2D | 2 | 3 | 100 | 150 | **[PLACEHOLDER]** |
 | MPR | 4 | 6 | 200 | 300 | **[PLACEHOLDER]** |
 | 3D volume, CPU-rendered | 8 | 12 | 400 | 600 | **[PLACEHOLDER]** |
+| Frozen session (Kasm `pause`) | 0 while frozen, back to C on resume | 2 (plan: image ceiling); 0.2 observed, empty desktop | additive, see note | additive | one local observation of an EMPTY desktop via `docker stats` (cgroup usage, not RSS); loaded study UNMEASURED (ADR 0001 test E) |
+| Stopped session (Kasm `stop`) | 0 | 0 (RAM released) | 0 | n/a - disk UNMEASURED | writable layer only; container exited, so no vCPU/RAM (ADR 0001, #159 freeze) |
+
+Frozen sessions are ADDITIVE to the 50 running ones, not an alternative to them: pause releases
+the CE licence cap but not host RAM, so size host RAM as `50*R_running + F*R_frozen` (F = number of frozen
+sessions, plan `R_frozen` = 2 GiB) and count the frozen ones in the N+1/HA rule too.
 
 Mixed load (owner: mostly 2D, 3D/MPR only in some stages): total = 50 x (f2d*Light + fMPR*MPR + f3d*3D) with f2d+fMPR+f3d = 1. The fractions are UNKNOWN until the radiologist defines the stages; size for the worst realistic stage mix, not the average, because all 50 can be in the heavy stage at once.
 
