@@ -106,6 +106,36 @@ class _Harness:
         main_module.RESET_ENABLED = reset_enabled
         self.client = TestClient(app)
         self.client.__enter__()  # lifespan -> db.init_db() against the patched path
+        self._seed_second_cases()
+
+    def _seed_second_cases(self):
+        """The seed ships ONE case per stage -- under which the #236 view
+        pointer is untestable (a pointer set during learning either never
+        gets a second browsable target or goes stale at the test stage,
+        where _browsable_cases is empty and the stale value is silently
+        ignored; p2's mutation check proved a never-cleared pointer slips
+        through). A second learning AND assessment case (same insert as
+        test_state_machine.py's #61 test) gives the machine real
+        point-then-move-within / move-into-browsable sequences."""
+        conn = db_module.get_connection()
+        try:
+            conn.execute(
+                """INSERT INTO cases
+                   (stage, order_index, orthanc_study_uid, title, ground_truth_category,
+                    ground_truth_modifier_s, reference_report)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                ("learning", 1, "1.2.3.4.5.101", "Przypadek 2 (nauka) [prop]", "0", 0, "PLACEHOLDER"),
+            )
+            conn.execute(
+                """INSERT INTO cases
+                   (stage, order_index, orthanc_study_uid, title, ground_truth_category,
+                    ground_truth_modifier_s, reference_report)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                ("assessment", 1, "1.2.3.4.5.102", "Przypadek 2 (ocena) [prop]", "0", 0, "PLACEHOLDER"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     def close(self):
         # teardown must restore globals even when a rule already failed
