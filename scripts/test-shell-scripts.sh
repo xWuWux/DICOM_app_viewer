@@ -23,5 +23,6 @@ bats \
   docker/guacamole-weasis/launch-session.bats \
   scripts/load-local-studies.bats \
   scripts/test-orthanc-proxy-scope.bats \
+  scripts/test-degraded-modes.bats \
   scripts/ci-gate.bats \
   "$@"
