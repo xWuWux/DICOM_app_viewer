@@ -40,15 +40,14 @@ import time
 import urllib.error
 import urllib.request
 
+from . import config, telemetry
 from . import db as db_module
-from . import telemetry
 from .logging_config import get_logger
 
 logger = get_logger(__name__)
 
 DEFAULT_CACHE_SECONDS = 15
 DEFAULT_MIN_FREE_BYTES = 100 * 1024 * 1024
-DEFAULT_ORTHANC_URL = "http://orthanc:8042"
 DEPENDENCY_TIMEOUT_SECONDS = 2.0
 
 _lock = threading.Lock()
@@ -75,11 +74,23 @@ def min_free_bytes() -> int:
 
 
 def orthanc_url() -> str:
-    """Empty string disables the dependency probe (`grading_dependency_up` is
-    then absent from the snapshot rather than reported as 0 -- "not
-    configured" and "down" must not look the same)."""
-    raw = os.environ.get("GRADING_ORTHANC_URL", DEFAULT_ORTHANC_URL)
-    return raw.strip()
+    """The dependency probe's target, validated on EVERY read, not just at import.
+
+    Empty means the probe is disabled (`grading_dependency_up` is then absent
+    from the snapshot rather than reported as 0 -- "not configured" and "down"
+    must not look the same). A value with any scheme other than http/https is
+    rejected to "disabled" + a loud log line rather than handed to urllib: the
+    URL comes from operator config, so a typo (`orthanc:8042` without a scheme,
+    a pasted `file://`) would otherwise turn a health probe into an arbitrary
+    local-file read. app/config.py applies the same validator at import time,
+    where a bad value aborts startup; this is the per-request backstop for a
+    value that only appears in the environment later (tests do exactly that)."""
+    raw = os.environ.get("GRADING_ORTHANC_URL", config.DEFAULT_ORTHANC_URL)
+    try:
+        return config.validate_orthanc_url(raw)
+    except config.ConfigError as exc:
+        logger.warning("orthanc_url_rejected", extra={"reason": str(exc)})
+        return ""
 
 
 def _error_name(exc: BaseException) -> str:
@@ -121,8 +132,14 @@ def _check_database_write(conn) -> dict:
             telemetry.record_db_lock_error()
         try:
             conn.rollback()
-        except Exception:  # noqa: BLE001 - a connection that cannot roll back is already reported above
-            pass
+        except Exception as rollback_exc:  # noqa: BLE001
+            # Not silenced (bandit B110): a rollback that itself fails means the
+            # connection is in a worse state than "write refused", and that is
+            # worth a line even though the write failure is already reported.
+            logger.warning(
+                "readyz_database_rollback_failed",
+                extra={"rollback_error": _error_name(rollback_exc), "write_error": _error_name(exc)},
+            )
         return {"ok": False, "duration_ms": _elapsed_ms(started), "error": _error_name(exc)}
     return {"ok": True, "duration_ms": _elapsed_ms(started), "error": None}
 
@@ -148,8 +165,12 @@ def _probe_orthanc(url: str) -> dict:
     experience (blank viewer frame)."""
     started = time.monotonic()
     request = urllib.request.Request(url.rstrip("/") + "/system", method="GET")
+    # `url` reaches here only through orthanc_url(), which validates it to an
+    # absolute http/https URL with a host (app/config.py's validator) -- never
+    # from a request, only from operator config. That is why the B310 blacklist
+    # hit below is annotated rather than silenced wholesale.
     try:
-        with urllib.request.urlopen(request, timeout=DEPENDENCY_TIMEOUT_SECONDS) as response:
+        with urllib.request.urlopen(request, timeout=DEPENDENCY_TIMEOUT_SECONDS) as response:  # nosec B310
             response.read(0)
             status_code = response.status
         ok, error, detail = True, None, f"http_{status_code}"
@@ -230,6 +251,41 @@ def liveness() -> dict:
     return {
         "status": "ok",
         "uptime_seconds": round(time.time() - telemetry.PROCESS_START_UNIXTIME_VALUE, 3),
+    }
+
+
+def last_payload() -> dict | None:
+    """The most recent FULL readiness evaluation (numbers and all), for
+    /internal/signals. None until /readyz has run at least once."""
+    with _lock:
+        return _cache["result"]
+
+
+def public_view(payload: dict) -> dict:
+    """What the public edge may see (issue #113 review): the verdict and which
+    check produced it, never the measurements.
+
+    /readyz answers through nginx's /api/ prefix, so it is reachable by anyone
+    who can reach :8080 -- `free_bytes`/`min_free_bytes` would publish this
+    host's disk capacity and headroom (reconnaissance for a disk-fill attack,
+    and volume size is a fact about the deployment, not about the caller's
+    request), and the dependency `detail` publishes an internal hostname's
+    behaviour. The full body stays in the log line and in
+    `GET /internal/signals`' `readyz` field, which is not proxied."""
+    checks = {}
+    for name, entry in payload["checks"].items():
+        view = {"ok": entry["ok"]}
+        if entry.get("error"):
+            view["error"] = entry["error"]
+        if entry.get("skipped"):
+            view["skipped"] = True
+        checks[name] = view
+    return {
+        "status": payload["status"],
+        "checked_at": payload["checked_at"],
+        "cached": payload["cached"],
+        "age_seconds": payload["age_seconds"],
+        "checks": checks,
     }
 
 

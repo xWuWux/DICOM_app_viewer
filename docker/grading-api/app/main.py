@@ -232,12 +232,18 @@ def readyz(response: Response):
     Probes are cached for GRADING_HEALTH_CACHE_SECONDS (default 15) because the
     write probe takes a SQLite write lock; `cached: true` in the body makes a
     stale verdict distinguishable from a fresh one.
+
+    This endpoint is reachable at the public edge (nginx proxies /api/ to this
+    app AND strips the prefix), so the body carries the verdict and the failing
+    check names, never the measurements: no byte counts, no durations, no
+    dependency detail. health.public_view() is what enforces that; the full
+    evaluation stays in the log line and in /internal/signals' `readyz` field.
     """
     payload, ok = health.readiness()
     if not ok:
         response.status_code = 503
     response.headers["Cache-Control"] = "no-store"
-    return payload
+    return health.public_view(payload)
 
 
 @app.get("/internal/signals")
@@ -245,12 +251,23 @@ def internal_signals(response: Response):
     """Aggregated telemetry snapshot (issue #113) -- the machine-readable form
     of docs/observability.md's signal table.
 
-    INTERNAL ONLY, and enforced by topology rather than by a secret: this path
-    is not under /api/, so nginx (:8080) does not proxy it, and grading-api
-    publishes no host port (docker-compose.yml) -- only containers on
-    `ipcmc-internal` can reach :8000. It therefore carries no auth and no
-    tokens: counts and sizes only. A future scraper belongs on that network
-    too, never on the public edge.
+    Reachability, stated exactly: grading-api publishes no host port, and
+    nginx does not proxy this path -- `location /api/` proxies to
+    `http://grading-api:8000/` WITH a trailing slash, which strips the prefix,
+    so a bare `/api/internal/signals` WOULD have reached this handler. It is
+    blocked at the edge instead (`location ^~ /api/internal/ { return 404; }`,
+    pinned by scripts/smoke-test.sh), so the endpoint is not reachable from
+    outside the Docker network.
+
+    INSIDE that network it is not secret and not authenticated, deliberately:
+    every container on `ipcmc-internal` can reach :8000 directly, and in the
+    Guacamole flow that includes a student's own session container
+    (scripts/provision-guacamole-session.py attaches it to that network). What
+    a student could therefore read is exactly what this returns: request,
+    submission and lock-error counts, byte sizes, timestamps. No tokens, no
+    student_id/session_id, no answers -- see the forbidden-field list in
+    docs/observability.md. Treat "internal" as "the blast radius is aggregate
+    operational facts", NOT as "unreachable by a student".
 
     Answers even with a dead database (`db_available: false`, DB-derived gauges
     absent) -- "the probe works and reports a broken database" is the whole
@@ -263,6 +280,9 @@ def internal_signals(response: Response):
         logger.exception("signals_database_unavailable")
     try:
         payload = telemetry.signals(conn)
+        # The full /readyz evaluation, numbers included: this is where the
+        # measurements that /readyz withholds at the edge are read from.
+        payload["readyz"] = health.last_payload()
     finally:
         if conn is not None:
             conn.close()

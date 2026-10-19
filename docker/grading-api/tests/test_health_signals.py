@@ -152,9 +152,35 @@ def test_readyz_is_503_when_storage_is_below_the_floor(client, monkeypatch):
     monkeypatch.setenv("GRADING_STORAGE_MIN_FREE_BYTES", str(1 << 62))
     resp = client.get("/readyz")
     assert resp.status_code == 503
-    check = resp.json()["checks"]["storage"]
-    assert check["ok"] is False
-    assert check["free_bytes"] < check["min_free_bytes"]
+    assert resp.json()["checks"]["storage"]["ok"] is False
+    # The numbers are the point of this check, and they are NOT in the response
+    # -- they live in the snapshot and the log line.
+    signals = client.get("/internal/signals").json()
+    free = [s for s in signals["gauges"] if s["name"] == telemetry.VOLUME_FREE_BYTES]
+    assert free and free[0]["value"] < 1 << 62
+
+
+def test_readyz_public_body_carries_verdicts_not_measurements(client, monkeypatch):
+    """/readyz is reachable at the public edge (nginx proxies /api/ AND strips
+    the prefix), so disk capacity and headroom are reconnaissance value with no
+    caller need. Same for the dependency `detail`, which describes an internal
+    host. The full evaluation is what /internal/signals exposes."""
+    monkeypatch.setenv("GRADING_ORTHANC_URL", _closed_port())
+    body = client.get("/readyz").json()
+    for forbidden in ("free_bytes", "min_free_bytes", "duration_ms", "http_"):
+        assert forbidden not in str(body), forbidden
+    assert set(body) == {"status", "checked_at", "cached", "age_seconds", "checks"}
+    assert set(body["checks"]) == {"database_read", "database_write", "storage", "dependency:orthanc"}
+
+    signals = client.get("/internal/signals").json()["readyz"]
+    assert signals["checks"]["storage"]["free_bytes"] > 0
+    assert signals["checks"]["database_read"]["duration_ms"] >= 0
+
+
+def test_signals_readyz_field_is_absent_before_the_first_probe(client):
+    assert client.get("/internal/signals").json()["readyz"] is None
+    client.get("/readyz")
+    assert client.get("/internal/signals").json()["readyz"]["status"] == "ready"
 
 
 def test_readyz_survives_a_statvfs_failure(client, monkeypatch):
@@ -178,6 +204,28 @@ def test_orthanc_probe_reports_a_closed_port_as_down(client):
     result = health_module._probe_orthanc(_closed_port())
     assert result["ok"] is False
     assert result["error"] in {"URLError", "ConnectionRefusedError", "timeout"}
+
+
+def test_a_non_http_orthanc_url_is_rejected_not_probed(client, monkeypatch, caplog):
+    """GRADING_ORTHANC_URL is operator config, but a typo must not turn a health
+    probe into an arbitrary local read (bandit B310's whole point): anything
+    but http/https degrades to "probe disabled", loudly logged."""
+    for bad in ("file:///etc/passwd", "orthanc:8042", "http://", "ftp://orthanc:21"):
+        monkeypatch.setenv("GRADING_ORTHANC_URL", bad)
+        with caplog.at_level(logging.WARNING):
+            assert health_module.orthanc_url() == "", bad
+        assert any(r.getMessage() == "orthanc_url_rejected" for r in caplog.records), bad
+        caplog.clear()
+
+
+def test_orthanc_url_accepts_the_documented_shapes(client, monkeypatch):
+    for good, expected in (
+        ("http://orthanc:8042", "http://orthanc:8042"),
+        ("  https://o.internal  ", "https://o.internal"),
+        ("", ""),
+    ):
+        monkeypatch.setenv("GRADING_ORTHANC_URL", good)
+        assert health_module.orthanc_url() == expected
 
 
 def test_readyz_reports_degraded_not_503_when_only_a_dependency_is_down(client, monkeypatch):
@@ -327,10 +375,11 @@ def test_db_lock_timeout_on_the_500_path_increments_the_counter(client, mint_tok
     assert signals["summary"]["db_lock_errors_total"] == 1
 
 
-def test_readiness_write_probe_survives_a_connection_that_cannot_roll_back(client, monkeypatch):
+def test_readiness_write_probe_survives_a_connection_that_cannot_roll_back(client, monkeypatch, caplog):
     """The verdict must not depend on cleanup succeeding: if the rollback
     itself throws, the write check is still reported failed instead of the
-    health endpoint blowing up inside its own error handling."""
+    health endpoint blowing up inside its own error handling -- and the failed
+    rollback is logged, not swallowed (bandit B110)."""
 
     class UnrollableConnection:
         def execute(self, sql, *_args):
@@ -351,10 +400,15 @@ def test_readiness_write_probe_survives_a_connection_that_cannot_roll_back(clien
             return None
 
     monkeypatch.setattr(db_module, "get_connection", lambda: UnrollableConnection())
-    result, ok = health_module.readiness(force=True)
+    with caplog.at_level(logging.WARNING):
+        result, ok = health_module.readiness(force=True)
     assert ok is False
     assert result["checks"]["database_write"]["ok"] is False
     assert telemetry.counter_value(telemetry.DB_LOCK_ERRORS_TOTAL) == 1
+    records = [r for r in caplog.records if r.getMessage() == "readyz_database_rollback_failed"]
+    assert records, caplog.messages
+    assert records[-1].rollback_error == "ProgrammingError"
+    assert records[-1].write_error == "OperationalError"
 
 
 def test_lock_recognition_is_not_fooled_by_other_operational_errors():

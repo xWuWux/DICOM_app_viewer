@@ -12,10 +12,13 @@ endpoints. Out of scope here (and why):
   Prometheus-compatible (`_total` on counters, `_ms` on histograms, flat
   label maps) so adopting a scraper later is an exporter change, not a
   rename of every alert.
-* **No Kasm/Guacamole telemetry.** grading-api cannot reach the streaming
-  layer (it is only on `ipcmc-internal`), and Kasm is frozen by
-  ADR 0001. Session-level signals belong to the launcher scripts and the
-  vendor's own API; see docs/runbooks/kasm-session-lifecycle.md.
+* **No Kasm/Guacamole telemetry.** grading-api has no network path to the
+  streaming layer (the relationship runs the other way: session containers are
+  allowed to reach grading-api, not the reverse) and no Kasm/Guacamole
+  credentials. Session-level signals therefore belong to the launcher scripts
+  and the vendor's own API; see docs/runbooks/kasm-session-lifecycle.md. (ADR
+  0001, still proposed in #252, is about freezing Kasm *sessions* — it neither
+  freezes Kasm nor changes this boundary.)
 * **No queue/worker backlog.** There are no queues or background workers in
   this system. Recorded as a justified N/A, same as DOD_MAPPING.md item 111.
 
@@ -37,10 +40,11 @@ Three, and they are not interchangeable:
    `docker-compose.yml` pins `json-file` with `max-size`/`max-file` so an
    unbounded log cannot fill the volume (the failure class behind #66).
 2. **`GET /internal/signals`** — aggregated counters/gauges/histograms as one
-   JSON document. No log pipeline needed. **Internal network only, by
-   topology**: the path is not under `/api/`, so nginx does not proxy it, and
-   grading-api publishes no host port. It carries no auth and no identifying
-   data — counts and byte sizes only.
+   JSON document, plus the last full `/readyz` evaluation under `readyz`. No
+   log pipeline needed. Reachability is stated in the matrix below: it is
+   unreachable from outside the Docker network, **reachable to every container
+   on `ipcmc-internal`**, and unauthenticated by design — which is why it
+   carries only aggregate counts, sizes and timestamps.
 3. **`GET /livez`, `GET /readyz`** — see [Health endpoints](#health-endpoints).
 
 Aggregation over a window is *not* implemented in this repository: the log
@@ -48,6 +52,29 @@ line and the snapshot are the raw signals, and whoever alerts is expected to
 do the counting (`docker logs | jq`, a log driver query, or the snapshot
 polled by a small checker). That is the Tier 4 "checklist + existing signals"
 allowance, stated rather than implied.
+
+### Who can reach what
+
+Stated as a matrix because "internal" is not one property: nginx's
+`location /api/` proxies to `http://grading-api:8000/` **with a trailing
+slash**, which strips the prefix — so *any* app path is reachable at the edge
+as `/api/<path>` unless the edge blocks it by name. (Assuming otherwise is how
+the first revision of this feature published the snapshot at
+`/api/internal/signals`.)
+
+| Caller | `/api/livez`, `/api/healthz`, `/api/readyz` | `/internal/signals` | `grading-api:8000/internal/signals` |
+| --- | --- | --- | --- |
+| Anyone reaching viewer's `:8080` | yes | no — nginx has no such location | no (no published port) |
+| Anyone reaching `:8080`, path `api/internal/...` | — | no — `location ^~ /api/internal/ { return 404; }` blocks the prefix-stripped form; pinned by `scripts/tests/test_internal_surface_not_exposed.py` and `scripts/smoke-test.sh` | — |
+| Any container on `ipcmc-internal` (viewer, and a student's own session container in the Guacamole flow, which `provision-guacamole-session.py` attaches there) | yes | **yes** | **yes** |
+
+Consequences of the last row, accepted deliberately: the snapshot must contain
+nothing identifying, nothing secret and nothing about an individual submission
+(see [Forbidden fields](#forbidden-fields)); and "internal" here means *the
+worst case is a student reading aggregate operational numbers about their own
+exam room*, not *unreachable by a student*. If the snapshot ever needs to
+carry anything more sensitive, it gets a shared token — do not re-derive
+safety from the network layout.
 
 ## Correlation
 
@@ -167,6 +194,20 @@ DB-write buckets are `1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 5000` ms.
 | `/internal/signals` | what are the numbers? | read-only queries + `stat`/`statvfs` | 200 always | nothing |
 
 Design rules that are part of the contract:
+
+* **`/readyz` answers with verdicts, `/internal/signals` with measurements.**
+  `/readyz` is reachable at the public edge (it is under `/api/`, and the
+  prefix is stripped by nginx), so its body carries the status, which check
+  produced it and the exception class — never `free_bytes`, `min_free_bytes`,
+  probe durations or the dependency `detail`. Those are facts about this
+  deployment, not about the caller's request: published disk capacity and
+  headroom is reconnaissance for a disk-fill attack. `health.public_view()`
+  enforces the split; the full evaluation is exposed as the `readyz` field of
+  the internal snapshot and written to the log.
+* **`/internal/signals` is blocked at the edge by name, not by accident.**
+  `location /api/` strips its prefix, so `/api/internal/signals` would otherwise
+  serve the snapshot to anyone who can reach `:8080`. See the reachability
+  matrix above.
 
 * **`/healthz` stays narrow.** `viewer` has `depends_on: service_healthy` on
   grading-api. Folding an Orthanc probe into `/healthz` would make an

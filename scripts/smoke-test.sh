@@ -77,10 +77,26 @@ check "grading-api, direct" "200" "http://localhost:8080/api/healthz"
 # to the grading database and the volume has room, which /healthz never checked.
 check "grading-api liveness" "200" "http://localhost:8080/api/livez"
 check "grading-api readiness (db read + write + free space)" "200" "http://localhost:8080/api/readyz"
-# The signal snapshot is internal by topology: nginx proxies /api/ only, so
-# /internal/signals must NOT be reachable at the public edge (404 = nginx
-# looked for a static file, which is the correct answer for an unproxied path).
-check "telemetry snapshot not exposed at the edge" "404" "http://localhost:8080/internal/signals"
+# The signal snapshot must not be readable at the public edge. Two paths are
+# checked because they fail for different reasons:
+#   /internal/signals      -> nginx has no such location at all (static 404).
+#   /api/internal/signals  -> THE REAL RISK. `location /api/` proxies to
+#       http://grading-api:8000/ with a trailing slash, which STRIPS the
+#       prefix, so this arrives at grading-api as /internal/signals and would
+#       serve the snapshot unless the edge blocks /api/internal/ explicitly
+#       (review finding on PR #266).
+# Status code alone cannot tell nginx's 404 from FastAPI's 404, so the BODY is
+# checked too: FastAPI answers {"detail":"Not Found"} and the snapshot answers
+# JSON containing "summary" -- either one means the request reached the app.
+check "telemetry snapshot path not served by nginx" "404" "http://localhost:8080/internal/signals"
+check "telemetry snapshot blocked behind the /api/ prefix" "404" "http://localhost:8080/api/internal/signals"
+SIGNALS_EDGE_BODY=$(curl -s "http://localhost:8080/api/internal/signals" 2>/dev/null)
+if echo "$SIGNALS_EDGE_BODY" | grep -Eq '"summary"|"detail"'; then
+  echo "--- telemetry snapshot reachable through /api/ (the edge block is missing) ---"
+  status=1
+else
+  echo "--- telemetry snapshot not proxied to the app: OK ---"
+fi
 
 # grading-api's /case, /submit, /reset, /results all take a server-minted
 # token now, never a bare student_id (a real gap this closed -- see

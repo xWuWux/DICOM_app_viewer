@@ -22,6 +22,7 @@ vector (issue #93's lesson applied to startup).
 """
 
 import os
+from urllib.parse import urlparse
 
 # Minimum LENGTH -- note this is a brute-force floor, not an entropy
 # guarantee (`'k'*32` passes; the CR #111 nit is fair, but rejecting
@@ -45,6 +46,10 @@ MAX_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60
 # secrets -- a TTL is); capped so a megabyte of garbage in the env can't
 # itself bloat a startup log line.
 _MAX_ECHOED_VALUE_CHARS = 60
+
+# Schemes accepted for the one URL this service ever dials out to (issue #113:
+# the /readyz Orthanc reachability probe).
+_ORTHANC_URL_SCHEMES = ("http", "https")
 
 
 class ConfigError(ValueError):
@@ -134,6 +139,38 @@ def validate_reset_enabled(raw: str | None) -> bool:
     )
 
 
+DEFAULT_ORTHANC_URL = "http://orthanc:8042"
+
+
+def validate_orthanc_url(raw: str | None) -> str:
+    """GRADING_ORTHANC_URL: the URL /readyz probes for Orthanc reachability.
+
+    Empty (or unset -> the default) is a real value, not a mistake: it means
+    "no dependency probe", and app/health.py then omits grading_dependency_up
+    entirely. Anything non-empty must be an absolute http/https URL with a
+    host, because it is handed to urllib.request.urlopen. Without this, an
+    operator typo -- a pasted `orthanc:8042`, a `file:///etc/shadow` -- turns a
+    health probe into an arbitrary local read, which is the class of bug bandit
+    flags as B310. The value is echoed in the message (a URL is not a secret);
+    the offending text is capped like every other non-secret here."""
+    if raw is None or raw.strip() == "":
+        return ""
+    value = raw.strip()
+    parsed = urlparse(value)
+    if parsed.scheme.lower() not in _ORTHANC_URL_SCHEMES:
+        raise ConfigError(
+            f"GRADING_ORTHANC_URL must be an http:// or https:// URL (or empty to disable "
+            f"the Orthanc probe), got {value[:_MAX_ECHOED_VALUE_CHARS]!r} "
+            f"(default: {DEFAULT_ORTHANC_URL})."
+        )
+    if not parsed.netloc:
+        raise ConfigError(
+            f"GRADING_ORTHANC_URL={value[:_MAX_ECHOED_VALUE_CHARS]!r} has a scheme but no "
+            f"host -- did you mean {DEFAULT_ORTHANC_URL}?"
+        )
+    return value
+
+
 def _exit_on_config_error(exc: ConfigError) -> None:
     # SystemExit (not a bare raise) so `docker run`/uvicorn exits with a
     # clear one-line operator message instead of an import-time traceback
@@ -150,5 +187,6 @@ try:
     COORDINATOR_KEY = validate_coordinator_key(os.environ.get("GRADING_COORDINATOR_KEY"))
     TOKEN_TTL_SECONDS = validate_token_ttl_seconds(os.environ.get("GRADING_TOKEN_TTL_SECONDS"))
     RESET_ENABLED = validate_reset_enabled(os.environ.get("GRADING_RESET_ENABLED"))
+    ORTHANC_URL = validate_orthanc_url(os.environ.get("GRADING_ORTHANC_URL", DEFAULT_ORTHANC_URL))
 except ConfigError as exc:
     _exit_on_config_error(exc)
