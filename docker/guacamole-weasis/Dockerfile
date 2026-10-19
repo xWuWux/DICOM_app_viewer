@@ -12,9 +12,10 @@
 # issue #179: it is a mandatory control (CLAUDE.md), and its files are
 # REUSED from the Kasm image, not copied (see the COPY --from=kasm below).
 # Since issue #263 the Weasis NATIVE lockdown (export/import/send/Q-R) is
-# reused the same way -- the one thing still NOT covered here is the
-# transport layer (Guacamole's own clipboard toggles, verified live under
-# #263/#262); don't point it at real patient data until those close.
+# reused the same way; the transport layer (disable-copy/disable-paste on
+# the connection) is closed by #264's provisioning. What still keeps this
+# PoC away from real patient data is the open gap list in #262 -- don't
+# point it at patient data until those close.
 #
 # Base: plain ubuntu:24.04, not any Kasm-maintained image -- the whole
 # point is a flow that doesn't depend on Kasm at all. TigerVNC standard
