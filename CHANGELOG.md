@@ -23,6 +23,28 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Telemetry contract, health split and signal registry (issue #113, API 1.5.0).**
+  `docs/observability.md` is now the contract: event names and their fields, metric names/units/types,
+  `request_id` as the only correlation key, the forbidden-field list, the alert schema and the
+  dead-man's-switch design for DoD 10/11/87/88/104/112. New endpoints: `GET /livez` (process only),
+  `GET /readyz` (database **read + write** + free space, dependency reachability reported as
+  `degraded` without turning the code red) and `GET /internal/signals` (counters/gauges/histograms
+  plus the last full readiness evaluation). `GET /healthz` is unchanged on purpose — `viewer`'s
+  `depends_on: service_healthy` would otherwise inherit a dependency outage as its own failure.
+  `/readyz` answers with verdicts and never measurements (`free_bytes` and friends would publish
+  this host's disk capacity at the public edge); the numbers live in the snapshot and the log.
+  `location ^~ /api/internal/ { return 404; }` blocks the snapshot at the edge, because
+  `location /api/` strips its prefix and would otherwise publish it as `/internal/signals`.
+  New signals include `grading_db_lock_errors_total` (`database is locked` after `busy_timeout` is now
+  a number, independently of the 503 that #222 will introduce), `grading_db_write_duration_ms`,
+  `grading_db_size_bytes`, `grading_volume_free_bytes` and `grading_dependency_up`. A
+  `telemetry_snapshot` line is emitted to stdout every 30 s (`GRADING_TELEMETRY_SNAPSHOT_INTERVAL_SECONDS`,
+  `0` disables). Compose pins `json-file` with `max-size=10m`/`max-file=3` on every service so an
+  unbounded log cannot fill the volume. Tests: `tests/test_observability_contract.py` fails when the doc
+  and `app/telemetry.py` drift, `tests/test_health_signals.py` pins the probe semantics,
+  `scripts/tests/test_internal_surface_not_exposed.py` pins the edge block, and
+  `GRADING_ORTHANC_URL` is validated (absolute http/https URL with a host) at import like every
+  other setting -- it is the one URL this service dials out to.
 - **Guacamole sessions have no clipboard in either direction (issue #263, part 1).** `provision-guacamole-session.py`
   creates every VNC connection with `disable-copy` and `disable-paste` set, matching the Kasm Group's clipboard
   settings (owner decision 2026-10-19: the copy/export lockdown is delivered in the Guacamole flow too).

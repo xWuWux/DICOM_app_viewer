@@ -97,6 +97,10 @@ as the secure choice on shared hosts.
 | `VNC_DISPLAY` / `VNC_GEOMETRY` | KasmVNC defaults | no | wewnetrzna | Kasm image internals |
 | `VNC_PASSWORD` | Kasm-managed | yes | wewnetrzna | KasmVNC internal (never leaves the container) |
 | `WEASIS_BASE_JSON_PATH` | image path | no | wewnetrzna | `patch-weasis-config.py` |
+| `GRADING_ORTHANC_URL` | `http://orthanc:8042` | no | wewnetrzna | `app/config.py` (validated: an absolute http/https URL with a host, or empty to disable the probe -- the value reaches `urllib.request.urlopen`, bandit B310) and `app/health.py` (re-checked on every read). Reachability probe for `grading_dependency_up`; carries no Orthanc credentials on purpose (401 counts as "up", see docs/observability.md). `conftest.py` sets it empty so tests stay hermetic. |
+| `GRADING_HEALTH_CACHE_SECONDS` | `15` | no | wewnetrzna | `app/health.py` -- `/readyz` probe cache. 0 = probe on every call (do not do that with an external monitor: the write probe takes a SQLite write lock). |
+| `GRADING_STORAGE_MIN_FREE_BYTES` | `104857600` (100 MiB) | no | wewnetrzna | `app/health.py` -- `/readyz` free-space floor; below it the endpoint answers 503. Sits above the `VolumeCritical` alert threshold in docs/observability.md on purpose. |
+| `GRADING_TELEMETRY_SNAPSHOT_INTERVAL_SECONDS` | `30` | no | wewnetrzna | `app/telemetry.py` -- period of the `telemetry_snapshot` stdout line. `0` disables it (JSON endpoint only); floats allowed. Invalid values fall back to the default rather than aborting startup. |
 
 ## 5. Explicitly NOT configuration
 

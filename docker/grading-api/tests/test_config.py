@@ -148,3 +148,50 @@ def test_import_exits_cleanly_with_unparseable_ttl():
 def test_import_succeeds_with_valid_config():
     proc = _run_import({"GRADING_COORDINATOR_KEY": VALID_KEY, "GRADING_TOKEN_TTL_SECONDS": "28800"})
     assert proc.returncode == 0, proc.stderr
+
+
+# ---- GRADING_ORTHANC_URL (issue #113) ----
+# The one URL this service dials out to, built from operator config and handed
+# to urllib.request.urlopen. An unvalidated value (a pasted `file://`, a
+# scheme-less `orthanc:8042`) turns a health probe into an arbitrary local read.
+
+
+@pytest.mark.parametrize("raw", [None, "", "   "])
+def test_orthanc_url_empty_disables_the_probe(raw):
+    from app.config import validate_orthanc_url
+
+    assert validate_orthanc_url(raw) == ""
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("http://orthanc:8042", "http://orthanc:8042"),
+        ("  https://orthanc.example.internal:8042  ", "https://orthanc.example.internal:8042"),
+    ],
+)
+def test_orthanc_url_accepts_http_and_https(raw, expected):
+    from app.config import validate_orthanc_url
+
+    assert validate_orthanc_url(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["file:///etc/passwd", "orthanc:8042", "ftp://orthanc:21", "http://", "//orthanc:8042"])
+def test_orthanc_url_rejects_anything_that_is_not_an_http_url_with_a_host(raw):
+    from app.config import ConfigError, validate_orthanc_url
+
+    with pytest.raises(ConfigError) as excinfo:
+        validate_orthanc_url(raw)
+    assert "GRADING_ORTHANC_URL" in str(excinfo.value)
+
+
+def test_import_refuses_a_non_http_orthanc_url_naming_the_variable():
+    proc = _run_import({"GRADING_COORDINATOR_KEY": VALID_KEY, "GRADING_ORTHANC_URL": "file:///etc/passwd"})
+    assert proc.returncode == 2
+    assert "GRADING_ORTHANC_URL" in proc.stderr
+    assert "Traceback" not in proc.stderr
+
+
+def test_import_accepts_a_disabled_probe():
+    proc = _run_import({"GRADING_COORDINATOR_KEY": VALID_KEY, "GRADING_ORTHANC_URL": ""})
+    assert proc.returncode == 0, proc.stderr

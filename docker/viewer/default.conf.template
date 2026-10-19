@@ -52,6 +52,19 @@ server {
     # watermark.html's `orthanc_url` param and docker-compose.yml's comment
     # on the 8042 port).
 
+    # issue #113: the telemetry snapshot must never be publishable at the
+    # public edge -- and this is NOT a cosmetic "that path doesn't exist"
+    # block. `location /api/` below proxies to http://grading-api:8000/ WITH a
+    # trailing slash, which strips the /api/ prefix, so every /api/X arrives at
+    # grading-api as /X. Without this rule, /api/internal/signals would serve
+    # the whole signal snapshot to anyone who can reach :8080 -- found in review
+    # of PR #266, which assumed the opposite ("/internal/ is not under /api/, so
+    # nginx does not proxy it"). `^~` so a regex location added later cannot
+    # outrank it; 404 rather than 403 so the path's existence is not confirmed.
+    location ^~ /api/internal/ {
+        return 404;
+    }
+
     # grading-api is a plain JSON API (no relative-asset-path problem like
     # Orthanc's SPA has), so a subpath proxy is fine here -- keeps
     # watermark.html's fetch() calls same-origin, no CORS needed.

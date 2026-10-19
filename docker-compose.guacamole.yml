@@ -34,10 +34,23 @@
 # a single clickable, no-further-login-prompt link per student, via the
 # documented username/password URL-parameter auto-login.
 
+# issue #113: the telemetry contract's primary channel is stdout, one JSON
+# object per line (docs/observability.md). Rotation belongs to the log driver,
+# not to the application -- without a cap, `json-file` grows until the volume
+# fills (the failure class behind #66), and a filled volume is exactly what
+# /readyz reports as not-ready. 3 x 10 MB per service is ~10 days of a busy
+# cohort's access log and keeps a forensic window after an exam.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   guacamole-db:
     image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
     container_name: ipcmc-guacamole-db
+    logging: *default-logging
     restart: unless-stopped
     environment:
       - POSTGRES_DB=guacamole_db
@@ -61,6 +74,7 @@ services:
   guacd:
     image: guacamole/guacd:1.6.0@sha256:8974eaa9ba32f713daf311e7cc8cd7e4cdfba1edea39eed75524e78ef4b08f4f
     container_name: ipcmc-guacd
+    logging: *default-logging
     restart: unless-stopped
     # issue #69: guacd is ready when it accepts a TCP connection on its port 4822 (busybox nc).
     healthcheck:
@@ -75,6 +89,7 @@ services:
   guacamole:
     image: guacamole/guacamole:1.6.0@sha256:f344085e618bb05e22b964b0208dbd06d3468275bac70206f93805245e067b40
     container_name: ipcmc-guacamole
+    logging: *default-logging
     restart: unless-stopped
     # issue #69: do not start the web app before its database and guacd are ready.
     depends_on:

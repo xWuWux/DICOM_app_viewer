@@ -117,4 +117,24 @@ real infrastructure CI runners do not have (same boundary as
   tracked as #222 (pinned in `scripts/test-degraded-modes.sh` until then).
 * No autoheal for unhealthy-but-running containers (#206 class) - manual
   `docker compose restart` per the runbooks (#88) is the current recovery.
-* No SLO/alerting numbers - #89.
+* No SLO/alerting numbers - #89. The signals they will be written against,
+  their units and an initial (coarse) alert schema now exist in
+  `docs/observability.md` (issue #113); this file stays the behaviour view,
+  that one is the contract view.
+
+## Reading a failure now (issue #113)
+
+The rows above describe behaviour; these are the probes that make a row
+observable. Full definitions in `docs/observability.md`.
+
+| Question | Ask | Meaning |
+| --- | --- | --- |
+| Is the process alive? | `GET /livez` | no dependency is touched; a 200 says nothing about grading |
+| Can the database be read? | `GET /healthz` | unchanged, and still what both compose healthchecks and `viewer`'s `depends_on` use |
+| Would a request succeed right now? | `GET /readyz` | 503 = database read **or write** or free space failed; 200 `degraded` = only Orthanc is unreachable |
+| What are the numbers? | `GET /internal/signals` (internal network only) | counters/gauges/histograms; answers `db_available: false` instead of 503 when the database is gone |
+
+The write half of `/readyz` is what covers the "readable but not writable"
+class (a volume remounted read-only, or filled): `_check_data_writable()`
+refuses that state at start-up only (#209), and a `/healthz` that only reads
+would stay green while every `/submit` answers 500.
