@@ -23,6 +23,9 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Guacamole sessions have no clipboard in either direction (issue #263, part 1).** `provision-guacamole-session.py`
+  creates every VNC connection with `disable-copy` and `disable-paste` set, matching the Kasm Group's clipboard
+  settings (owner decision 2026-10-19: the copy/export lockdown is delivered in the Guacamole flow too).
 - **Guard test for the degraded-mode suite (issue #115).** `scripts/test-degraded-modes.sh --preflight` runs only the
   safety guard (exit 0 clear, 2 when any `ipcmc-*` container exists) and stops before creating `.env` or touching
   Docker; `scripts/test-degraded-modes.bats` pins it with a stubbed `docker` and runs in `test-shell-scripts.sh`.
