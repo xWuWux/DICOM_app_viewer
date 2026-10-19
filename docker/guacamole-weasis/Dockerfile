@@ -10,8 +10,12 @@
 # alternative is about hosting, not copy/export security), NO window
 # auto-tiling (issue #180). The forensic watermark IS included since
 # issue #179: it is a mandatory control (CLAUDE.md), and its files are
-# REUSED from the Kasm image, not copied (see the COPY --from=kasm below). This is NOT a security-hardened image the way
-# docker/kasm-workspace-weasis/ is -- don't point it at real patient data.
+# REUSED from the Kasm image, not copied (see the COPY --from=kasm below).
+# Since issue #263 the Weasis NATIVE lockdown (export/import/send/Q-R) is
+# reused the same way; the transport layer (disable-copy/disable-paste on
+# the connection) is closed by #264's provisioning. What still keeps this
+# PoC away from real patient data is the open gap list in #262 -- don't
+# point it at patient data until those close.
 #
 # Base: plain ubuntu:24.04, not any Kasm-maintained image -- the whole
 # point is a flow that doesn't depend on Kasm at all. TigerVNC standard
@@ -95,19 +99,17 @@ RUN mkdir -p /usr/share/desktop-directories /usr/share/applications && \
     rm -f /tmp/weasis.deb && \
     rm -rf /var/lib/apt/lists/*
 
-# Suppresses Weasis's own "not a certified medical device" disclaimer
-# dialog -- a usability fix (every session gets a fresh, ephemeral $HOME
-# and would otherwise hit it every time), not an anti-cheat/lockdown
-# measure, so it stays even though issue #7's full export/import lockdown
-# (docker/kasm-workspace-weasis/patch-weasis-config.py) does not apply
-# here. Same key/mechanism as that file's own disclaimer patch -- see its
-# header comment for how this was confirmed.
-RUN python3 -c "\
-import json; \
-p = '/opt/weasis/lib/app/conf/base.json'; \
-d = json.load(open(p)); \
-[pref.update(value='false') for pref in d['weasisPreferences'] if pref['code'] == 'weasis.show.disclaimer']; \
-json.dump(d, open(p, 'w'), indent=2)"
+# Issue #263 (copy/export lockdown, Guacamole path): run the Kasm image's
+# own build-time lockdown patcher -- the SAME file docker/kasm-workspace-weasis/
+# runs, pulled through the named build context "kasm" (same reuse mechanism
+# as the watermark files below), so Weasis's native export/import/send/Q-R
+# refusals cannot drift between the two vendor images. The .deb version and
+# SHA-256 pins are shared between the two Dockerfiles (lint.sh fails if they
+# differ), so both patch the byte-identical input config. This also subsumes
+# the disclaimer suppression we used to do with an inline one-liner here
+# (weasis.show.disclaimer=false is one of the patcher's own keys).
+COPY --from=kasm patch-weasis-config.py /tmp/patch-weasis-config.py
+RUN python3 /tmp/patch-weasis-config.py && rm /tmp/patch-weasis-config.py
 
 # Same REMOTE_HOST/VIEWER_URL/ORTHANC_URL convention as
 # docker/kasm-workspace-weasis/Dockerfile -- see that file's own comments.
