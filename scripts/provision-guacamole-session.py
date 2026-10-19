@@ -470,6 +470,12 @@ def _provision():
                 "hostname": container_name,
                 "port": "5901",
                 "password": vnc_password,
+                # Issue #263 (owner decision 2026-10-19): no clipboard in either
+                # direction, matching the Kasm Group's allow_kasm_clipboard_* = False.
+                # Guacamole's VNC clipboard is text only (ISO 8859-1), so these two
+                # close the whole clipboard path; images cannot cross it at all.
+                "disable-copy": "true",
+                "disable-paste": "true",
             },
             "attributes": {},
         },

@@ -208,6 +208,35 @@ def test_guacamole_connection_gets_the_same_vnc_password(
     assert captured_connection_data["parameters"]["password"] == container_password
 
 
+def test_guacamole_connection_disables_the_clipboard_both_ways(
+    mock_docker_run, monkeypatch, capsys
+):
+    """Issue #263: every connection is created with disable-copy AND
+    disable-paste, the string "true" (Guacamole parameters are strings).
+    Removing either line must fail this test."""
+    captured = {}
+    real_api_call = provision.api_call
+
+    def _spying_api_call(method, url, data=None, **kwargs):
+        if "/connections?token=" in url and method == "POST":
+            captured.update(data)
+        return real_api_call(method, url, data=data, **kwargs)
+
+    with patch.object(provision, "api_call", side_effect=_spying_api_call):
+        with patch.object(urllib.request, "urlopen", side_effect=_fake_urlopen):
+            monkeypatch.setattr(
+                sys,
+                "argv",
+                ["provision-guacamole-session.py", "--student-id", "STU_TEST"],
+            )
+            provision.main()
+    capsys.readouterr()
+
+    params = captured["parameters"]
+    assert params.get("disable-copy") == "true"
+    assert params.get("disable-paste") == "true"
+
+
 # ---------------------------------------------------------------------------
 # issue #182: mid-provision failure must leave NOTHING behind un-unwound
 # (the compensation pattern create-session.py uses for the Kasm flow).

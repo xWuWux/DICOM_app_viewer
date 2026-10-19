@@ -28,9 +28,11 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   `request_id` as the only correlation key, the forbidden-field list, the alert schema and the
   dead-man's-switch design for DoD 10/11/87/88/104/112. New endpoints: `GET /livez` (process only),
   `GET /readyz` (database **read + write** + free space, dependency reachability reported as
-  `degraded` without turning the code red) and `GET /internal/signals` (counters/gauges/histograms,
-  internal network only, no auth by topology). `GET /healthz` is unchanged on purpose — `viewer`'s
-  `depends_on: service_healthy` would otherwise inherit a dependency outage as its own failure.
+  `degraded` without turning the code red; statuses only at the public edge, the numbers stay
+  internal) and `GET /internal/signals` (counters/gauges/histograms, unreachable from outside the
+  Docker network and now blocked at the nginx edge as `/api/internal/`). `GET /healthz` is unchanged
+  on purpose — `viewer`'s `depends_on: service_healthy` would otherwise inherit a dependency outage
+  as its own failure.
   New signals include `grading_db_lock_errors_total` (`database is locked` after `busy_timeout` is now
   a number, independently of the 503 that #222 will introduce), `grading_db_write_duration_ms`,
   `grading_db_size_bytes`, `grading_volume_free_bytes` and `grading_dependency_up`. A
@@ -38,11 +40,29 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   `0` disables). Compose pins `json-file` with `max-size=10m`/`max-file=3` on every service so an
   unbounded log cannot fill the volume. Tests: `tests/test_observability_contract.py` fails when the doc
   and `app/telemetry.py` drift, `tests/test_health_signals.py` pins the probe semantics.
-
+- **Guacamole sessions have no clipboard in either direction (issue #263, part 1).** `provision-guacamole-session.py`
+  creates every VNC connection with `disable-copy` and `disable-paste` set, matching the Kasm Group's clipboard
+  settings (owner decision 2026-10-19: the copy/export lockdown is delivered in the Guacamole flow too).
 - **Guard test for the degraded-mode suite (issue #115).** `scripts/test-degraded-modes.sh --preflight` runs only the
   safety guard (exit 0 clear, 2 when any `ipcmc-*` container exists) and stops before creating `.env` or touching
   Docker; `scripts/test-degraded-modes.bats` pins it with a stubbed `docker` and runs in `test-shell-scripts.sh`.
   Ported from `docs/115-degraded-modes` (commit ab26269), which #219 and #229 were merged without.
+
+- **Weasis copy/export lockdown now ships in the Guacamole PoC image too
+  (issue #263, part 2).** `docker/guacamole-weasis/Dockerfile` replaces its
+  inline disclaimer-only config patch with the Kasm image's own
+  `patch-weasis-config.py`, pulled through the existing `kasm` named build
+  context (the same one-source reuse the watermark files use from #179):
+  both vendor images now run the identical patcher over the identical
+  pinned Weasis .deb (lint.sh keeps the pins synced), so native
+  export/import/send/Q-R refusals cannot drift between them.
+  `scripts/test-copy-lockdown.sh` grew a third part: it builds
+  docker/guacamole-weasis for real and inspects its shipped base.json
+  through the same checker (`scripts/tests/inspect_lockdown_basejson.py`,
+  extracted unchanged from the Kasm path). Guacamole transport-layer
+  clipboard toggles are part 1's scope (p2), not covered by image
+  inspection.
+
 - **Degraded-mode scenario 7 now recreates the stack instead of restarting it (issue #238 point G, review of #257).**
   `docker compose restart` keeps each container's filesystem, so it could not show that progress lives on the
   `grading-db` volume. Scenario 7 runs `up -d --force-recreate`, checks the grading-api container id changed, that the
