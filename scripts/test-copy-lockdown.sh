@@ -25,6 +25,14 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
+# Always remove the test-built images, pass or fail -- a failed inspect
+# step used to leave ipcmc/guacamole-weasis:copy-lockdown-test dangling
+# (observed during a deliberate-bug run; p2 cleaned up the first one).
+cleanup_test_images() {
+  docker rmi ipcmc/dicom-viewer-weasis:copy-lockdown-test ipcmc/guacamole-weasis:copy-lockdown-test >/dev/null 2>&1 || true
+}
+trap cleanup_test_images EXIT
+
 echo "--- scripts/tests/test_copy_lockdown.py ---"
 (
   cd scripts/tests || exit 1
@@ -45,13 +53,11 @@ inspect_lockdown() {
   docker run --rm --entrypoint cat "$1" /opt/weasis/lib/app/conf/base.json | python3 scripts/tests/inspect_lockdown_basejson.py
 }
 inspect_lockdown ipcmc/dicom-viewer-weasis:copy-lockdown-test
-docker rmi ipcmc/dicom-viewer-weasis:copy-lockdown-test >/dev/null
 
 echo "--- building docker/guacamole-weasis (issue #263: same patcher via the kasm build context) ---"
 docker build -q --build-context kasm=docker/kasm-workspace-weasis -t ipcmc/guacamole-weasis:copy-lockdown-test docker/guacamole-weasis
 
 echo "--- inspecting the actual shipped base.json (Guacamole image) ---"
 inspect_lockdown ipcmc/guacamole-weasis:copy-lockdown-test
-docker rmi ipcmc/guacamole-weasis:copy-lockdown-test >/dev/null
 
 echo "All copy-lockdown checks passed (both vendor images)."
