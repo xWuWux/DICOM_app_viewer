@@ -150,6 +150,13 @@ class _Kasm:
                 return _raw_response(b"<html><head>502 Bad Gateway</head></html>")
             if self.kasm_mode == "no_kasm_id":
                 return _FakeResponse({"user_id": "u1", "kasm_url": "/k/x", "filler": self.filler})
+            if self.kasm_mode == "no_kasm_url":
+                # Issue #255: Kasm accepted the session and answered 200, but the
+                # field the student link is built from is simply not there. The
+                # ADMIN request_kasm answers like this; the public one has always
+                # answered with kasm_url here, so this is the shape, not a case
+                # observed in production.
+                return _FakeResponse({"kasm_id": "k1", "user_id": "u1", "status": "scheduled"})
             return _FakeResponse({"kasm_id": "k1", "user_id": "u1", "kasm_url": "/k/x"})
         if url.endswith("/api/public/get_kasm_status"):
             if self.status_mode == "http_error":
@@ -313,6 +320,45 @@ def test_unexpected_kasm_response_without_kasm_id_revokes(env, monkeypatch):
     kasm = _Kasm(kasm_mode="no_kasm_id")
     assert _run(monkeypatch, kasm) is not None
     assert kasm.called("/api/session/revoke") == [{"token": FAKE_TOKEN}]
+
+
+def test_session_created_without_a_link_exits_cleanly_and_names_it(env, monkeypatch, capsys):
+    """Issue #255: a 200 carrying kasm_id but no kasm_url used to reach
+    created['kasm_url'] and raise KeyError AFTER the session existed, leaving a
+    live session plus a valid token and no link and no identifier on screen."""
+    kasm = _Kasm(kasm_mode="no_kasm_url")
+    escaped = _run(monkeypatch, kasm)
+    assert isinstance(escaped, SystemExit), f"leaked {escaped!r} instead of a clean exit"
+    message = str(escaped.code)
+    assert "no kasm_url" in message
+    # The identifiers are the whole point: without them the operator cannot end
+    # or re-link the session the failure just created.
+    assert "kasm_id=k1" in message and "user_id=u1" in message
+    assert "KeyError" not in message
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.err
+    # and no link JSON is printed, so no caller can mistake this for a success
+    assert '"link"' not in captured.out
+
+
+def test_missing_link_fails_before_the_readiness_poll(env, monkeypatch):
+    """Polling status for up to 60 s only to fail afterwards would be waste with
+    a new Kasm session on the other end."""
+    kasm = _Kasm(kasm_mode="no_kasm_url")
+    assert _run(monkeypatch, kasm) is not None
+    assert kasm.called("/api/public/get_kasm_status") == []
+
+
+def test_missing_link_leaves_the_token_alone_on_purpose(env, monkeypatch, capsys):
+    """The no-revoke-after-Kasm-answered rule (#104) applies here unchanged: the
+    session is live and holds this token, so revoking would break something a
+    student might join. The error text therefore has to carry the undo
+    instructions instead -- this test pins both halves of that trade."""
+    kasm = _Kasm(kasm_mode="no_kasm_url")
+    escaped = _run(monkeypatch, kasm)
+    assert kasm.called("/api/session/revoke") == []
+    assert "NOT revoked" in str(escaped.code)
+    assert "End that session" in str(escaped.code)
 
 
 def test_interrupted_after_kasm_exists_does_not_revoke(env, monkeypatch):

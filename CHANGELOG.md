@@ -23,6 +23,11 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Guard test for the degraded-mode suite (issue #115).** `scripts/test-degraded-modes.sh --preflight` runs only the
+  safety guard (exit 0 clear, 2 when any `ipcmc-*` container exists) and stops before creating `.env` or touching
+  Docker; `scripts/test-degraded-modes.bats` pins it with a stubbed `docker` and runs in `test-shell-scripts.sh`.
+  Ported from `docs/115-degraded-modes` (commit ab26269), which #219 and #229 were merged without.
+
 - **Weasis copy/export lockdown now ships in the Guacamole PoC image too
   (issue #263, part 2).** `docker/guacamole-weasis/Dockerfile` replaces its
   inline disclaimer-only config patch with the Kasm image's own
@@ -37,7 +42,6 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
   extracted unchanged from the Kasm path). Guacamole transport-layer
   clipboard toggles are part 1's scope (p2), not covered by image
   inspection.
-
 
 - **Degraded-mode scenario 7 now recreates the stack instead of restarting it (issue #238 point G, review of #257).**
   `docker compose restart` keeps each container's filesystem, so it could not show that progress lives on the
