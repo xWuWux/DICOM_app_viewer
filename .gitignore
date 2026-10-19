@@ -74,3 +74,7 @@ local/*
 !local/.gitkeep
 Dokumentacja/DICOM_Images/
 Dokumentacja/Opisy_badan/
+
+# Local agent scratch (review notes, spike drivers, and a lab-only admin password
+# file with mode 0600). Must never reach a public repo, not even by `git add -A`.
+.pi/
