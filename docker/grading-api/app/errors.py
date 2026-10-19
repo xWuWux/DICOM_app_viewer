@@ -21,6 +21,7 @@ from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from . import telemetry
 from .logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -118,6 +119,14 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     # travels back out through the middleware, this handler is also the
     # one place that can still put X-Request-Id on a 500.
     request_id = getattr(request.state, "request_id", "-")
+    # issue #113: a SQLite writer-lock timeout arrives here as a bare
+    # OperationalError today (#222 will map it to 503 DB_BUSY + Retry-After).
+    # Counted independently of whatever status that ends up being --
+    # telemetry.is_db_lock_error() is the single definition of "this was a lock
+    # timeout", shared with the readiness write probe. Before this, the only
+    # evidence of a lock storm was a 5 s latency spike in the access log.
+    if telemetry.is_db_lock_error(exc):
+        telemetry.record_db_lock_error()
     logger.exception("unhandled_exception", extra={"path": request.url.path, "request_id": request_id})
     return JSONResponse(
         status_code=500,

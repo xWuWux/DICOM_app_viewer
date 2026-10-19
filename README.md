@@ -21,6 +21,10 @@ below are more of a technical decisions log than an onboarding doc.
 Mermaid diagrams (session flow + deployment topology — those cover the
 Chrome+Orthanc flow described below; they predate the Weasis flow and
 haven't been redrawn for it yet).
+**Running it?** `docs/observability.md` is the telemetry contract — signal
+names, units, `/livez` `/healthz` `/readyz` semantics and the alert/dead-man's
+switch schema (issue #113). `docs/DEGRADED_MODES.md` is what happens when each
+dependency breaks.
 
 ## Two viewer flows, side by side
 
@@ -1207,6 +1211,9 @@ docker/viewer/                        nginx (config templated, auth token comput
 docker/grading-api/                   Lung-RADS 3-stage grading mechanics (FastAPI + SQLite)
 docker/grading-api/app/logging_config.py  structured JSON logging + request-id correlation (issue #72)
 docker/grading-api/app/errors.py      stable {error_code, message} error taxonomy (issue #74)
+docker/grading-api/app/telemetry.py   in-process signal registry + snapshot (issue #113, docs/observability.md)
+docker/grading-api/app/health.py      /livez, /healthz and /readyz probes (issue #113)
+docs/observability.md                 the telemetry contract: signal names, units, alert schema
 docker/grading-api/tests/             unit tests (scripts/test-grading-api.sh)
 docker/grading-api/pyproject.toml     ruff config (line-length, isort known-first-party)
 docker/kasm-workspace/                Chrome-based Kasm workspace image -- the one actually deployed

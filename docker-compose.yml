@@ -1,4 +1,16 @@
 
+# issue #113: the telemetry contract's primary channel is stdout, one JSON
+# object per line (docs/observability.md). Rotation belongs to the log driver,
+# not to the application -- without a cap, `json-file` grows until the volume
+# fills (the failure class behind #66), and a filled volume is exactly what
+# /readyz reports as not-ready. 3 x 10 MB per service is ~10 days of a busy
+# cohort's access log and keeps a forensic window after an exam.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   orthanc:
     # issue #50: exact tag AND immutable digest (the multi-arch manifest-list
@@ -17,6 +29,7 @@ services:
     # DICOMweb/plugins config this app depends on) before merging.
     image: orthancteam/orthanc:26.9.1@sha256:d2705f2c56547e55ce9bc2250fd22d05d326493b3f3d9fa191ecb7db8ca6b5a2
     container_name: ipcmc-orthanc
+    logging: *default-logging
     restart: unless-stopped
     # issue #69: readiness, not just "the process started". Orthanc answers /system once its
     # database is open. The image has python3 but no curl/wget, so the probe is a Python
@@ -73,6 +86,7 @@ services:
   grading-db-init:
     image: alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
     container_name: ipcmc-grading-db-init
+    logging: *default-logging
     user: "0:0"
     command: ["chown", "-R", "10001:10001", "/data"]
     volumes:
@@ -90,6 +104,7 @@ services:
   grading-api:
     build: ./docker/grading-api
     container_name: ipcmc-grading-api
+    logging: *default-logging
     restart: unless-stopped
     # follow-up to #51: wait for the one-shot ownership fix of the data volume.
     depends_on:
@@ -149,6 +164,7 @@ services:
   viewer:
     build: ./docker/viewer
     container_name: ipcmc-viewer
+    logging: *default-logging
     restart: unless-stopped
     # issue #69: start only once both backends answer their health probes, not as soon as
     # their processes exist (the race scripts/smoke-test.sh works around with retry loops;

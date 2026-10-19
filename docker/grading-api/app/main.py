@@ -40,7 +40,7 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from . import db
+from . import db, health, telemetry
 from .config import COORDINATOR_KEY, RESET_ENABLED
 from .errors import AppError, app_error_handler, unhandled_exception_handler, validation_error_handler
 from .logging_config import configure_logging, get_logger, request_id_var
@@ -56,7 +56,15 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
-    yield
+    # issue #113: the periodic `telemetry_snapshot` line. A background thread,
+    # not an add-on process, because the snapshot is in-process state; it is
+    # stopped in finally: so a TestClient context (or a graceful shutdown,
+    # #116) cannot leave it running against a closed database.
+    stop_snapshot = telemetry.start_snapshot_thread()
+    try:
+        yield
+    finally:
+        stop_snapshot()
 
 
 # issue #100, hard-coded and deliberately WITHOUT a dev/docs opt-out
@@ -72,7 +80,7 @@ async def lifespan(app: FastAPI):
 # the SAME commit that adds a CHANGELOG.md entry (the review contract for
 # this repo: no behavior-visible change lands without one), and the
 # matching git tag is cut at release time by the release owner.
-API_VERSION = "1.4.0"
+API_VERSION = "1.5.0"
 
 app = FastAPI(
     title="IP_CMC Grading API",
@@ -136,6 +144,9 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
             # be correlated by. Caught by test_logging.py's own assertion
             # that this line's request_id matches the response header.
             duration_ms = round((time.monotonic() - start) * 1000, 1)
+            # issue #113: the same facts as the log line, but aggregated -- what
+            # an alert can be built on without a log pipeline (DoD 88).
+            telemetry.record_request(request.method, request.url.path, response.status_code, duration_ms)
             logger.info(
                 "request",
                 extra={
@@ -166,7 +177,18 @@ app.add_middleware(RequestIdMiddleware)
 
 @app.get("/healthz")
 def healthz():
-    """Health check with database connection verification (issue #6)."""
+    """Health check with database connection verification (issue #6).
+
+    issue #113: KEPT NARROW ON PURPOSE. This stays "can the database be opened
+    and read" -- the contract every existing consumer already relies on
+    (both compose healthchecks, smoke-test.sh, test-degraded-modes.sh,
+    test-visual-regression.sh), and the one `viewer` gates its own startup on
+    via `depends_on: service_healthy`. Adding dependency (Orthanc) or write
+    probes here would turn a partially degraded stack into a total outage:
+    grading would stop being startable because images are unreachable. The
+    richer question lives at /readyz; liveness lives at /livez. See
+    app/health.py and docs/observability.md.
+    """
     conn = None
     try:
         conn = db.get_connection()
@@ -185,6 +207,67 @@ def healthz():
         # the above.
         if conn is not None:
             conn.close()
+
+
+@app.get("/livez")
+def livez():
+    """Liveness only (issue #113, DoD 11): the process answers, nothing else is
+    touched. Safe to base a restart decision on -- a slow or missing dependency
+    never makes this fail, so a dependency outage cannot trigger a restart loop.
+    """
+    return health.liveness()
+
+
+@app.get("/readyz")
+def readyz(response: Response):
+    """Readiness for a student's request right now (issue #113, DoD 11 + 87):
+    database READ, database WRITE and free space on the data volume, with
+    dependency reachability reported alongside.
+
+    200 = the grading flow works (body status `ready`, or `degraded` when only a
+    dependency is unreachable -- grading does not need Orthanc). 503 = at least
+    one core check failed; put the caller on a dead-man's switch, do NOT restart
+    the container on it (a full volume restart-loops forever).
+
+    Probes are cached for GRADING_HEALTH_CACHE_SECONDS (default 15) because the
+    write probe takes a SQLite write lock; `cached: true` in the body makes a
+    stale verdict distinguishable from a fresh one.
+    """
+    payload, ok = health.readiness()
+    if not ok:
+        response.status_code = 503
+    response.headers["Cache-Control"] = "no-store"
+    return payload
+
+
+@app.get("/internal/signals")
+def internal_signals(response: Response):
+    """Aggregated telemetry snapshot (issue #113) -- the machine-readable form
+    of docs/observability.md's signal table.
+
+    INTERNAL ONLY, and enforced by topology rather than by a secret: this path
+    is not under /api/, so nginx (:8080) does not proxy it, and grading-api
+    publishes no host port (docker-compose.yml) -- only containers on
+    `ipcmc-internal` can reach :8000. It therefore carries no auth and no
+    tokens: counts and sizes only. A future scraper belongs on that network
+    too, never on the public edge.
+
+    Answers even with a dead database (`db_available: false`, DB-derived gauges
+    absent) -- "the probe works and reports a broken database" is the whole
+    point of DoD 11; a 503 here would erase that distinction.
+    """
+    conn = None
+    try:
+        conn = db.get_connection()
+    except Exception:  # noqa: BLE001 - degraded snapshot, not a failed endpoint
+        logger.exception("signals_database_unavailable")
+    try:
+        payload = telemetry.signals(conn)
+    finally:
+        if conn is not None:
+            conn.close()
+    response.headers["Cache-Control"] = "no-store"
+    return payload
 
 
 # issue #99: one pattern for every student_id this service accepts, so
@@ -706,7 +789,17 @@ def submit(body: SubmitBody):
             conn.rollback()
             raise
 
-        conn.commit()
+        # issue #113: write latency and accepted-submission count, measured
+        # around the ONE commit that makes a submission durable. Observed even
+        # when the commit raises (finally:) -- a 5 s wait that ends in
+        # `database is locked` is exactly the sample the storage alert needs to
+        # see, and #222's future 503 path keeps this measurement unchanged.
+        commit_started = time.monotonic()
+        try:
+            conn.commit()
+        finally:
+            telemetry.observe_db_write("submit", round((time.monotonic() - commit_started) * 1000, 2))
+        telemetry.record_submission(body.stage)
 
         if body.stage == "learning":
             return {"reference_report": case["reference_report"]}

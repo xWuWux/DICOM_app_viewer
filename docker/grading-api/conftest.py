@@ -17,11 +17,20 @@ import os
 # length for EVERY process importing the app, tests included -- no dev
 # exception, so this key has to satisfy the same rule production does.
 os.environ.setdefault("GRADING_COORDINATOR_KEY", "test-only-coordinator-key-0123456789abcdef")
+# issue #113: health/telemetry defaults that keep the suite hermetic. The Orthanc
+# probe is DISABLED (empty URL) -- there is no `orthanc` host inside the test
+# process and a DNS failure per cached window would be pure noise. The periodic
+# `telemetry_snapshot` line is off by default; the tests that exercise the thread
+# switch it on explicitly.
+os.environ.setdefault("GRADING_ORTHANC_URL", "")
+os.environ.setdefault("GRADING_TELEMETRY_SNAPSHOT_INTERVAL_SECONDS", "0")
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app import db as db_module
+from app import health as health_module
+from app import telemetry as telemetry_module
 from app.main import app
 
 
@@ -38,6 +47,10 @@ def client(tmp_path, monkeypatch):
     state with another test or a real deployment's data.
     """
     monkeypatch.setattr(db_module, "DB_PATH", str(tmp_path / "grading-test.db"))
+    # issue #113: counters, gauges and the readiness cache are process-lifetime
+    # state; a fresh database per test must come with a fresh snapshot.
+    telemetry_module.reset()
+    health_module.reset_cache()
     # TestClient as a context manager runs FastAPI's startup event (which
     # calls db.init_db()) against the now-patched DB_PATH, then its
     # shutdown event on exit -- the standard FastAPI testing pattern,

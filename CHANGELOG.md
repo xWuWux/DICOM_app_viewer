@@ -23,6 +23,22 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Telemetry contract, health split and signal registry (issue #113, API 1.5.0).**
+  `docs/observability.md` is now the contract: event names and their fields, metric names/units/types,
+  `request_id` as the only correlation key, the forbidden-field list, the alert schema and the
+  dead-man's-switch design for DoD 10/11/87/88/104/112. New endpoints: `GET /livez` (process only),
+  `GET /readyz` (database **read + write** + free space, dependency reachability reported as
+  `degraded` without turning the code red) and `GET /internal/signals` (counters/gauges/histograms,
+  internal network only, no auth by topology). `GET /healthz` is unchanged on purpose — `viewer`'s
+  `depends_on: service_healthy` would otherwise inherit a dependency outage as its own failure.
+  New signals include `grading_db_lock_errors_total` (`database is locked` after `busy_timeout` is now
+  a number, independently of the 503 that #222 will introduce), `grading_db_write_duration_ms`,
+  `grading_db_size_bytes`, `grading_volume_free_bytes` and `grading_dependency_up`. A
+  `telemetry_snapshot` line is emitted to stdout every 30 s (`GRADING_TELEMETRY_SNAPSHOT_INTERVAL_SECONDS`,
+  `0` disables). Compose pins `json-file` with `max-size=10m`/`max-file=3` on every service so an
+  unbounded log cannot fill the volume. Tests: `tests/test_observability_contract.py` fails when the doc
+  and `app/telemetry.py` drift, `tests/test_health_signals.py` pins the probe semantics.
+
 - **Guard test for the degraded-mode suite (issue #115).** `scripts/test-degraded-modes.sh --preflight` runs only the
   safety guard (exit 0 clear, 2 when any `ipcmc-*` container exists) and stops before creating `.env` or touching
   Docker; `scripts/test-degraded-modes.bats` pins it with a stubbed `docker` and runs in `test-shell-scripts.sh`.

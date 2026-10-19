@@ -597,6 +597,17 @@ def init_db():
             expires_at REAL NOT NULL
         );
 
+        -- issue #113: the only write the readiness probe performs. A dedicated
+        -- one-row table, not a touch on real data: writing to `sessions` or
+        -- `progress` on every probe would make an unauthenticated health check
+        -- mutate grading state. It exists so "the database accepts writes" is
+        -- observable at runtime (a volume can go read-only or full long after
+        -- the start-up check in _check_data_writable() passed).
+        CREATE TABLE IF NOT EXISTS telemetry_probe (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            touched_at REAL NOT NULL
+        );
+
         -- Indexes for performance (issue #1: missing indexes)
         CREATE INDEX IF NOT EXISTS idx_submissions_student ON submissions(student_id);
         CREATE INDEX IF NOT EXISTS idx_submissions_stage ON submissions(stage);

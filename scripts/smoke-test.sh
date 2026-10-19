@@ -72,6 +72,15 @@ check "orthanc" "200" "http://localhost:8042/system" "orthanc:${ORTHANC_PASSWORD
 check "watermarked viewer wrapper" "200" "http://localhost:8080/?student_id=CI_TEST&session_id=CI_TEST"
 check "auth-injecting Orthanc proxy (401 would mean auth injection is broken)" "307" "http://localhost:8043/"
 check "grading-api, direct" "200" "http://localhost:8080/api/healthz"
+# issue #113: the health split, proven at the edge rather than only in unit
+# tests -- /readyz returning 200 here means the stack really accepted a WRITE
+# to the grading database and the volume has room, which /healthz never checked.
+check "grading-api liveness" "200" "http://localhost:8080/api/livez"
+check "grading-api readiness (db read + write + free space)" "200" "http://localhost:8080/api/readyz"
+# The signal snapshot is internal by topology: nginx proxies /api/ only, so
+# /internal/signals must NOT be reachable at the public edge (404 = nginx
+# looked for a static file, which is the correct answer for an unproxied path).
+check "telemetry snapshot not exposed at the edge" "404" "http://localhost:8080/internal/signals"
 
 # grading-api's /case, /submit, /reset, /results all take a server-minted
 # token now, never a bare student_id (a real gap this closed -- see
