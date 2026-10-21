@@ -10,10 +10,9 @@ analytics, advertising or third-party scripts were found: the panel pages load n
 | Guacamole (Apache) | Guacamole stores its authentication token in the browser | authentication of the streaming session | Guacamole-managed: **UNKNOWN in detail, to inventory from a live session** |
 
 ## Consent
-All storage found so far is needed to provide the service the user asked for. Strictly necessary
-storage is generally exempt from consent under EU ePrivacy rules; **to be confirmed by legal for the
-applicable Polish law**, which then decides whether an information notice (no consent banner) is
-enough. A consent banner becomes necessary if analytics or any non-essential storage is ever added.
+All storage found so far is needed to provide the service the user asked for. Whether strictly
+necessary storage is exempt from consent under the applicable Polish and EU ePrivacy rules, and
+whether an information notice (no consent banner) is then enough, is **TO DECIDE by legal**. A consent banner becomes necessary if analytics or any non-essential storage is ever added.
 
 ## To do before go-live
 - Inventory the Kasm and Guacamole cookies/storage from a live session (names, lifetime) and fill in

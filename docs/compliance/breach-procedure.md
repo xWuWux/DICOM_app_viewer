@@ -1,8 +1,8 @@
 # Personal data breach procedure: first version (outline)
 
 For incidents involving participant data or study data. Organisational parts (who decides, who
-notifies) are **TO DECIDE** with the DPO and must match GUMed's own incident procedure, which takes
-precedence where it exists (UNKNOWN whether one exists; to check).
+notifies) are **TO DECIDE** with the DPO and must match GUMed's own incident procedure, which is
+expected to take precedence where it exists (to confirm with the DPO; UNKNOWN whether one exists).
 
 ## Contacts (TO DECIDE)
 | Role | Name / contact |

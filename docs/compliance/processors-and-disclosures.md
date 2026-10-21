@@ -12,8 +12,8 @@
 | Any future external host, cloud, scrubbing service | would be a processor | not allowed today (CLAUDE.md: on-premise only, no cloud) | would need a DPA (GDPR art. 28) and legal review |
 
 ## Data processing agreement
-No external processor in the data path was found, so no DPA is needed **for the current
-on-premise setup**, provided:
+We found no external processor in the data path of the current on-premise setup. Whether that
+removes the need for a DPA is **TO DECIDE by legal**; the finding holds only if:
 1. the Kasm CE outbound-traffic question above is answered "no personal data";
 2. hosting stays on GUMed infrastructure operated by GUMed staff. If the Proxmox hosts are run by
    another unit or company, that relationship needs to be classified (**TO DECIDE**).
