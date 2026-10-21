@@ -1214,6 +1214,7 @@ docker/grading-api/app/errors.py      stable {error_code, message} error taxonom
 docker/grading-api/app/telemetry.py   in-process signal registry + snapshot (issue #113, docs/observability.md)
 docker/grading-api/app/health.py      /livez, /healthz and /readyz probes (issue #113)
 docs/observability.md                 the telemetry contract: signal names, units, alert schema
+docs/compliance/                      legal/compliance outline (privacy, terms, GDPR, retention, breach, licences): draft, TO DECIDE items need legal review
 docker/grading-api/tests/             unit tests (scripts/test-grading-api.sh)
 docker/grading-api/pyproject.toml     ruff config (line-length, isort known-first-party)
 docker/kasm-workspace/                Chrome-based Kasm workspace image -- the one actually deployed

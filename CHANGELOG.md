@@ -23,6 +23,10 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Legal and compliance outline (`docs/compliance/`, draft).** One index over 15 topics (privacy notice, terms of use,
+  GDPR, cookies, legal basis, marketing, deletion, processors/DPA, retention, disclosure, security, breach procedure,
+  IP, open source licences, payments) with a data inventory taken from the code. Facts only; every legal or
+  organisational choice is marked TO DECIDE for the owner, legal and the DPO. No behaviour change.
 - **Telemetry contract, health split and signal registry (issue #113, API 1.5.0).**
   `docs/observability.md` is now the contract: event names and their fields, metric names/units/types,
   `request_id` as the only correlation key, the forbidden-field list, the alert schema and the
