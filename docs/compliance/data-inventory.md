@@ -32,7 +32,12 @@ repository or the lab.
 | Session containers (Kasm / Guacamole) | the doctor's desktop; watermark text `student_id | session_id | time` drawn on screen | destroyed at the end of the session (Kasm: after 3600 s without a connection; Guacamole: teardown or reaper, idle 180 min / max 48 h) |
 | Kasm database (vendor) | anonymous Kasm users, session records, session tokens without an expiry date, Kasm logs | Kasm-managed; anonymous users and tokens currently accumulate (#251 review); Kasm's own log retention UNKNOWN |
 | Guacamole database | per-session user `stu_<student_id>`, connection, `guacamole_connection_history` (username, **client IP**, start/end) | accounts expire by `valid-until` (48 h default, day-grained); history kept indefinitely |
+| grading-api telemetry snapshot (`/internal/signals`, in memory, #113) | aggregate counters, sizes and timestamps only; no participant ids, tokens or IP addresses (`docs/observability.md`, forbidden fields) | process lifetime |
 | Session link files (`local/session-links/`) | bearer link with a Guacamole password | until the operator deletes them; mode 0600 |
+
+Sources for the Kasm rows: the lab Kasm database, read 2026-10-21 (Group setting `keepalive_expiration` = 3600 s, action `delete`) and the live test of 2026-10-15 (`session_tokens.session_expiration_date` empty).
+
+**Future store:** if session freeze/resume is built (#258, ADR 0001 / #252), a paused or stopped session keeps the desktop's memory and disk state, including study pixels, on the host for days. It must be added here with its lifetime before that feature ships.
 
 ## Data that leaves the host
 None by design: medical data stays on-premise (CLAUDE.md); the client receives only stream pixels.
