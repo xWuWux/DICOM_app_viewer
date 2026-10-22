@@ -55,7 +55,11 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    db.init_db()
+    integrity_ok = db.check_startup_integrity()
+    telemetry.set_gauge(telemetry.DB_INTEGRITY_OK, int(integrity_ok))
+    health.reset_cache()
+    if integrity_ok:
+        db.init_db()
     # issue #113: the periodic `telemetry_snapshot` line. A background thread,
     # not an add-on process, because the snapshot is in-process state; it is
     # stopped in finally: so a TestClient context (or a graceful shutdown,
@@ -65,6 +69,8 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         stop_snapshot()
+        checkpoint = db.shutdown_checkpoint()
+        logger.info("graceful_stop", extra={"checkpoint": checkpoint})
 
 
 # issue #100, hard-coded and deliberately WITHOUT a dev/docs opt-out
@@ -80,7 +86,7 @@ async def lifespan(app: FastAPI):
 # the SAME commit that adds a CHANGELOG.md entry (the review contract for
 # this repo: no behavior-visible change lands without one), and the
 # matching git tag is cut at release time by the release owner.
-API_VERSION = "1.5.0"
+API_VERSION = "1.6.0"
 
 app = FastAPI(
     title="IP_CMC Grading API",
@@ -137,7 +143,17 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
             logger.warning("request_id_rejected")
         start = time.monotonic()
         try:
-            response = await call_next(request)
+            if db.STARTUP_INTEGRITY_OK is False and request.url.path not in {
+                "/livez",
+                "/healthz",
+                "/readyz",
+                "/internal/signals",
+            }:
+                response = await app_error_handler(
+                    request, AppError(503, "DATABASE_UNAVAILABLE", "Database unavailable")
+                )
+            else:
+                response = await call_next(request)
             # Logged here, still inside the contextvar's scope -- logging
             # this after the finally below resets it would mean the access
             # log line itself never carries the request_id it's meant to

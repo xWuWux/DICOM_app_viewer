@@ -13,11 +13,14 @@ import os
 import sqlite3
 import sys
 import time
+from pathlib import Path
 
 # main.py reads db.TOKEN_TTL_SECONDS; validation lives in config.py (#97).
 from .cases_file import CasesFileError, load_cases
 from .config import TOKEN_TTL_SECONDS  # noqa: F401  re-export, call sites unchanged
 from .logging_config import get_logger
+
+STARTUP_INTEGRITY_OK = None
 
 DB_PATH = os.environ.get("GRADING_DB_PATH", "/data/grading.db")
 
@@ -96,7 +99,62 @@ SEED_CASES = [
 ]
 
 
+def check_startup_integrity():
+    """Recover WAL through SQLite, then check once before any schema changes.
+
+    Sidecars are evidence to report, never files to delete. quick_check is a
+    structural check, not proof of application invariants or storage durability.
+    A failed gate stays closed until an operator repairs the store and restarts.
+    """
+    global STARTUP_INTEGRITY_OK
+    STARTUP_INTEGRITY_OK = False
+    logger.info(
+        "db_recovery_started",
+        extra={"wal_present": os.path.exists(DB_PATH + "-wal"), "shm_present": os.path.exists(DB_PATH + "-shm")},
+    )
+    conn = None
+    try:
+        if os.path.exists(DB_PATH):
+            # No get_connection(): do not change journal mode or initialize a
+            # suspect file. mode=rw also prevents accidental recreation.
+            conn = sqlite3.connect(Path(os.path.abspath(DB_PATH)).as_uri() + "?mode=rw", uri=True, timeout=1)
+            if conn.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+                raise sqlite3.DatabaseError("quick_check failed")
+        STARTUP_INTEGRITY_OK = True
+    except (sqlite3.Error, OSError) as exc:
+        # No raw error/check output: those can contain paths or row data.
+        logger.error("db_integrity_failed", extra={"error_type": type(exc).__name__})
+    finally:
+        if conn is not None:
+            conn.close()
+    return STARTUP_INTEGRITY_OK
+
+
+def shutdown_checkpoint():
+    """Best effort, with a short lock wait; never a durability prerequisite.
+
+    Request connections already close themselves. SQLite normally checkpoints
+    on last close. This explicit checkpoint is housekeeping, not recovery.
+    Filesystem I/O itself cannot be bounded by SQLite's busy timeout.
+    """
+    if STARTUP_INTEGRITY_OK is False:
+        return "skipped"
+    conn = None
+    try:
+        conn = sqlite3.connect(Path(os.path.abspath(DB_PATH)).as_uri() + "?mode=rw", uri=True, timeout=0.1)
+        result = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        return "busy" if result[0] else "ok"
+    except (sqlite3.Error, OSError) as exc:
+        logger.warning("db_checkpoint_failed", extra={"error_type": type(exc).__name__})
+        return "failed"
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 def get_connection():
+    if STARTUP_INTEGRITY_OK is False:
+        raise sqlite3.DatabaseError("startup integrity check failed")
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -115,11 +173,11 @@ def get_connection():
     # connection -- calling it here is idempotent (a no-op once already
     # set) and self-migrating: it takes effect on an existing pre-WAL
     # database file the same way, no separate migration step needed.
-    # `synchronous=NORMAL` is WAL's own documented pairing -- WAL's
-    # write-ahead log already provides the durability guarantee that
-    # makes the stricter (and slower) FULL setting unnecessary.
+    # FULL syncs the WAL at each commit (#116). NORMAL survives process
+    # crashes but can lose recent commits after OS/power failure. FULL still
+    # relies on the filesystem/device honoring sync; measure deployment latency.
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA synchronous=FULL")
     # issue #70: WAL lets readers run alongside ONE writer, but two
     # simultaneous writers still collide (SUBMIT-heavy moments: a whole
     # cohort clicking through cases at the same time). Make the lock wait
@@ -173,6 +231,28 @@ def _backup_before_migration(conn):
 
 
 def _migrate_existing_schema(conn):
+    """All schema changes and backfills commit together, or all roll back (#116).
+
+    No executescript here: it implicitly commits a pending transaction. The
+    pre-migration backup is made by init_db before entering this transaction.
+    """
+    foreign_keys = conn.execute("PRAGMA foreign_keys").fetchone()[0]
+    legacy_alter = conn.execute("PRAGMA legacy_alter_table").fetchone()[0]
+    conn.execute("PRAGMA foreign_keys=OFF")
+    conn.execute("PRAGMA legacy_alter_table=ON")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _migrate_schema_steps(conn)
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.execute(f"PRAGMA legacy_alter_table={int(legacy_alter)}")
+        conn.execute(f"PRAGMA foreign_keys={int(foreign_keys)}")
+
+
+def _migrate_schema_steps(conn):
     """Handles a database file that already existed before a later schema
     change -- CREATE TABLE IF NOT EXISTS is a genuine no-op once a table
     already exists in ANY form, not a schema-reconciliation step. Found
@@ -212,11 +292,7 @@ def _migrate_existing_schema(conn):
             # child reference mid-swap. foreign_key_check runs BEFORE
             # COMMIT -- anything it reports rolls the whole swap back
             # instead of committing a schema every /submit will hit.
-            conn.execute("PRAGMA foreign_keys=OFF")
-            conn.execute("PRAGMA legacy_alter_table=ON")
-            conn.isolation_level = None  # manual transaction control
             try:
-                conn.execute("BEGIN IMMEDIATE")
                 conn.execute(
                     """CREATE TABLE cases_new (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -244,7 +320,6 @@ def _migrate_existing_schema(conn):
                 violations = conn.execute("PRAGMA foreign_key_check").fetchall()
                 if violations:
                     raise sqlite3.IntegrityError(f"foreign_key_check after cases rebuild: {violations[:5]}")
-                conn.execute("COMMIT")
             except sqlite3.Error:
                 conn.execute("ROLLBACK")
                 # Loud SystemExit, not a half-migrated service: every DROP
@@ -258,10 +333,6 @@ def _migrate_existing_schema(conn):
                     "versioned schema (issue #96); the database is unchanged. "
                     "See the traceback above for the underlying sqlite3 error."
                 )
-            finally:
-                conn.isolation_level = ""
-                conn.execute("PRAGMA legacy_alter_table=OFF")
-            conn.execute("PRAGMA foreign_keys=ON")
             # idx_cases_stage died with the dropped table; init_db's
             # executescript (every start, after this function, IF NOT
             # EXISTS) recreates indexes for the swapped-in table.
@@ -280,20 +351,17 @@ def _migrate_existing_schema(conn):
                 "UPDATE progress SET case_assigned_at = ? WHERE case_assigned_at IS NULL",
                 (time.time(),),
             )
-            conn.commit()
         if "finalized_at" not in cols:
             # issue #202: purely additive and nullable, existing rows stay untouched
             # (a doctor who had already finished simply has not approved yet, so the
             # new review screen is what they see next). The pre-migration backup of
             # _migration_needed() below runs first.
             conn.execute("ALTER TABLE progress ADD COLUMN finalized_at REAL")
-            conn.commit()
         if "view_case_id" not in cols:
             # Study browsing (learning/assessment): which case's study Weasis shows when the
             # doctor opened another one from the panel. Additive and nullable; NULL = the
             # current case. The pre-migration backup of _migration_needed() runs first.
             conn.execute("ALTER TABLE progress ADD COLUMN view_case_id INTEGER")
-            conn.commit()
 
     if "submissions" in tables:
         has_unique = any(row[2] for row in conn.execute("PRAGMA index_list(submissions)").fetchall())
@@ -304,9 +372,7 @@ def _migrate_existing_schema(conn):
             # (student_id, case_id, stage) if any pre-constraint
             # duplicates exist, rather than failing the migration outright
             # on a UNIQUE violation partway through.
-            conn.execute("PRAGMA foreign_keys=OFF")
-            conn.executescript(
-                """
+            rebuild_sql = """
                 ALTER TABLE submissions RENAME TO submissions_old;
                 CREATE TABLE submissions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -333,9 +399,9 @@ def _migrate_existing_schema(conn):
                     );
                 DROP TABLE submissions_old;
                 """
-            )
-            conn.commit()
-            conn.execute("PRAGMA foreign_keys=ON")
+            for statement in rebuild_sql.split(";"):
+                if statement.strip():
+                    conn.execute(statement)
 
         sub_cols = {row[1] for row in conn.execute("PRAGMA table_info(submissions)").fetchall()}
         if "ground_truth_category" not in sub_cols:
@@ -366,7 +432,6 @@ def _migrate_existing_schema(conn):
                     "case_version = (SELECT c.version FROM cases c WHERE c.id = submissions.case_id), "
                     "gt_backfilled = 1"
                 )
-                conn.commit()
                 logger.warning(
                     "ground_truth_backfilled",
                     extra={

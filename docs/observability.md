@@ -128,6 +128,11 @@ only the ones below are promised to an alert.
 | `telemetry_snapshot` | INFO | `sessions_active`, `requests_total`, `requests_4xx_total`, `requests_5xx_total`, `submissions_total`, `db_lock_errors_total`, `db_size_bytes`, `volume_free_bytes`, `dependency_orthanc_up`, `readyz_ok`, `last_submission_age_seconds`, `telemetry_last_success_unixtime` | every `GRADING_TELEMETRY_SNAPSHOT_INTERVAL_SECONDS` (default 30, `0` disables) |
 | `telemetry_snapshot_failed` | ERROR | `exception` | the snapshot could not be built — itself a signal |
 
+| `db_recovery_started` | INFO | `wal_present`, `shm_present` | startup sidecar observation; presence is not proof of corruption |
+| `db_integrity_failed` | ERROR | `error_type` | startup quick_check failed; initialization/migration skipped, database traffic blocked until repair and restart |
+| `db_checkpoint_failed` | WARNING | `error_type` | shutdown checkpoint failed; WAL retained for SQLite recovery |
+| `graceful_stop` | INFO | `checkpoint` | lifespan shutdown reached; checkpoint is ok, busy, failed or skipped; not a count of completed requests |
+
 ## Signals (metrics)
 
 `GET /internal/signals` renders exactly these. `Type` follows Prometheus
@@ -137,6 +142,7 @@ conventions; `Labels` is the complete label set (there are no others, and the
 
 | Signal | Type | Unit | Labels | Source |
 | --- | --- | --- | --- | --- |
+| `grading_db_integrity_ok` | gauge | 1 (passed) / 0 (failed) | — | cached startup quick_check result; not a continuous integrity audit |
 | `grading_requests_total` | counter | requests | `method`, `path`, `status_class` | request middleware |
 | `grading_request_duration_ms` | histogram | milliseconds | `method`, `path` | request middleware |
 | `grading_sessions_active` | gauge | sessions | — | `sessions` table (`expires_at > now`) |
@@ -304,3 +310,18 @@ is the part that must exist first: stable names for both halves, and the
 | 88 — API/UI telemetry | `grading_requests_total`, `grading_request_duration_ms`, `grading_sessions_active` |
 | 104 — dashboards/alerts incl. alert-evaluation failure | alert schema table + dead-man's switch |
 | 112 — dependency failure, saturation, staleness, recovery | `grading_dependency_up`, volume/write-latency gauges, `grading_last_*_unixtime`, `/readyz` re-probe after recovery |
+
+## Startup and shutdown (#116)
+
+`database_integrity` is a core readiness check, computed once before initialization.
+A failed gate explicitly blocks database connections and business routes: even
+`SELECT 1` can succeed on a damaged SQLite file, so it is not an integrity test.
+`/healthz` and `/readyz` return 503; `/livez` remains 200 for diagnosis without a
+restart loop. Compose marks grading-api unhealthy and prevents a new viewer
+from starting. Repair the store and restart to re-evaluate the gate.
+
+A shutdown checkpoint waits at most 100 ms for SQLite locks. Filesystem I/O is
+not bounded by that timeout. Uvicorn's 5 s request-drain budget is shorter than
+Docker's default 10 s stop grace; the remaining time is margin, not a guarantee
+against a hung disk or a blocked synchronous handler. See
+[shutdown recovery](DEGRADED_MODES.md#new-d-shutdown-and-recovery-116).

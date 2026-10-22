@@ -23,6 +23,11 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Shutdown and SQLite recovery (issue #116, API 1.6.0).** Use WAL/FULL,
+  check database integrity before migrations, fail closed with diagnostic liveness,
+  and attempt a bounded-lock-wait shutdown checkpoint. Uvicorn drains requests for
+  5 seconds. Add isolated subprocess crash/migration tests and recovery guidance.
+
 - **Telemetry contract, health split and signal registry (issue #113, API 1.5.0).**
   `docs/observability.md` is now the contract: event names and their fields, metric names/units/types,
   `request_id` as the only correlation key, the forbidden-field list, the alert schema and the
