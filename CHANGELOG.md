@@ -23,6 +23,13 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Orthanc scope CI regression gate (#238 B2).** Runs the existing RT-T-01..04
+  harness with committed CT/MR fixtures only, strict scoped-access and write-denial
+  checks, authorized-read controls, and revocation isolation. Legacy read/search
+  exposure is explicitly reported under #195; full isolation is not claimed.
+  Adds bounded requests, fail-closed preflight, guarded cleanup and harness
+  negative controls. The new job is included in the required aggregate gate.
+
 - **Telemetry contract, health split and signal registry (issue #113, API 1.5.0).**
   `docs/observability.md` is now the contract: event names and their fields, metric names/units/types,
   `request_id` as the only correlation key, the forbidden-field list, the alert schema and the
