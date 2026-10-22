@@ -70,6 +70,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import subprocess
 import sys
 import time
@@ -83,6 +84,7 @@ from datetime import datetime, timedelta, timezone
 # by exactly the code that reaps fully-provisioned ones.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import guacamole_session as gs
+from termination import TerminationSignal, install_termination_handlers
 
 # issue #52: a narrow custom seccomp profile, not blanket
 # `seccomp=unconfined` -- see docker/guacamole-weasis/seccomp/
@@ -170,7 +172,7 @@ def _rollback(reason):
         try:
             undo()
             print(f"  undone: {label}", file=sys.stderr)
-        except Exception as exc:  # noqa: BLE001 - one bad undo must not skip the rest
+        except (Exception, KeyboardInterrupt) as exc:  # one interrupted undo must not skip the rest
             failed.append(label)
             print(
                 f"  COULD NOT UNDO {label}: {type(exc).__name__}: {exc}",
@@ -180,7 +182,8 @@ def _rollback(reason):
         print(
             "leftovers needing attention: "
             + ", ".join(failed)
-            + " -- scripts/teardown-guacamole-session.py <container-name> is "
+            + " -- scripts/teardown-guacamole-session.py --student-id <student> "
+            "--session-id <session> is "
             "idempotent and sibling-aware; grading tokens not revoked expire "
             "on their TTL.",
             file=sys.stderr,
@@ -310,6 +313,24 @@ def _provision():
             " day-grained; the reaper is the hour-grained limit)"
         ) from None
 
+    container_name = f"guac-weasis-{student_id}-{session_id}"
+    container_absent = True
+
+    def undo_container():
+        nonlocal container_absent
+        gs.docker_rm(gs.real_docker, container_name)
+        container_absent = True
+
+    def undo_token():
+        if not container_absent:
+            raise ProvisionAborted(
+                "token NOT revoked: container removal was not confirmed; "
+                "confirm the container is removed before running "
+                f"python3 scripts/teardown-guacamole-session.py "
+                f"--student-id {shlex.quote(student_id)} --session-id {shlex.quote(session_id)}"
+            )
+        _undo_token(grading_api_url, coordinator_key, student_id, container_name)
+
     # 1. grading-api token -- identical mechanism to create-session.py.
     session_created = api_call(
         "POST",
@@ -322,14 +343,10 @@ def _provision():
         label="grading-api",
     )
     grading_token = session_created["token"]
-    # container_name is defined a few lines below; the closure reads it at
-    # UNDO time, by which point it is always bound.
     _UNDO.append(
         (
             "grading token (revoked only if this student has no other live session)",
-            lambda: _undo_token(
-                grading_api_url, coordinator_key, student_id, container_name
-            ),
+            undo_token,
         )
     )
 
@@ -346,7 +363,6 @@ def _provision():
     # password file) and to Guacamole's connection config below, as the
     # same secret both ends of that VNC handshake need to agree on.
     vnc_password = secrets.token_hex(4)
-    container_name = f"guac-weasis-{student_id}-{session_id}"
     subprocess.run(
         ["docker", "rm", "-f", container_name], capture_output=True, check=False
     )
@@ -356,9 +372,10 @@ def _provision():
     _UNDO.append(
         (
             f"container {container_name}",
-            lambda: gs.docker_rm(gs.real_docker, container_name),
+            undo_container,
         )
     )
+    container_absent = False  # docker run may commit even if its response is interrupted
     run_result = subprocess.run(
         [
             "docker",
@@ -588,8 +605,13 @@ def _provision():
 
 def main():
     _UNDO.clear()
+    install_termination_handlers()
     try:
         _provision()
+    except KeyboardInterrupt as exc:
+        _rollback("interrupted")
+        _UNDO.clear()
+        sys.exit(128 + exc.signum if isinstance(exc, TerminationSignal) else 1)
     except ProvisionAborted as exc:
         _rollback(str(exc))
         _UNDO.clear()  # a failed run must never leave live undos for anything else to trip on
