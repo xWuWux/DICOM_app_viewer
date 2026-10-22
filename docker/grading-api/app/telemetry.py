@@ -37,6 +37,7 @@ logger = get_logger(__name__)
 # tests/test_observability_contract.py parses the doc's signal table and
 # fails when the two drift apart. Keep the names stable: they are the alert
 # contract, not an implementation detail.
+DB_INTEGRITY_OK = "grading_db_integrity_ok"
 REQUESTS_TOTAL = "grading_requests_total"
 REQUEST_DURATION_MS = "grading_request_duration_ms"
 SESSIONS_ACTIVE = "grading_sessions_active"
@@ -58,6 +59,7 @@ LAST_SESSION_MINT_UNIXTIME = "grading_last_session_mint_unixtime"
 # rendered in that order everywhere (JSON samples and the doc table) and an
 # unordered set would make the contract test pass on a reordered tuple.
 SIGNAL_SPEC = {
+    DB_INTEGRITY_OK: {"type": "gauge", "unit": "1 (passed) / 0 (failed)", "labels": ()},
     REQUESTS_TOTAL: {"type": "counter", "unit": "requests", "labels": ("method", "path", "status_class")},
     REQUEST_DURATION_MS: {"type": "histogram", "unit": "milliseconds", "labels": ("method", "path")},
     SESSIONS_ACTIVE: {"type": "gauge", "unit": "sessions", "labels": ()},

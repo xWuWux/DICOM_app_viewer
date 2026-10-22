@@ -138,3 +138,74 @@ The write half of `/readyz` is what covers the "readable but not writable"
 class (a volume remounted read-only, or filled): `_check_data_writable()`
 refuses that state at start-up only (#209), and a `/healthz` that only reads
 would stay green while every `/submit` answers 500.
+
+## NEW-D: shutdown and recovery (#116)
+
+- **SIGTERM:** Uvicorn stops accepting new connections and allows up to 5 s for
+  in-flight requests. A submit completed in that window returns normally. A
+  blocked synchronous handler cannot be stopped by cancelling its ASGI task;
+  Docker can still SIGKILL it at its default 10 s grace. Lifespan shutdown logs
+  `graceful_stop` with the checkpoint outcome, not a promise every request finished.
+- **Crash during submit:** submission and progress share one transaction (#60).
+  Both commit or neither does. A lost response can hide a successful commit;
+  reload `/case` after reconnecting to discover the current position. A retry
+  of an already committed answer can return 409. A crash alone does not revoke
+  tokens or imply 401; 401 means an invalid/expired token. Through nginx an
+  interrupted request can fail with 502/504 or a network error; the panel shows
+  its existing retry/error flow and does not report completion on failure.
+- **Startup integrity failure:** SQLite first handles WAL recovery. One
+  `PRAGMA quick_check` runs before initialization/migration. Failure is cached;
+  migrations and database traffic are blocked, `/healthz` and `/readyz` return
+  503, `/livez` remains alive, and `db_integrity_failed` names only the error
+  class. A new viewer cannot start through Compose's service-health dependency.
+  An already running viewer shows its API error flow. No automatic reset or
+  deletion occurs. This check is structural, not an application/schema audit.
+- **Interrupted migration:** the pre-migration backup remains. All existing-schema
+  migration steps (including the old submissions rebuild and column backfills)
+  now share one explicit transaction. Restart sees the old or new schema, never
+  the intermediate table swap. This does not automatically repair a database
+  already half-migrated by an older release: restore a verified backup first.
+
+### Durability and limits
+
+WAL with `synchronous=FULL` syncs on each commit. SQLite's guarantee assumes the
+filesystem, hypervisor and storage device honor sync requests; it is not a
+substitute for backups or a tested storage stack. `NORMAL` also survives process
+crashes but can lose recent commits after OS/power loss. The subprocess SIGKILL
+tests prove process-crash behavior only, not a power-loss guarantee or a latency
+SLO. Measure FULL's commit latency on the deployment volume before cohort use.
+See [SQLite synchronous](https://www.sqlite.org/pragma.html#pragma_synchronous).
+
+The explicit shutdown `wal_checkpoint(TRUNCATE)` uses a separate short-lived
+connection and a 100 ms lock timeout. It is best effort: SQLite normally
+checkpoints at last close anyway. Busy/failure leaves WAL for recovery, never
+justifies deleting `-wal`/`-shm`, and never changes commit semantics. Filesystem
+I/O and the complete shutdown sequence have no hard in-process time bound.
+
+### Recovery procedure
+
+1. Stop grading traffic and the service before replacing files. Preserve the
+   failed database and its sidecars together for investigation; do not copy only
+   a live main database or delete WAL to make a check pass.
+2. Fix storage/permissions if that caused the failure. For actual corruption,
+   validate and restore a consistent backup using the existing backup/restore
+   procedure in `docs/runbooks/grading-db-migration-and-case-versions.md`. Do not overwrite the only copy.
+3. Restart grading-api. Confirm `/healthz` and `/readyz` pass, inspect startup logs,
+   then resume the viewer. `/livez` alone is insufficient. A failed gate stays
+   closed until restart; repeated probes never rerun the integrity check.
+4. Reconcile a student's current case before re-entering an uncertain submission.
+
+### Verification and rollback
+
+Run `scripts/test-shutdown-recovery.sh`: real Uvicorn subprocesses, isolated
+loopback sockets, temporary synthetic databases, no Docker or deployment data.
+It tests graceful drain, drain-timeout plus a simulated final Docker kill,
+acknowledged WAL commits and an uncommitted submit across restart, corrupt-store
+refusal, interrupted migration branches, and restoring a migration backup.
+The regular grading suite pins FULL and bounded-lock-wait checkpoint behavior.
+The subprocess suite runs in the Integration stage before degraded-mode E2E.
+
+Rollback is a code revert; FULL changes no database format. Reverting also
+removes the startup gate and restores the older migration interruption risks.
+Keep the backup. This change provides no replica, automatic failover, power-cut
+proof, or recovery-time objective; those require deployment drills.

@@ -192,7 +192,7 @@ def _elapsed_ms(started: float) -> float:
 
 
 def _evaluate() -> dict:
-    checks: dict = {}
+    checks: dict = {"database_integrity": {"ok": db_module.STARTUP_INTEGRITY_OK is not False}}
     conn = None
     try:
         conn = db_module.get_connection()
@@ -214,7 +214,7 @@ def _evaluate() -> dict:
     else:
         checks["dependency:orthanc"] = {"ok": None, "skipped": True}
 
-    core_ok = all(checks[name]["ok"] for name in ("database_read", "database_write", "storage"))
+    core_ok = all(checks[name]["ok"] for name in ("database_integrity", "database_read", "database_write", "storage"))
     dependency_ok = all(entry["ok"] is not False for name, entry in checks.items() if name.startswith("dependency:"))
     if not core_ok:
         status = "not_ready"

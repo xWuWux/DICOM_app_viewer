@@ -170,7 +170,13 @@ def test_readyz_public_body_carries_verdicts_not_measurements(client, monkeypatc
     for forbidden in ("free_bytes", "min_free_bytes", "duration_ms", "http_"):
         assert forbidden not in str(body), forbidden
     assert set(body) == {"status", "checked_at", "cached", "age_seconds", "checks"}
-    assert set(body["checks"]) == {"database_read", "database_write", "storage", "dependency:orthanc"}
+    assert set(body["checks"]) == {
+        "database_integrity",
+        "database_read",
+        "database_write",
+        "storage",
+        "dependency:orthanc",
+    }
 
     signals = client.get("/internal/signals").json()["readyz"]
     assert signals["checks"]["storage"]["free_bytes"] > 0
