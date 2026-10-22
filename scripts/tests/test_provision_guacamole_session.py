@@ -14,6 +14,7 @@ proof this actually works against a live stack).
 import importlib.util
 import json
 import os
+import signal
 import sys
 import urllib.request
 from unittest.mock import MagicMock, patch
@@ -712,3 +713,125 @@ def test_late_unexpected_error_goes_through_rollback_not_traceback(
     assert "Traceback" not in err
     assert any(c[:3] == ["docker", "rm", "-f"] for c in mock_docker_run)  # container undid
     assert any("/api/session/revoke" in u for u in seen)  # token undid
+
+
+# Issue #140: exercise actual signal delivery through main(), not just a
+# synthetic exception, while keeping all external side effects mocked.
+@pytest.fixture(autouse=True)
+def restore_termination_handlers():
+    saved = {
+        sig: signal.getsignal(sig)
+        for name in ("SIGTERM", "SIGHUP")
+        if (sig := getattr(signal, name, None)) is not None
+    }
+    yield
+    for sig, handler in saved.items():
+        signal.signal(sig, handler)
+
+
+@pytest.mark.parametrize("signal_name", ["SIGINT", "SIGTERM", "SIGHUP"])
+@pytest.mark.parametrize("stage", ["before_mint", "after_mint", "docker_run", "login", "permissions"])
+def test_interruption_rolls_back_registered_steps(
+    signal_name, stage, monkeypatch, capsys
+):
+    sig = getattr(signal, signal_name, None)
+    if sig is None:
+        pytest.skip(f"{signal_name} unavailable")
+    # SIGINT already has Python's KeyboardInterrupt handler; do not replace it.
+    if signal_name != "SIGINT":
+        signal.signal(sig, signal.SIG_DFL)
+    events = []
+
+    def interrupt():
+        signal.raise_signal(sig)
+        pytest.fail("signal did not interrupt provisioning")
+
+    def docker(args, **kwargs):
+        events.append(("docker", args[:]))
+        if args[:2] == ["docker", "run"] and stage == "docker_run":
+            interrupt()
+        return MagicMock(returncode=0, stderr="", stdout="")
+
+    def opener(req, timeout=15):
+        events.append((req.method, req.full_url))
+        if (stage == "before_mint" and req.full_url.endswith("/api/session")
+                or stage == "login" and req.full_url.endswith("/api/tokens")
+                or stage == "permissions" and req.method == "PATCH"):
+            interrupt()
+        return _fake_urlopen(req, timeout)
+
+    monkeypatch.setattr(sys, "argv", ["provision", "--student-id", "STU_SIG", "--session-id", "123"])
+    monkeypatch.setattr(provision.subprocess, "run", docker)
+    monkeypatch.setattr(provision.urllib.request, "urlopen", opener)
+    monkeypatch.setattr(provision.time, "sleep", lambda *_: None)
+    if stage == "after_mint":
+        monkeypatch.setattr(provision.secrets, "token_hex", lambda *_: interrupt())
+    with pytest.raises(SystemExit) as stopped:
+        provision.main()
+    assert stopped.value.code == (1 if signal_name == "SIGINT" else 128 + sig)
+    assert provision._UNDO == []
+    revokes = [i for i, (_, value) in enumerate(events)
+               if isinstance(value, str) and value.endswith("/api/session/revoke")]
+    assert bool(revokes) == (stage != "before_mint")
+    if stage in ("docker_run", "login", "permissions"):
+        removals = [i for i, (kind, value) in enumerate(events)
+                    if kind == "docker" and value[:3] == ["docker", "rm", "-f"]]
+        assert len(removals) == 2  # pre-cleanup, then compensation
+        assert removals[-1] < revokes[0]
+    if stage == "permissions":
+        deletes = [value for method, value in events if method == "DELETE"]
+        assert any("/users/" in value for value in deletes)
+        # Empty mocked connection listing means the by-name undo is idempotent.
+        assert any(method == "GET" and "/connections?" in value for method, value in events)
+    output = capsys.readouterr()
+    assert "interrupted" in output.err
+    assert "Traceback" not in output.err
+    assert "fake-grading-token" not in output.out + output.err
+    assert "fake-admin-token" not in output.out + output.err
+
+
+@pytest.mark.parametrize("cleanup_failure", ["error", "interrupt", "sibling", "unknown_siblings"])
+def test_interrupted_provision_preserves_token_when_removal_is_unsafe(
+    cleanup_failure, mock_docker_run, monkeypatch, capsys
+):
+    monkeypatch.setattr(sys, "argv", ["provision", "--student-id", "STU_SIG", "--session-id", "123"])
+    monkeypatch.setattr(provision.time, "sleep", lambda *_: None)
+    seen = []
+
+    def opener(req, timeout=15):
+        seen.append(req.full_url)
+        if req.full_url.endswith("/api/tokens"):
+            raise KeyboardInterrupt()
+        return _fake_urlopen(req, timeout)
+
+    def fail(*args):
+        if cleanup_failure == "interrupt":
+            raise KeyboardInterrupt()
+        raise RuntimeError("Docker unavailable")
+
+    if cleanup_failure in ("error", "interrupt"):
+        monkeypatch.setattr(provision.gs, "docker_rm", fail)
+    elif cleanup_failure == "unknown_siblings":
+        monkeypatch.setattr(provision.gs, "sibling_containers", fail)
+    else:
+        monkeypatch.setattr(provision.gs, "sibling_containers", lambda *args: ["guac-weasis-STU_SIG-122"])
+    monkeypatch.setattr(provision.urllib.request, "urlopen", opener)
+    with pytest.raises(SystemExit) as stopped:
+        provision.main()
+    assert stopped.value.code == 1
+    assert not any(url.endswith("/api/session/revoke") for url in seen)
+    assert provision._UNDO == []
+    err = capsys.readouterr().err
+    if cleanup_failure in ("error", "interrupt"):
+        assert "token NOT revoked" in err
+        assert "scripts/teardown-guacamole-session.py --student-id STU_SIG --session-id 123" in err
+    else:
+        assert "skipped token revoke" in err
+
+
+def test_provision_installs_handlers_before_side_effects(monkeypatch):
+    calls = []
+    monkeypatch.setattr(provision, "install_termination_handlers", lambda: calls.append("handlers"))
+    monkeypatch.setattr(provision, "_provision", lambda: calls.append("provision"))
+    provision.main()
+    assert calls == ["handlers", "provision"]
