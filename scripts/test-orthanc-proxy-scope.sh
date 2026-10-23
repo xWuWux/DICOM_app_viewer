@@ -163,7 +163,7 @@ CREATED_ENV=1
 # shellcheck disable=SC1091
 source .env
 export ORTHANC_PASSWORD GRADING_COORDINATOR_KEY
-export GRADING_CASES_FILE= GRADING_RESET_ENABLED=0
+export GRADING_CASES_FILE='' GRADING_RESET_ENABLED=0
 # Never inherit a developer's override stack or alternate project/file.
 unset COMPOSE_FILE COMPOSE_PROFILES COMPOSE_ENV_FILES
 
