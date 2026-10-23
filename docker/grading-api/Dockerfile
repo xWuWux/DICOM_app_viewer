@@ -52,4 +52,4 @@ EXPOSE 8000
 # log the full request path+query string (including ?token=...) at INFO
 # level on every request. Disabling it closes that specific leak vector
 # now, ahead of #63's own full fix.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log", "--timeout-graceful-shutdown", "5"]

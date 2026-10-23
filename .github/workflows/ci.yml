@@ -165,6 +165,11 @@ jobs:
     needs: [unit-test, shell-test, provision-guacamole-session-test]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Shutdown and SQLite recovery (isolated subprocesses, issue #116)
+        run: ./scripts/test-shutdown-recovery.sh
       - name: Degraded-mode E2E (issue #115: every documented failure row of docs/DEGRADED_MODES.md holds)
         run: ./scripts/test-degraded-modes.sh
 
