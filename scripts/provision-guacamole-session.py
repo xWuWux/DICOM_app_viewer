@@ -84,6 +84,7 @@ from datetime import datetime, timedelta, timezone
 # by exactly the code that reaps fully-provisioned ones.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import guacamole_session as gs
+from secret_config import coordinator_key as read_coordinator_key
 from termination import TerminationSignal, install_termination_handlers
 
 # issue #52: a narrow custom seccomp profile, not blanket
@@ -279,7 +280,7 @@ def _provision():
         guac_url += "/"
     admin_user = os.environ.get("GUACAMOLE_ADMIN_USERNAME", "guacadmin")
     admin_pass = os.environ.get("GUACAMOLE_ADMIN_PASSWORD", "guacadmin")
-    coordinator_key = os.environ["GRADING_COORDINATOR_KEY"]
+    coordinator_key = read_coordinator_key()
     grading_api_url = os.environ.get("GRADING_API_URL", "http://localhost:8080/")
     docker_network = os.environ.get("DOCKER_NETWORK", "dicom_app_viewer_ipcmc-internal")
     image = os.environ.get("GUACAMOLE_WEASIS_IMAGE", "ipcmc/guacamole-weasis:poc")

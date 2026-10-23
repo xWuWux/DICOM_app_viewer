@@ -52,6 +52,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
+from secret_config import coordinator_key as read_coordinator_key
 import guacamole_session as gs_mod  # noqa: E402  (shared revoke, see docstring)
 
 
@@ -189,7 +190,7 @@ def main(argv=None, opener=None):
     args = ap.parse_args(argv)
 
     grading_api_url = os.environ.get("GRADING_API_URL", "")
-    coordinator_key = os.environ.get("GRADING_COORDINATOR_KEY", "")
+    coordinator_key = read_coordinator_key(required=False)
     revoking = bool(grading_api_url and coordinator_key)
     if revoking and not args.student_id:
         print("REFUSED: --student-id is required when grading-api revocation is configured "

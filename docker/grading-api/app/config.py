@@ -24,6 +24,8 @@ vector (issue #93's lesson applied to startup).
 import os
 from urllib.parse import urlparse
 
+from .secret_files import SecretFileError, read_secret
+
 # Minimum LENGTH -- note this is a brute-force floor, not an entropy
 # guarantee (`'k'*32` passes; the CR #111 nit is fair, but rejecting
 # low-complexity-by-pattern keys server-side is security theater the
@@ -184,9 +186,9 @@ def _exit_on_config_error(exc: ConfigError) -> None:
 
 
 try:
-    COORDINATOR_KEY = validate_coordinator_key(os.environ.get("GRADING_COORDINATOR_KEY"))
+    COORDINATOR_KEY = validate_coordinator_key(read_secret("GRADING_COORDINATOR_KEY"))
     TOKEN_TTL_SECONDS = validate_token_ttl_seconds(os.environ.get("GRADING_TOKEN_TTL_SECONDS"))
     RESET_ENABLED = validate_reset_enabled(os.environ.get("GRADING_RESET_ENABLED"))
     ORTHANC_URL = validate_orthanc_url(os.environ.get("GRADING_ORTHANC_URL", DEFAULT_ORTHANC_URL))
-except ConfigError as exc:
+except (ConfigError, SecretFileError) as exc:
     _exit_on_config_error(exc)

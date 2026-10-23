@@ -157,6 +157,8 @@ jobs:
         env:
           REQUIRE_DICOM_COVERAGE: "1"
         run: ./scripts/smoke-test.sh
+      - name: Coordinator file-secret authentication and process-leak sentinel (issue 216)
+        run: python3 scripts/test-coordinator-secret.py
 
   degraded-test:
     runs-on: ubuntu-latest

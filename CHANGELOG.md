@@ -23,6 +23,8 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- Add opt-in coordinator key files across the grading API and session tools (issue #216), with strict validation, a Compose overlay, rollback guidance and a Docker leakage sentinel. Other secrets remain pending; see `docs/SECRET_FILES.md`.
+
 - **Telemetry contract, health split and signal registry (issue #113, API 1.5.0).**
   `docs/observability.md` is now the contract: event names and their fields, metric names/units/types,
   `request_id` as the only correlation key, the forbidden-field list, the alert schema and the
