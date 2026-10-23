@@ -50,6 +50,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
+from secret_config import coordinator_key as read_coordinator_key
 import guacamole_session as gs  # sibling-module import, path fixed above
 
 DEFAULT_IDLE_MINUTES = 180
@@ -339,7 +340,7 @@ def main(argv=None):
     admin_user = os.environ.get("GUACAMOLE_ADMIN_USERNAME", "guacadmin")
     admin_pass = os.environ.get("GUACAMOLE_ADMIN_PASSWORD", "guacadmin")
     grading_api_url = os.environ.get("GRADING_API_URL", "")
-    coordinator_key = os.environ.get("GRADING_COORDINATOR_KEY", "")
+    coordinator_key = read_coordinator_key(required=False)
     state = _load_state(args.state_file)
     reaper = Reaper(
         gs.real_docker,

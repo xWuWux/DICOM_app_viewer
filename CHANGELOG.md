@@ -23,6 +23,8 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- Add opt-in coordinator key files across the grading API and session tools (issue #216), with strict validation, a Compose overlay, rollback guidance and a Docker leakage sentinel. Other secrets remain pending; see `docs/SECRET_FILES.md`.
+
 - **Shutdown and SQLite recovery (issue #116, API 1.6.0).** Use WAL/FULL,
   check database integrity before migrations, fail closed with diagnostic liveness,
   and attempt a bounded-lock-wait shutdown checkpoint. Uvicorn drains requests for

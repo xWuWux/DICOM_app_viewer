@@ -835,3 +835,52 @@ def test_provision_installs_handlers_before_side_effects(monkeypatch):
     monkeypatch.setattr(provision, "_provision", lambda: calls.append("provision"))
     provision.main()
     assert calls == ["handlers", "provision"]
+
+
+@pytest.mark.parametrize("file_mode", [False, True])
+def test_file_key_used_for_mint_and_rollback_without_child_env(
+    file_mode, tmp_path, mock_docker_run, monkeypatch, capsys
+):
+    sentinel = "coordinator-file-test-" + "C" * 40
+    if file_mode:
+        path = tmp_path / "coordinator"
+        path.write_text(sentinel + "\n")
+        path.chmod(0o600)
+        monkeypatch.delenv("GRADING_COORDINATOR_KEY", raising=False)
+        monkeypatch.setenv("GRADING_COORDINATOR_KEY_FILE", str(path))
+    else:
+        monkeypatch.setenv("GRADING_COORDINATOR_KEY", sentinel)
+        monkeypatch.delenv("GRADING_COORDINATOR_KEY_FILE", raising=False)
+    provision._UNDO.clear()
+    monkeypatch.setattr(provision.gs, "sibling_containers", lambda *a, **k: [])
+    monkeypatch.setattr(sys, "argv", ["provision-guacamole-session.py", "--student-id", "STU_FILE"])
+    authenticated = []
+    def opener(req, timeout=15):
+        if req.full_url.endswith(("/api/session", "/api/session/revoke")):
+            assert req.get_header("X-coordinator-key") == sentinel
+            authenticated.append(req.full_url)
+        if "/connections?token=" in req.full_url:
+            raise _http_error(req.full_url)
+        return _fake_urlopen(req, timeout)
+    with patch.object(urllib.request, "urlopen", side_effect=opener):
+        with pytest.raises(SystemExit) as exc:
+            provision.main()
+    assert exc.value.code == 1
+    assert len(authenticated) == 2
+    assert sentinel not in repr(mock_docker_run)
+    captured = capsys.readouterr()
+    assert sentinel not in captured.out + captured.err
+    if file_mode:
+        assert "GRADING_COORDINATOR_KEY" not in os.environ
+
+
+def test_bad_key_file_stops_before_any_side_effect(tmp_path, mock_docker_run, monkeypatch):
+    monkeypatch.delenv("GRADING_COORDINATOR_KEY", raising=False)
+    monkeypatch.setenv("GRADING_COORDINATOR_KEY_FILE", str(tmp_path / "absent"))
+    monkeypatch.setattr(sys, "argv", ["provision-guacamole-session.py", "--student-id", "STU_FILE"])
+    with patch.object(urllib.request, "urlopen") as opener:
+        with pytest.raises(SystemExit) as exc:
+            provision.main()
+    assert exc.value.code == 2
+    opener.assert_not_called()
+    assert mock_docker_run == []

@@ -31,6 +31,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
+from secret_config import coordinator_key as read_coordinator_key
 import guacamole_session as gs_mod
 from guacamole_session import NamespaceViolation, teardown_session
 
@@ -46,7 +47,7 @@ def main():
     admin_user = os.environ.get("GUACAMOLE_ADMIN_USERNAME", "guacadmin")
     admin_pass = os.environ.get("GUACAMOLE_ADMIN_PASSWORD", "guacadmin")
     grading_api_url = os.environ.get("GRADING_API_URL", "")
-    coordinator_key = os.environ.get("GRADING_COORDINATOR_KEY", "")
+    coordinator_key = read_coordinator_key(required=False)
     link_dir = os.environ.get("GUACAMOLE_LINK_DIR") or gs_mod.DEFAULT_LINK_DIR
 
     try:

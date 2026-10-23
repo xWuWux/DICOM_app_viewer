@@ -24,7 +24,8 @@ haven't been redrawn for it yet).
 **Running it?** `docs/observability.md` is the telemetry contract — signal
 names, units, `/livez` `/healthz` `/readyz` semantics and the alert/dead-man's
 switch schema (issue #113). `docs/DEGRADED_MODES.md` is what happens when each
-dependency breaks.
+dependency breaks. For optional coordinator file secrets and the remaining
+secret-migration decisions, see [SECRET_FILES.md](docs/SECRET_FILES.md).
 
 ## Two viewer flows, side by side
 

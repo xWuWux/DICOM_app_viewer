@@ -56,6 +56,7 @@ import urllib.parse
 
 # Also support callers loading this CLI by file path with importlib.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from secret_config import coordinator_key as read_coordinator_key
 from termination import TerminationSignal, _interrupt, install_termination_handlers
 
 # Never longer than this (issue #104's compensation must not become another
@@ -293,7 +294,7 @@ def main():
     api_key = os.environ["KASM_API_KEY"]
     api_key_secret = os.environ["KASM_API_KEY_SECRET"]
     image_id = os.environ["KASM_IMAGE_ID"]
-    coordinator_key = os.environ["GRADING_COORDINATOR_KEY"]
+    coordinator_key = read_coordinator_key()
     grading_api_url = os.environ.get("GRADING_API_URL", "http://localhost:8080/")
 
     session_id = args.session_id or str(int(time.time()))

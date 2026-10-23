@@ -42,6 +42,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
+from secret_config import coordinator_key as read_coordinator_key
 
 STATE_FILE = REPO / "local" / "demo-state.json"
 COUNTER_FILE = REPO / "local" / "demo-counter"
@@ -50,6 +51,19 @@ STUDENT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
 class DemoError(Exception):
     """A problem phrased for the person running the demo."""
+
+
+class CoordinatorConfigError(DemoError):
+    """Invalid coordinator configuration, reported with exit status 2."""
+
+
+def check_coordinator_key(env):
+    try:
+        read_coordinator_key(env)
+    except SystemExit:
+        raise CoordinatorConfigError(
+            "Invalid coordinator key source; see the configuration error above."
+        ) from None
 
 
 # ---- small pure helpers (unit-tested) -------------------------------------------------------
@@ -202,7 +216,6 @@ def start_kasm(
             "KASM_API_KEY",
             "KASM_API_KEY_SECRET",
             "KASM_IMAGE_ID",
-            "GRADING_COORDINATOR_KEY",
         )
         if not env.get(k)
     ]
@@ -210,6 +223,7 @@ def start_kasm(
         raise DemoError(
             f"missing configuration for Kasm: {', '.join(missing)} (environment or --kasm-env FILE)"
         )
+    check_coordinator_key(env)
     argv = [
         sys.executable,
         str(REPO / "scripts" / "create-session.py"),
@@ -337,10 +351,7 @@ def main(
         if args.kasm_env:
             env.update(load_env_file(Path(args.kasm_env)))
         env.setdefault("GRADING_API_URL", "http://localhost:8080")
-        if not env.get("GRADING_COORDINATOR_KEY"):
-            raise DemoError(
-                "GRADING_COORDINATOR_KEY is not set (it is in the repository's .env)"
-            )
+        check_coordinator_key(env)
         if args.student_id and not STUDENT_ID_RE.match(args.student_id):
             raise DemoError(
                 "--student-id may contain only letters, digits, _ . - (max 64)"
@@ -397,7 +408,8 @@ def main(
         print(f"demo-next-doctor: {exc}", file=sys.stderr)
         return (
             2
-            if "missing configuration" in str(exc)
+            if isinstance(exc, CoordinatorConfigError)
+            or "missing configuration" in str(exc)
             or "not set" in str(exc)
             or "--student-id" in str(exc)
             else 1
