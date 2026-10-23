@@ -158,6 +158,15 @@ jobs:
           REQUIRE_DICOM_COVERAGE: "1"
         run: ./scripts/smoke-test.sh
 
+  orthanc-scope-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [unit-test, shell-test, provision-guacamole-session-test]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Scoped Orthanc access and write denials (legacy exposure reported under issue 195)
+        run: ./scripts/test-orthanc-proxy-scope.sh --ci-scoped
+
   degraded-test:
     runs-on: ubuntu-latest
     needs: [unit-test, shell-test, provision-guacamole-session-test]
@@ -257,6 +266,7 @@ jobs:
       - shell-test
       - provision-guacamole-session-test
       - smoke-test
+      - orthanc-scope-test
       - degraded-test
       - guacamole-integration-test
       - visual-regression-test
