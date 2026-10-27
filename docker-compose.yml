@@ -221,6 +221,110 @@ services:
       - /etc/nginx/conf.d:size=4m,uid=101,gid=101,mode=0755
       - /var/cache/nginx:size=32m,uid=101,gid=101,mode=0755
 
+  # Monitoring stack (optional profile)
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.1
+    container_name: ipcmc-otel-collector
+    profiles: ["monitoring"]
+    logging: *default-logging
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./deployments/monitoring/otel-collector/config.yml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
+    networks:
+      - ipcmc-internal
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:13133/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    container_name: ipcmc-tempo
+    profiles: ["monitoring"]
+    logging: *default-logging
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    volumes:
+      - ./deployments/monitoring/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo-data:/tmp/tempo
+    ports:
+      - "127.0.0.1:3200:3200"
+    networks:
+      - ipcmc-internal
+
+  loki:
+    image: grafana/loki:3.2.1
+    container_name: ipcmc-loki
+    profiles: ["monitoring"]
+    logging: *default-logging
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./deployments/monitoring/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    networks:
+      - ipcmc-internal
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: ipcmc-prometheus
+    profiles: ["monitoring"]
+    logging: *default-logging
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-remote-write-receiver'
+    volumes:
+      - ./deployments/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deployments/monitoring/prometheus/rules:/etc/prometheus/rules:ro
+      - ./deployments/monitoring/runtime/prometheus:/etc/prometheus/secrets:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9091:9090"
+    networks:
+      - ipcmc-internal
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: ipcmc-alertmanager
+    profiles: ["monitoring"]
+    logging: *default-logging
+    restart: unless-stopped
+    volumes:
+      - ./deployments/monitoring/runtime/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+    networks:
+      - ipcmc-internal
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: ipcmc-grafana
+    profiles: ["monitoring"]
+    logging: *default-logging
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/admin-password
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    volumes:
+      - ./deployments/monitoring/runtime/grafana/admin-password:/run/secrets/admin-password:ro
+      - ./deployments/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deployments/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - ipcmc-internal
+
 networks:
   ipcmc-internal:
     driver: bridge
@@ -235,3 +339,8 @@ networks:
 volumes:
   orthanc-storage:
   grading-db:
+  tempo-data:
+  loki-data:
+  prometheus-data:
+  alertmanager-data:
+  grafana-data:

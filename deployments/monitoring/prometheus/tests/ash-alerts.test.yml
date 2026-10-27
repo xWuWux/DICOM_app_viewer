@@ -1,0 +1,16 @@
+rule_files:
+  - /etc/prometheus/rules/ash.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'grading_db_lock_errors_total{}'
+        values: '0 0 1'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: GradingDbLockStorm
+        exp_alerts:
+          - exp_labels:
+              severity: warning

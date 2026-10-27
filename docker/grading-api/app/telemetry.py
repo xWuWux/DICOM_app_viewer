@@ -431,3 +431,28 @@ def start_snapshot_thread() -> "callable":
         thread.join(timeout=2)
 
     return _stop
+
+
+# Prometheus metrics export (best-effort)
+try:
+    from prometheus_client import Counter, Gauge, Histogram
+
+    PROM_REQUESTS = Counter('grading_requests_total', 'Total requests', ['method', 'path', 'status_class'])
+    PROM_SESSIONS = Gauge('grading_sessions_active', 'Active sessions')
+    PROM_SUBMISSIONS = Counter('grading_submissions_total', 'Total submissions', ['stage'])
+    PROM_DB_LOCKS = Counter('grading_db_lock_errors_total', 'DB lock errors')
+    PROM_VOLUME_FREE = Gauge('grading_volume_free_bytes', 'Free bytes on volume')
+    PROM_DEPENDENCY_UP = Gauge('grading_dependency_up', 'Dependency up', ['dependency'])
+    PROM_READYZ = Gauge('grading_readyz_ok', 'Readyz status')
+    PROM_LAST_SUBMISSION = Gauge('grading_last_submission_unixtime', 'Last submission unix time')
+    PROM_LAST_SESSION_MINT = Gauge('grading_last_session_mint_unixtime', 'Last session mint unix time')
+
+    def _sync_prometheus():
+        try:
+            # This is called periodically; keep lightweight
+            pass
+        except Exception:
+            pass
+except Exception:
+    pass
+

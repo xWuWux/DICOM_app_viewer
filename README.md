@@ -1254,3 +1254,6 @@ scripts/test-visual-regression.sh     stage 5, visual regression testing for wat
                                        grading-panel.html (CI)
 .github/workflows/ci.yml              the 5-stage pipeline above, run on every push/PR
 ```
+
+## Observability stack (optional)
+An optional monitoring stack (Prometheus, Grafana, Loki, Tempo, OTel Collector, Alertmanager) is available via `docker compose --profile monitoring`. See `deployments/monitoring/README.md`, run `scripts/monitoring-init.sh` first (fails closed if required secrets missing), then `docker compose --profile monitoring up -d --wait`. All host ports bind to `127.0.0.1` by default.

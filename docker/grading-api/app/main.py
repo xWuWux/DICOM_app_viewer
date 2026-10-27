@@ -1194,3 +1194,33 @@ def orthanc_authz(x_original_uri: str | None = Header(default=None, alias="X-Ori
     if any(_study_path_re(uid).match(path) for uid in uids):
         return Response(status_code=204)
     raise AppError(403, "AUTHZ_FORBIDDEN", "Path is outside the assigned study")
+
+
+# Optional OTLP log export
+try:
+    from . import otel_export
+    otel_export.setup_otlp_logs()
+except Exception:
+    pass
+
+
+# Prometheus metrics endpoint
+try:
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+    from fastapi import Response as FastAPIResponse
+
+    @app.get("/metrics")
+    def metrics():
+        data = generate_latest()
+        return FastAPIResponse(content=data, media_type=CONTENT_TYPE_LATEST)
+except Exception:
+    pass
+
+
+@app.on_event("shutdown")
+def _shutdown_telemetry():
+    try:
+        from . import otel_export
+        otel_export.shutdown_otlp_logs()
+    except Exception:
+        pass

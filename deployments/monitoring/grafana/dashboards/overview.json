@@ -1,0 +1,26 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [],
+  "schemaVersion": 30,
+  "style": "dark",
+  "tags": ["observability"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "DICOM Observability Overview",
+  "uid": "dicom-overview",
+  "version": 1
+}
