@@ -102,3 +102,11 @@ else
   echo "One or more security scans FAILED (see above)."
 fi
 exit "$status"
+
+echo "--- trivy: license scan (report-only, issue #73) ---"
+# Report-only license inventory; policy/gate to follow after review
+trivy fs --scanners license --format table docker/grading-api/ || true
+trivy image --scanners license --format table dicom_app_viewer-grading-api || true
+trivy image --scanners license --format table ipcmc/dicom-viewer:security-scan || true
+trivy image --scanners license --format table ipcmc/dicom-viewer-weasis:security-scan || true
+trivy image --scanners license --format table ipcmc/guacamole-weasis:security-scan || true

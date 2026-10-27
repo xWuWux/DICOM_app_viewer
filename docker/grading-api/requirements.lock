@@ -199,3 +199,53 @@ uvicorn==0.53.0 \
     --hash=sha256:a9356f0cb89b3b8621529c5d5eebd69bfe154f4c3f68b4cf2de47e45fa855c2e \
     --hash=sha256:e8dca71ec86dce5f04e333f0d56cdedf942446e6643b9cea1af0d6d3a02cb03e
     # via -r requirements.txt
+
+
+googleapis-common-protos==1.65.0 \
+    --hash=sha256:2972e6c496f435b92590fd54045060867f3fe9be2c82ab148fc8885035479a63
+    # via -r requirements.txt
+
+opentelemetry-api==1.27.0 \
+    --hash=sha256:953d5871815e7c30c81b56d910c707588000fff7a3ca1c73e6531911d53065e7
+    # via -r requirements.txt
+
+opentelemetry-exporter-otlp-proto-common==1.27.0 \
+    --hash=sha256:675db7fffcb60946f3a5c43e17d1168a3307a94a930ecf8d2ea1f286f3d4f79a
+    # via -r requirements.txt
+
+opentelemetry-exporter-otlp-proto-http==1.27.0 \
+    --hash=sha256:688027575c9da42e179a69fe17e2d1eba9b14d81de8d13553a21d3114f3b4d75
+    # via -r requirements.txt
+
+opentelemetry-instrumentation==0.48b0 \
+    --hash=sha256:a69750dc4ba6a5c3eb67986a337185a25b739966d80479befe37b546fc870b44
+    # via -r requirements.txt
+
+opentelemetry-instrumentation-asgi==0.48b0 \
+    --hash=sha256:ddb1b5fc800ae66e85a4e2eca4d9ecd66367a8c7b556169d9e7b57e10676e44d
+    # via -r requirements.txt
+
+opentelemetry-instrumentation-fastapi==0.48b0 \
+    --hash=sha256:afeb820a59e139d3e5d96619600f11ce0187658b8ae9e3480857dd790bc024f2
+    # via -r requirements.txt
+
+opentelemetry-proto==1.27.0 \
+    --hash=sha256:b133873de5581a50063e1e4b29cdcf0c5e253a8c2d8dc1229add20a4c3830ace
+    # via -r requirements.txt
+
+opentelemetry-sdk==1.27.0 \
+    --hash=sha256:365f5e32f920faf0fd9e14fdfd92c086e317eaa5f860edba9cdc17a380d9197d
+    # via -r requirements.txt
+
+opentelemetry-semantic-conventions==0.48b0 \
+    --hash=sha256:a0de9f45c413a8669788a38569c7e0a11ce6ce97861a628cca785deecdc32a1f
+    # via -r requirements.txt
+
+opentelemetry-util-http==0.48b0 \
+    --hash=sha256:76f598af93aab50328d2a69c786beaedc8b6a7770f7a818cc307eb353debfffb
+    # via -r requirements.txt
+
+prometheus-client==0.21.0 \
+    --hash=sha256:4fa6b4dd0ac16d58bb587c04b1caae65b8c5043e85f778f42f5f632f6af2e166
+    # via -r requirements.txt
+

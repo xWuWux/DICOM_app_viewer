@@ -1,0 +1,47 @@
+groups:
+  - name: grading-api
+    rules:
+      - alert: GradingApiDown
+        expr: up{job="grading-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Grading API is down
+          description: Prometheus cannot scrape grading-api.
+
+      - alert: GradingApiHighErrorRate
+        expr: (sum(rate(grading_requests_total{status_class="5xx"}[5m])) / sum(rate(grading_requests_total[5m]))) > 0.05 and sum(rate(grading_requests_total[5m])) > 0.1) or vector(0)
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: High 5xx rate on grading-api
+          description: 5xx rate above 5% over 5m.
+
+      - alert: GradingDbLockStorm
+        expr: increase(grading_db_lock_errors_total[10m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: SQLite lock errors detected
+          description: Database lock errors occurred in last 10m.
+
+      - alert: GradingVolumeLow
+        expr: grading_volume_free_bytes < 500 * 1024 * 1024
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Low disk space on grading data volume
+          description: Free space below 500MB.
+
+      - alert: GradingVolumeCritical
+        expr: grading_volume_free_bytes < 100 * 1024 * 1024
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Critically low disk space on grading data volume
+          description: Free space below 100MB.
