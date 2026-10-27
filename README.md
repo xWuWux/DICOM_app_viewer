@@ -989,6 +989,33 @@ enforce:
 
 ## Testing
 
+### Orthanc scope regression gate (#238 B2)
+
+Run `./scripts/test-orthanc-proxy-scope.sh --ci-scoped` from a clean checkout
+without `.env` or `local/`, on a disposable Docker host with no `ipcmc-*`
+containers or `bluet-scope` volumes. It builds the core stack, uploads only
+committed CT/MR fixtures, checks RT-T-01..04 and revocation, and removes its own
+stack. No extra DICOM downloads, Kasm installation, or new test dependency is
+required. CI runs it as `orthanc-scope-test`, required by `ci-success`.
+
+The gate rejects unauthorized scoped reads and writes, broken authorized reads,
+redirects, missing routes, rate limits and server errors. Assessment students may
+still read learning studies under the policy introduced in #236. Administrative
+setup discovers actual resource IDs so blocked enumeration cannot skip download
+probes. Harness tests inject broken responses and transport/cleanup failures.
+
+**A green result does not prove full isolation:** existing legacy read/search
+routes remain reachable and are explicitly printed as `KNOWN-EXPOSURE(#195)`.
+Their closure depends on #195's caller migration and non-conforming UID tests;
+this CI change does not bypass that requirement. `--assert-scoped` retains the
+strict all-findings mode and fails while those routes remain open. The original
+no-flag mode records findings without gating them. No real patient data belongs
+in this harness; the default synthetic teaching-case configuration is forced.
+
+This is a regression gate, not a host-failover, load-capacity or complete
+Guacamole grading-journey test. Points C and H of #238 remain separate work.
+
+
 A staged pipeline (`.github/workflows/ci.yml`), each stage gating the
 next so a cheap failure (bad syntax, a build break) fails in seconds
 instead of waiting on the slowest stage — jobs grouped under the same
