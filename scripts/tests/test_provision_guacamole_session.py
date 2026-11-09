@@ -81,6 +81,7 @@ def _fake_urlopen(req, timeout=15):
 def isolated_link_dir(tmp_path, monkeypatch):
     """#191: main() now WRITES 0600 link files -- keep every test off the
     real repo local/ dir."""
+    monkeypatch.setenv("GUACAMOLE_ADMIN_PASSWORD", "test-only-admin-password")
     monkeypatch.setenv("GUACAMOLE_LINK_DIR", str(tmp_path / "links"))
     return tmp_path / "links"
 

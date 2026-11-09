@@ -1199,6 +1199,7 @@ def orthanc_authz(x_original_uri: str | None = Header(default=None, alias="X-Ori
 # Optional OTLP log export
 try:
     from . import otel_export
+
     otel_export.setup_otlp_logs()
 except Exception:
     pass
@@ -1206,8 +1207,8 @@ except Exception:
 
 # Prometheus metrics endpoint
 try:
-    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
     from fastapi import Response as FastAPIResponse
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
     @app.get("/metrics")
     def metrics():
@@ -1221,6 +1222,7 @@ except Exception:
 def _shutdown_telemetry():
     try:
         from . import otel_export
+
         otel_export.shutdown_otlp_logs()
     except Exception:
         pass

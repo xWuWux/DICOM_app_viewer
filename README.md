@@ -932,9 +932,10 @@ and the container never gaining a published port.
   namespaces). A real hardening pass should replace this with a narrower
   custom seccomp profile permitting just the specific syscalls needed,
   not a blanket disable.
-- **Guacamole's default admin credentials** (`guacadmin`/`guacadmin`) —
-  change these before anything beyond a local PoC; `scripts/guacamole-iac.sh`
-  doesn't do this for you.
+- **Guacamole administrator bootstrap** — requires `GUACAMOLE_ADMIN_PASSWORD`;
+  stock credentials are disabled/migrated before the webapp starts. See
+  [upgrade and port policy](docs/PORT_EXPOSURE.md). `scripts/guacamole-iac.sh`
+  runs the bootstrap; customized credentials must match the configured value.
 - **No automatic idle-session teardown** — unlike Kasm's own agent,
   nothing here detects an abandoned session and cleans it up
   automatically; `teardown-guacamole-session.py` must be run explicitly

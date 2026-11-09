@@ -29,7 +29,6 @@ enforcement site.
 | `ORTHANC_PASSWORD` | none | yes | yes | config-usera | compose `:?` (fail loudly) | compose (both), `load-sample-studies.sh`, smoke tests (`ORTHANC_PASS` fallback) |
 | `GRADING_COORDINATOR_KEY` | none | yes | yes | config-usera | `config.py`: >= 32 chars, leading/trailing whitespace rejected (#97) | compose (both), `app/config.py`, `create-session.py`, `provision-guacamole-session.py`, `rehearse-migration.py` |
 | `GUACAMOLE_DB_PASSWORD` | none | only for the Guacamole overlay | yes | config-usera | compose `:?` | `docker-compose.guacamole.yml` |
-| `BIND_ADDR` | `0.0.0.0` | no | no | config-usera | none (address literal) | `docker-compose.remote-host.yml` (publishes 8042/8080/8043) — see security note below |
 | `GRADING_RESET_ENABLED` | `0` (off) | no | no | config-usera | `config.py`: 1/true/yes/on or 0/false/no/off (#98); off = `POST /reset` answers 403 `RESET_DISABLED` and the panel shows no restart button | `app/config.py`, `app/main.py`, `docker-compose*.yml` |
 | `GRADING_TOKEN_TTL_SECONDS` | `28800` (8 h) | no | no | config-usera | `config.py`: integer, `1..604800` (#97) | `app/config.py` |
 | `GRADING_DB_PATH` | `/data/grading.db` | no | no | config-usera | none | `app/db.py`, `scripts/rehearse-migration.py` |
@@ -42,15 +41,16 @@ enforcement site.
 | `KASM_IMAGE_ID` | none | yes for the Kasm flow | no | config-usera | Kasm image id lookup | `create-session.py` |
 | `GUACAMOLE_URL` | `http://localhost:8090/guacamole/` | no | no | config-usera | URL | `provision-`/`teardown-guacamole-session.py` |
 | `GUACAMOLE_ADMIN_USERNAME` | `guacadmin` | no | no | config-usera | none | `provision-`/`teardown-guacamole-session.py` |
-| `GUACAMOLE_ADMIN_PASSWORD` | `guacadmin` | no | yes | config-usera | none — the DEFAULT IS A WEAK SECRET; PoC seam only, production must set it | `provision-`/`teardown-guacamole-session.py` |
+| `GUACAMOLE_ADMIN_PASSWORD` | none | yes for Guacamole | yes | config-usera | bootstrap: 32..1024 printable ASCII characters without edge spaces; session tools reject missing/blank/stock values | Guacamole Compose admin-init; `guacamole_session.admin_password()` used by provision, teardown and reaper; E2E wrapper |
 | `GUACAMOLE_WEASIS_IMAGE` | `ipcmc/guacamole-weasis:poc` | no | no | config-usera | image name | `provision-guacamole-session.py`, `guacamole-iac.sh` |
 | `GUACAMOLE_USER_VALID_HOURS` | `48` (matches the reaper's max-age) | no | no | config-operator | float > 0; sets the JDBC user's `valid-until` (day-grained, rounded UP -- see #191 source notes in the provisioner); reaper remains the hard limit | `provision-guacamole-session.py` |
 | `DOCKER_NETWORK` | `dicom_app_viewer_ipcmc-internal` | no | no | config-usera | docker network name | `provision-guacamole-session.py` |
 
-Security note on `BIND_ADDR` (`0.0.0.0` default): publishing `:8043`
-(Orthanc DICOMWeb) on all interfaces is the open question tracked by #103 /
-#146 / #122. Until the topology decision lands, treat `BIND_ADDR=127.0.0.1`
-as the secure choice on shared hosts.
+`BIND_ADDR` is retired (#103). Every shipped host mapping is fixed loopback,
+including monitoring profiles. It cannot be used to publish 8043. See
+[port policy and upgrade procedure](PORT_EXPOSURE.md). The bootstrap targets
+`guacadmin`; `GUACAMOLE_ADMIN_USERNAME` still selects an existing account for
+session tools and does not create or rename accounts during bootstrap.
 
 ## 2. wstrzykiwana-per-sesja (launcher/Kasm environment; NEVER in `.env`)
 

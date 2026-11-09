@@ -1,16 +1,20 @@
 name: monitoring-config
 
+permissions:
+  contents: read
+
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Validate monitoring config
-        run: |
-          cp .env.example .env || true
-          bash scripts/validate-monitoring.sh
+        env:
+          ORTHANC_PASSWORD: monitoring-config-placeholder-not-a-secret
+          GRADING_COORDINATOR_KEY: monitoring-config-placeholder-not-a-secret
+        run: bash scripts/validate-monitoring.sh

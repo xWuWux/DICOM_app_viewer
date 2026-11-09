@@ -7,6 +7,10 @@
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
+# Process-substitution loops below require /dev/fd. Without it bash can skip
+# entire checks yet return zero; fail explicitly instead of reporting success.
+[ -d /dev/fd ] || { echo "lint requires /dev/fd for bash process substitution" >&2; exit 1; }
+
 status=0
 
 echo "--- bash syntax check ---"
@@ -23,9 +27,12 @@ echo "--- docker compose config validation ---"
 export ORTHANC_PASSWORD="lint-only-placeholder-not-a-real-secret"
 export GRADING_COORDINATOR_KEY="lint-only-placeholder-not-a-real-secret"
 export GUACAMOLE_DB_PASSWORD="lint-only-placeholder-not-a-real-secret"
+export GUACAMOLE_ADMIN_PASSWORD="validation-only-admin-password-not-a-secret"
 docker compose -f docker-compose.yml config >/dev/null || status=1
 docker compose -f docker-compose.remote-host.yml config >/dev/null || status=1
 docker compose -f docker-compose.yml -f docker-compose.guacamole.yml config >/dev/null || status=1
+
+python3 scripts/check-compose-ports.py || status=1
 
 echo "--- pinned external images: tag + immutable digest (issue #50) ---"
 # Every `image:` line in every compose file (deployment AND the Guacamole PoC stack) must pin

@@ -16,6 +16,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 export ORTHANC_PASSWORD="build-test-placeholder-not-a-real-secret"
 export GRADING_COORDINATOR_KEY="build-test-placeholder-not-a-real-secret"
 export GUACAMOLE_DB_PASSWORD="build-test-placeholder-not-a-real-secret"
+export GUACAMOLE_ADMIN_PASSWORD="validation-only-admin-password-not-a-secret"
 
 echo "--- docker-compose.yml ---"
 docker compose -f docker-compose.yml build

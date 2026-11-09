@@ -17,18 +17,11 @@
 # VM/LXC, the firewall rule this REQUIRES (see warning below), and pointing
 # the Kasm workspace's Docker Run Config Override at this host's address.
 #
-# ============================================================================
-# REQUIRED: firewall this host's 8042 and 8043 to ONLY your Kasm host's IP.
-# ============================================================================
-# The same-host setup (docker-compose.yml) gets this isolation for free --
-# kasm_default_network is a Docker-internal bridge nothing outside the host
-# can reach. This file has no equivalent: BIND_ADDR defaults to 0.0.0.0,
-# meaning without a firewall rule, 8042 (Orthanc's Basic-Auth-protected UI)
-# and especially 8043 (the auth-injecting proxy -- valid Orthanc access with
-# NO auth of its own, see docker/viewer/default.conf.template) are reachable
-# by anyone who can reach this host's network at all. This is not optional
-# hardening, it's the thing that makes this setup equivalent to the
-# same-host one at all.
+# Issue #103: all host mappings are fixed loopback. BIND_ADDR is no longer
+# supported: changing one variable must never publish the credential-injecting
+# proxy. This standalone base also supports same-host Guacamole without Kasm.
+# BREAKING for remote clients: migrate to an authenticated access path before
+# upgrading. See docs/PORT_EXPOSURE.md; a private interface alone is not authz.
 
 # issue #113: the telemetry contract's primary channel is stdout, one JSON
 # object per line (docs/observability.md). Rotation belongs to the log driver,
@@ -80,7 +73,7 @@ services:
     networks:
       - ipcmc-internal
     ports:
-      - "${BIND_ADDR:-0.0.0.0}:8042:8042"
+      - "127.0.0.1:8042:8042"
 
   # One-shot, runs before grading-api on every `docker compose up` (follow-up to issue #51).
   # grading-api runs as uid 10001; a `grading-db` volume created by an older (root) image is
@@ -187,8 +180,8 @@ services:
       # harness that exports API_RATE_LIMIT itself changes it (see scripts/test-visual-regression.sh).
       - API_RATE_LIMIT=${API_RATE_LIMIT:-10r/s}
     ports:
-      - "${BIND_ADDR:-0.0.0.0}:8080:8080"
-      - "${BIND_ADDR:-0.0.0.0}:8043:8043"
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8043:8043"
     networks:
       - ipcmc-internal
     # issue #51 hardening -- see docker-compose.yml's viewer block for the

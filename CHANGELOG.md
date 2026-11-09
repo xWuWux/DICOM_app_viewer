@@ -23,6 +23,16 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2-0-0/).
 
 ## [Unreleased]
 
+- **Port and administrator defaults (#103).** Fix all backend host mappings to
+  loopback; retire `BIND_ADDR`. Require and verify a non-default Guacamole admin
+  password, migrate the stock account on existing volumes, and gate webapp startup.
+  Add resolved-Compose policy/negative controls and live administrator regression
+  tests. Guacamole IaC/CI uses the standalone base without Kasm. Remote clients
+  must migrate before upgrade; see `docs/PORT_EXPOSURE.md`. The HTTPS-only ingress
+  and per-desktop isolation proposal remains pending. Restore CI lint by pinning
+  the six monitoring images, fixing existing Python lint/format and workflow
+  hardening errors, and testing optional telemetry failure behavior.
+
 - **Shutdown and SQLite recovery (issue #116, API 1.6.0).** Use WAL/FULL,
   check database integrity before migrations, fail closed with diagnostic liveness,
   and attempt a bounded-lock-wait shutdown checkpoint. Uvicorn drains requests for
