@@ -19,7 +19,12 @@ hardening failures (unrestricted default permissions and a mutable checkout tag)
 and 94.47% API coverage below the required 95%. This patch fixes those workflow
 settings, its wrong `main` push branch and absent Compose validation credentials,
 and adds disabled/error/repeated-setup/shutdown telemetry tests without reducing
-the coverage floor.
+the coverage floor. The first PR CI run then passed lint but exposed an incomplete
+OpenTelemetry dependency lock during the image build (`protobuf` was unpinned).
+The lock is regenerated with Python 3.12 and pip-tools 7.5.0, preserving existing
+pins and adding the missing transitive dependencies. A clean-resolution
+`pip install --dry-run --ignore-installed --require-hashes` verifies this boundary;
+the existing image-build gate remains mandatory.
 
 Existing tests include browser axe/console gates, a watermark contrast baseline,
 Hypothesis state invariants, degraded-mode restart/recreate journeys, SQLite
