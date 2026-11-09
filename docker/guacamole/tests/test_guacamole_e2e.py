@@ -53,7 +53,7 @@ def provisioned_session():
     try:
         yield data
     finally:
-        subprocess.run(
+        cleanup = subprocess.run(
             [
                 sys.executable,
                 os.path.join(REPO_ROOT, "scripts", "teardown-guacamole-session.py"),
@@ -67,6 +67,7 @@ def provisioned_session():
         link_file = data.get("link_file")
         if link_file and os.path.exists(link_file):
             os.remove(link_file)
+        assert cleanup.returncode == 0, "session teardown failed; inspect disposable-stack cleanup"
 
 
 def test_auto_login_link_reaches_the_client_with_no_login_form(provisioned_session):

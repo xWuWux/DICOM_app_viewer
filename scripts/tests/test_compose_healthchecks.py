@@ -6,6 +6,7 @@ so the test can also assert that no health probe carries a password on its comma
 """
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -18,7 +19,8 @@ ENV = {
     "ORTHANC_PASSWORD": SENTINEL,
     "GRADING_COORDINATOR_KEY": "k" * 40,
     "GUACAMOLE_DB_PASSWORD": SENTINEL + "-db",
-    "PATH": "/usr/bin:/bin:/usr/local/bin",
+    "GUACAMOLE_ADMIN_PASSWORD": SENTINEL + "-admin",
+    "PATH": os.environ.get("PATH", "/usr/bin:/bin:/usr/local/bin"),
     "HOME": "/tmp",
 }
 
@@ -29,7 +31,7 @@ def _config(*files):
     cmd = ["docker", "compose"]
     for f in files:
         cmd += ["-f", str(ROOT / f)]
-    cmd += ["config", "--format", "json"]
+    cmd += ["--env-file", "/dev/null", "config", "--format", "json"]
     out = subprocess.run(cmd, capture_output=True, text=True, env=ENV, cwd=ROOT, check=False)
     assert out.returncode == 0, out.stderr
     return json.loads(out.stdout)["services"]

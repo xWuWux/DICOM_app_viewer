@@ -15,6 +15,7 @@
 #
 # Usage: ./scripts/guacamole-iac.sh
 set -euo pipefail
+umask 077
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 echo "--- 1. Checking prerequisites ---"
@@ -32,21 +33,34 @@ grep -q "^ORTHANC_PASSWORD=.\+" .env || sed -i "s/^ORTHANC_PASSWORD=.*/ORTHANC_P
 grep -q "^GRADING_COORDINATOR_KEY=.\+" .env || sed -i "s/^GRADING_COORDINATOR_KEY=.*/GRADING_COORDINATOR_KEY=$(openssl rand -hex 32)/" .env
 grep -q "^GUACAMOLE_DB_PASSWORD=.\+" .env || sed -i "s/^GUACAMOLE_DB_PASSWORD=.*/GUACAMOLE_DB_PASSWORD=$(openssl rand -hex 16)/" .env
 
+# Required for both new and old databases. A customized account mismatch fails
+# without replacing it; see docs/PORT_EXPOSURE.md before upgrading.
+if ! grep -q '^GUACAMOLE_ADMIN_PASSWORD=.\+' .env; then
+  sed -i '/^GUACAMOLE_ADMIN_PASSWORD=/d' .env
+  printf 'GUACAMOLE_ADMIN_PASSWORD=%s\n' "$(openssl rand -hex 32)" >> .env
+fi
+chmod 600 .env
+# Stop the old webapp before migrating an existing stock credential.
+docker compose -f docker-compose.remote-host.yml -f docker-compose.guacamole.yml stop guacamole
+
 echo "--- 2. Building the Guacamole Weasis workspace image ---"
 docker build --build-context kasm=docker/kasm-workspace-weasis -t "${GUACAMOLE_WEASIS_IMAGE:-ipcmc/guacamole-weasis:poc}" docker/guacamole-weasis
 
 echo "--- 3. Bringing up the stack (core services + Guacamole infra) ---"
-docker compose -f docker-compose.yml -f docker-compose.guacamole.yml up -d --build
+docker compose -f docker-compose.remote-host.yml -f docker-compose.guacamole.yml up -d --build
 
 echo "--- 4. Waiting for Guacamole's webapp to come up ---"
 GUACAMOLE_URL="${GUACAMOLE_URL:-http://localhost:8090/guacamole/}"
+GUACAMOLE_READY=0
 for _ in $(seq 1 30); do
   if curl -sf -o /dev/null "$GUACAMOLE_URL"; then
+    GUACAMOLE_READY=1
     echo "Guacamole is up."
     break
   fi
   sleep 2
 done
+[ "$GUACAMOLE_READY" -eq 1 ] || { echo "Guacamole readiness timed out" >&2; exit 1; }
 
 echo "--- 5. Loading sample DICOM data (if not already loaded) ---"
 ./scripts/fetch-public-samples.sh
@@ -55,8 +69,10 @@ echo "--- 5. Loading sample DICOM data (if not already loaded) ---"
 cat <<EOF
 
 Done. Guacamole admin UI: ${GUACAMOLE_URL}
-Default admin login: guacadmin / guacadmin -- CHANGE THIS before anything
-beyond a local PoC (see README.md's own security note on this flow).
+Administrator: guacadmin; password is in the mode-0600 .env file.
+No default password is enabled. Host endpoints are loopback-only.
+Export GUACAMOLE_ADMIN_PASSWORD for provisioning, teardown and reaping.
+See docs/PORT_EXPOSURE.md for upgrade and deployment limitations.
 
 To mint a per-student link:
   GRADING_COORDINATOR_KEY=\$(grep GRADING_COORDINATOR_KEY .env | cut -d= -f2) \\

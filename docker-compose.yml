@@ -191,9 +191,7 @@ services:
       # harness that exports API_RATE_LIMIT itself changes it (see scripts/test-visual-regression.sh).
       - API_RATE_LIMIT=${API_RATE_LIMIT:-10r/s}
     ports:
-      - "8080:8080"   # This is the only thing that should ever be reachable directly for this MVP,
-                       # and in the real deployment even this gets replaced by Kasm's own gateway -
-                       # see README.md "From MVP to the real thing".
+      - "127.0.0.1:8080:8080"   # Host-local tools only; desktops use container DNS.
       - "127.0.0.1:8043:8043"   # Auth-injecting Orthanc proxy - loopback only. Publishing
                                  # this beyond localhost would hand out unauthenticated Orthanc
                                  # access to anyone who can reach it (see nginx.conf comment).
@@ -223,7 +221,7 @@ services:
 
   # Monitoring stack (optional profile)
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.115.1
+    image: otel/opentelemetry-collector-contrib:0.115.1@sha256:d2da12c4336a79758826700be9e21ecf4a9f7d945b7f8a58ba55ee3fa45427c8
     container_name: ipcmc-otel-collector
     profiles: ["monitoring"]
     logging: *default-logging
@@ -243,7 +241,7 @@ services:
       retries: 5
 
   tempo:
-    image: grafana/tempo:2.6.1
+    image: grafana/tempo:2.6.1@sha256:ef4384fce6e8ad22b95b243d8fc165628cda655376fd50e7850536ad89d71d50
     container_name: ipcmc-tempo
     profiles: ["monitoring"]
     logging: *default-logging
@@ -258,7 +256,7 @@ services:
       - ipcmc-internal
 
   loki:
-    image: grafana/loki:3.2.1
+    image: grafana/loki:3.2.1@sha256:09a53b4a4ff81ffcd8f13886df19d33fac7a8d3aaf952e3c7e66cbade5b2fc31
     container_name: ipcmc-loki
     profiles: ["monitoring"]
     logging: *default-logging
@@ -271,7 +269,7 @@ services:
       - ipcmc-internal
 
   prometheus:
-    image: prom/prometheus:v2.55.1
+    image: prom/prometheus:v2.55.1@sha256:2659f4c2ebb718e7695cb9b25ffa7d6be64db013daba13e05c875451cf51b0d3
     container_name: ipcmc-prometheus
     profiles: ["monitoring"]
     logging: *default-logging
@@ -291,7 +289,7 @@ services:
       - ipcmc-internal
 
   alertmanager:
-    image: prom/alertmanager:v0.27.0
+    image: prom/alertmanager:v0.27.0@sha256:e13b6ed5cb929eeaee733479dce55e10eb3bc2e9c4586c705a4e8da41e5eacf5
     container_name: ipcmc-alertmanager
     profiles: ["monitoring"]
     logging: *default-logging
@@ -305,7 +303,7 @@ services:
       - ipcmc-internal
 
   grafana:
-    image: grafana/grafana:11.3.1
+    image: grafana/grafana:11.3.1@sha256:fa801ab6e1ae035135309580891e09f7eb94d1abdbd2106bdc288030b028158c
     container_name: ipcmc-grafana
     profiles: ["monitoring"]
     logging: *default-logging

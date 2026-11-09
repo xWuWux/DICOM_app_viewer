@@ -9,10 +9,12 @@
 # the base compose file so the new services can reach the existing
 # viewer/grading-api/orthanc backend by container name over the same
 # ipcmc-internal network (already defined there, not redeclared here):
-#   docker compose -f docker-compose.yml -f docker-compose.guacamole.yml up -d --build
+#   docker compose -f docker-compose.remote-host.yml -f docker-compose.guacamole.yml up -d --build
 # See scripts/guacamole-iac.sh, which wraps exactly this.
 #
-# Deliberately does NOT attach to kasm_default_network -- the whole point
+# Use the standalone remote-host base above for Guacamole-only startup.
+# The Kasm base also remains compatible, but needs its external Kasm network.
+# This overlay does NOT attach to kasm_default_network -- the whole point
 # is a delivery mechanism that doesn't depend on Kasm being installed at
 # all. The Weasis+VNC session container (docker/guacamole-weasis/) only
 # ever needs to reach `viewer` (VIEWER_URL, and ORTHANC_URL -- both served
@@ -71,6 +73,33 @@ services:
     networks:
       - ipcmc-internal
 
+  # Runs against fresh AND existing databases. Never overwrites a custom password.
+  guacamole-admin-init:
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    logging: *default-logging
+    restart: "no"
+    user: postgres
+    entrypoint: ["/bin/sh", "/bootstrap/bootstrap-admin.sh"]
+    depends_on:
+      guacamole-db:
+        condition: service_healthy
+    environment:
+      - PGHOST=guacamole-db
+      - PGUSER=guacamole
+      - PGDATABASE=guacamole_db
+      - PGPASSWORD=${GUACAMOLE_DB_PASSWORD:?Set GUACAMOLE_DB_PASSWORD in .env}
+      - GUACAMOLE_ADMIN_PASSWORD=${GUACAMOLE_ADMIN_PASSWORD:?Set GUACAMOLE_ADMIN_PASSWORD in .env}
+      - PGCONNECT_TIMEOUT=5
+      - PGOPTIONS=-c statement_timeout=15000 -c lock_timeout=5000
+    volumes:
+      - ./docker/guacamole/bootstrap-admin.sh:/bootstrap/bootstrap-admin.sh:ro
+    networks:
+      - ipcmc-internal
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
   guacd:
     image: guacamole/guacd:1.6.0@sha256:8974eaa9ba32f713daf311e7cc8cd7e4cdfba1edea39eed75524e78ef4b08f4f
     container_name: ipcmc-guacd
@@ -93,6 +122,8 @@ services:
     restart: unless-stopped
     # issue #69: do not start the web app before its database and guacd are ready.
     depends_on:
+      guacamole-admin-init:
+        condition: service_completed_successfully
       guacd:
         condition: service_healthy
       guacamole-db:

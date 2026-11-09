@@ -1,3 +1,10 @@
+> **Compatibility change (#103):** raw backend ports are now fixed to loopback.
+> `BIND_ADDR` no longer publishes them, including on WireGuard interfaces.
+> The remote-client recipes below describe the historical topology and must not
+> be used as a current deployment procedure. Migrate clients to a validated,
+> authenticated path before upgrading. For same-host Guacamole use
+> `scripts/guacamole-iac.sh` and [PORT_EXPOSURE.md](PORT_EXPOSURE.md).
+
 # Deploying Orthanc + viewer on a separate Proxmox VM/LXC
 
 This is an alternative to the same-Docker-host setup in the main `README.md`

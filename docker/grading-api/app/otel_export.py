@@ -1,16 +1,14 @@
 """Best-effort OTLP log export for grading-api (disabled by default)."""
+
 from __future__ import annotations
 
 import os
-from typing import Any
 
 from opentelemetry import _logs
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.resources import Resource
-
-from . import telemetry
 
 _log_provider = None
 _log_handler = None

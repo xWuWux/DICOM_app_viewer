@@ -37,7 +37,7 @@ Requires:
   GUACAMOLE_ADMIN_USERNAME -- default guacadmin (Guacamole's own default
                               admin account -- change this for anything
                               beyond a local PoC)
-  GUACAMOLE_ADMIN_PASSWORD -- default guacadmin
+  GUACAMOLE_ADMIN_PASSWORD -- required; no stock-password fallback
   GRADING_API_URL          -- default http://localhost:8080/
   DOCKER_NETWORK           -- default dicom_app_viewer_ipcmc-internal
                               (the compose-generated network name;
@@ -278,7 +278,10 @@ def _provision():
     if not guac_url.endswith("/"):
         guac_url += "/"
     admin_user = os.environ.get("GUACAMOLE_ADMIN_USERNAME", "guacadmin")
-    admin_pass = os.environ.get("GUACAMOLE_ADMIN_PASSWORD", "guacadmin")
+    try:
+        admin_pass = gs.admin_password()
+    except ValueError as exc:
+        raise ProvisionAborted(str(exc)) from None
     coordinator_key = os.environ["GRADING_COORDINATOR_KEY"]
     grading_api_url = os.environ.get("GRADING_API_URL", "http://localhost:8080/")
     docker_network = os.environ.get("DOCKER_NETWORK", "dicom_app_viewer_ipcmc-internal")

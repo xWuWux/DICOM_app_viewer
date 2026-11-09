@@ -48,6 +48,14 @@ STEP_OK = "ok"  # per-step report marker
 STEP_SKIPPED_PREFIX = "skipped"  # "skipped (<why>)": deliberate, non-fatal omission
 
 
+def admin_password() -> str:
+    """Read GUACAMOLE_ADMIN_PASSWORD; fail before mutations, never echo its value."""
+    value = os.environ.get("GUACAMOLE_ADMIN_PASSWORD", "")
+    if not value.strip() or value == "guacadmin":
+        raise ValueError("Set a non-default GUACAMOLE_ADMIN_PASSWORD before session operations")
+    return value
+
+
 def step_ok(value):
     """True for values that must NOT be retried: success or a documented skip."""
     return value == STEP_OK or str(value).startswith(STEP_SKIPPED_PREFIX)

@@ -754,14 +754,15 @@ CREATE INDEX guacamole_user_password_history_user_id
 -- under the License.
 --
 
--- Create default user "guacadmin" with password "guacadmin"
+-- Create DISABLED bootstrap user; admin-init replaces the stock password (#103).
 INSERT INTO guacamole_entity (name, type) VALUES ('guacadmin', 'USER');
-INSERT INTO guacamole_user (entity_id, password_hash, password_salt, password_date)
+INSERT INTO guacamole_user (entity_id, password_hash, password_salt, password_date, disabled)
 SELECT
     entity_id,
     decode('CA458A7D494E3BE824F5E1E175A1556C0F8EEF2C2D7DF3633BEC4A29C4411960', 'hex'),  -- 'guacadmin'
     decode('FE24ADC5E11E2B25288D1704ABE67A79E342ECC26064CE69C5B3177795A82264', 'hex'),
-    CURRENT_TIMESTAMP
+    CURRENT_TIMESTAMP,
+    TRUE
 FROM guacamole_entity WHERE name = 'guacadmin' AND guacamole_entity.type = 'USER';
 
 -- Grant this user all system permissions

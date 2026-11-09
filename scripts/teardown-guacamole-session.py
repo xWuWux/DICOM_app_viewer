@@ -44,7 +44,11 @@ def main():
     container_name = f"guac-weasis-{args.student_id}-{args.session_id}"
     guac_url = os.environ.get("GUACAMOLE_URL", "http://localhost:8090/guacamole/")
     admin_user = os.environ.get("GUACAMOLE_ADMIN_USERNAME", "guacadmin")
-    admin_pass = os.environ.get("GUACAMOLE_ADMIN_PASSWORD", "guacadmin")
+    try:
+        admin_pass = gs_mod.admin_password()
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     grading_api_url = os.environ.get("GRADING_API_URL", "")
     coordinator_key = os.environ.get("GRADING_COORDINATOR_KEY", "")
     link_dir = os.environ.get("GUACAMOLE_LINK_DIR") or gs_mod.DEFAULT_LINK_DIR
